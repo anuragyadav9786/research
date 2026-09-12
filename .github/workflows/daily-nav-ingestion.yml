@@ -24,6 +24,10 @@ on:
         description: "Print a raw sample of the fetched AMFI file and exit, without touching the database"
         type: boolean
         default: false
+      debug_check_deploy:
+        description: "Check the live DB's current alembic revision/schema and the Render health endpoint, without running migrations or ingestion"
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -68,11 +72,34 @@ jobs:
               print(repr(line))
           "
 
+      - name: Debug — check live DB schema/revision and Render health (no writes)
+        if: ${{ inputs.debug_check_deploy == true }}
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, os.path.join(os.getcwd(), 'backend'))
+          import httpx
+          from sqlalchemy import inspect, text
+          from app.core.database import engine
+
+          with engine.connect() as conn:
+              rev = conn.execute(text('SELECT version_num FROM alembic_version')).scalar()
+              print(f'alembic_version in live DB: {rev!r}')
+              cols = [c['name'] for c in inspect(engine).get_columns('scheme_variants')]
+              print(f'nav_history_backfilled_at column present: {\"nav_history_backfilled_at\" in cols}')
+
+          try:
+              resp = httpx.get('https://thinkfin-backend.onrender.com/api/health', timeout=15.0)
+              print(f'Render health: HTTP {resp.status_code} body={resp.text}')
+          except Exception as exc:
+              print(f'Render health check FAILED: {type(exc).__name__}: {exc}')
+          "
+
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline
