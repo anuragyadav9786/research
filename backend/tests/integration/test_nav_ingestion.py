@@ -39,12 +39,15 @@ def _delete_run(db, run_id: int) -> None:
 
 def _build_fixture_text(matched_amfi_code: str) -> str:
     return (
-        "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n\n"
+        "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date\n\n"
         "Open Ended Schemes(Equity Scheme)\n\n"
         "Sample Fixture Mutual Fund\n"
-        f"{matched_amfi_code};-;-;Integration Test Fixture Fund;150.25;01-Jan-2099\n"
-        "999999;-;-;Unmapped Fixture Fund;99.99;01-Jan-2099\n"
-        "888888;-;-;Bad NAV Fixture Fund;N.A.;01-Jan-2099\n"
+        f"{matched_amfi_code};-;-;Integration Test Fixture Fund;;;150.25;01-Jan-2099\n"
+        # Blank Plan/Option (mirroring a real ETF-like row) so onboarding
+        # can't create a scheme for these — this test is about NAV
+        # matching/validation, not onboarding, so both stay unmatched.
+        "999999;-;-;Unmapped Fixture Fund;;;99.99;01-Jan-2099\n"
+        "888888;-;-;Bad NAV Fixture Fund;;;N.A.;01-Jan-2099\n"
     )
 
 

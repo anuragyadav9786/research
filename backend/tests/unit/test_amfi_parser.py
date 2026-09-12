@@ -1,27 +1,27 @@
 """Tests for the AMFI NAVAll.txt parser.
 
 The fixture text below is a SYNTHETIC sample that mimics AMFI's published
-file *structure* (documented, public format) using entirely fictional
-scheme codes/names/NAVs — it is not, and must never be treated as, real
-AMFI data. See data_pipeline/sources/amfi/parser.py's module docstring for
-the format this mirrors.
+file *structure* — verified against the live file, see
+data_pipeline/sources/amfi/parser.py's module docstring — using entirely
+fictional scheme codes/names/NAVs. It is not, and must never be treated
+as, real AMFI data.
 """
 from data_pipeline.sources.amfi.parser import parse_navall
 
 SAMPLE_FIXTURE = """\
-Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date
+Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date
 
 Open Ended Schemes(Equity Scheme - Large Cap Fund)
 
 Sample Fixture Mutual Fund
-900001;SAMPLE-FIX-ISIN-01;-;Sample Fixture Bluechip Fund - Direct Plan - Growth;123.4567;12-Sep-2026
-900002;SAMPLE-FIX-ISIN-02;-;Sample Fixture Bluechip Fund - Regular Plan - Growth;120.1234;12-Sep-2026
+900001;SAMPLE-FIX-ISIN-01;-;Sample Fixture Bluechip Fund;Direct Plan;Growth;123.4567;12-Sep-2026
+900002;SAMPLE-FIX-ISIN-02;-;Sample Fixture Bluechip Fund;Regular Plan;Growth;120.1234;12-Sep-2026
 
 Open Ended Schemes(Debt Scheme - Overnight Fund)
 
 Sample Fixture Mutual Fund
-900003;-;SAMPLE-FIX-ISIN-03;Sample Fixture Overnight Fund - Direct Plan - IDCW;1000.0000;12-Sep-2026
-900004;N.A.;-;Sample Fixture New Launch Fund - Direct Plan - Growth;N.A.;12-Sep-2026
+900003;-;SAMPLE-FIX-ISIN-03;Sample Fixture Overnight Fund;Direct Plan;IDCW;1000.0000;12-Sep-2026
+900004;N.A.;-;Sample Fixture New Launch Fund;Direct Plan;Growth;N.A.;12-Sep-2026
 """
 
 
@@ -46,6 +46,15 @@ def test_extracts_isin_and_treats_dash_as_none():
     assert records[2].isin_div_reinvestment == "SAMPLE-FIX-ISIN-03"
 
 
+def test_extracts_plan_option_and_bare_scheme_name():
+    records = parse_navall(SAMPLE_FIXTURE)
+    assert records[0].scheme_name == "Sample Fixture Bluechip Fund"
+    assert records[0].plan_raw == "Direct Plan"
+    assert records[0].option_raw == "Growth"
+    assert records[2].plan_raw == "Direct Plan"
+    assert records[2].option_raw == "IDCW"
+
+
 def test_skips_column_header_row():
     records = parse_navall(SAMPLE_FIXTURE)
     assert all(r.scheme_code != "Scheme Code" for r in records)
@@ -67,3 +76,5 @@ def test_short_row_is_padded_not_dropped():
     assert len(records) == 1
     assert records[0].scheme_code == "900005"
     assert records[0].scheme_name == ""  # missing fields padded empty, not silently discarded
+    assert records[0].plan_raw == ""
+    assert records[0].option_raw == ""

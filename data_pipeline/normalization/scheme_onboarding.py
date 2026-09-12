@@ -6,8 +6,8 @@ auto-creating scheme identity from a NAV file alone. That concern — AMFI's
 flat row not reliably carrying curated identity — is addressed here by
 parsing conservatively (see scheme_identity.py) and skipping anything
 ambiguous, rather than by never attempting it at all. Every value used
-(AMC name, category, scheme name, AMFI code, ISIN) comes directly from the
-file; nothing is invented.
+(AMC name, category, scheme name, Plan, Option, AMFI code, ISIN) comes
+directly from the file's own columns; nothing is invented.
 
 One real limitation, not papered over: AMFI's file carries only one level
 of fund-house identity (the AMC name printed above each block of schemes).
@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from app.models.reference import AMC, FundFamily, Scheme, SchemeVariant
-from data_pipeline.normalization.scheme_identity import parse_category_header, parse_scheme_identity
+from data_pipeline.normalization.scheme_identity import parse_category_header, parse_option, parse_plan
 from data_pipeline.sources.amfi.parser import RawNavRecord
 
 
@@ -65,15 +65,27 @@ def onboard_schemes(db: Session, raw_records: list[RawNavRecord]) -> OnboardingR
             result.skipped.append(SkippedScheme(rec.scheme_code, rec.scheme_name, "missing scheme code or AMC name"))
             continue
 
+        base_name = rec.scheme_name.strip()
+        if not base_name:
+            result.skipped.append(SkippedScheme(rec.scheme_code, rec.scheme_name, "missing scheme name"))
+            continue
+
         category = parse_category_header(rec.category) if rec.category else None
         if not category:
             result.skipped.append(SkippedScheme(rec.scheme_code, rec.scheme_name, "unrecognized category header"))
             continue
 
-        identity = parse_scheme_identity(rec.scheme_name)
-        if identity is None:
+        plan = parse_plan(rec.plan_raw)
+        if plan is None:
             result.skipped.append(
-                SkippedScheme(rec.scheme_code, rec.scheme_name, "could not determine plan/option from scheme name")
+                SkippedScheme(rec.scheme_code, rec.scheme_name, f"could not determine plan from {rec.plan_raw!r}")
+            )
+            continue
+
+        option = parse_option(rec.option_raw)
+        if option is None:
+            result.skipped.append(
+                SkippedScheme(rec.scheme_code, rec.scheme_name, f"could not determine option from {rec.option_raw!r}")
             )
             continue
 
@@ -94,10 +106,10 @@ def onboard_schemes(db: Session, raw_records: list[RawNavRecord]) -> OnboardingR
             families_by_key[family_key] = family
             result.fund_families_created += 1
 
-        scheme_key = (family.id, identity.base_name)
+        scheme_key = (family.id, base_name)
         scheme = schemes_by_key.get(scheme_key)
         if scheme is None:
-            scheme = Scheme(fund_family_id=family.id, name=identity.base_name, category=category)
+            scheme = Scheme(fund_family_id=family.id, name=base_name, category=category)
             db.add(scheme)
             db.flush()
             schemes_by_key[scheme_key] = scheme
@@ -106,8 +118,8 @@ def onboard_schemes(db: Session, raw_records: list[RawNavRecord]) -> OnboardingR
         db.add(
             SchemeVariant(
                 scheme_id=scheme.id,
-                plan=identity.plan,
-                option=identity.option,
+                plan=plan,
+                option=option,
                 amfi_code=rec.scheme_code,
                 isin=isin,
             )
