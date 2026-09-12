@@ -31,11 +31,20 @@ def main() -> None:
     db = SessionLocal()
     try:
         run = run_amfi_nav_ingestion(db)
+        onboarding = getattr(run, "onboarding_summary", None)
+        onboarding_msg = ""
+        if onboarding is not None:
+            onboarding_msg = (
+                f" | onboarded: amcs={onboarding.amcs_created} fund_families={onboarding.fund_families_created} "
+                f"schemes={onboarding.schemes_created} variants={onboarding.variants_created} "
+                f"skipped={len(onboarding.skipped)}"
+            )
         print(
             f"NAV ingestion run {run.id}: status={run.status} "
             f"downloaded={run.records_downloaded} accepted={run.records_accepted} "
             f"rejected={run.records_rejected}"
             + (f" error={run.error_message}" if run.error_message else "")
+            + onboarding_msg
         )
     finally:
         db.close()
