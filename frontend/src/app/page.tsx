@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { listFunds } from "@/lib/api";
+import { countFunds } from "@/lib/api";
 
 const NAV = [
   { label: "Dashboard", href: "/" },
@@ -24,9 +24,9 @@ async function getBackendHealth() {
 }
 
 export default async function Home() {
-  const [health, funds] = await Promise.all([
+  const [health, fundCount] = await Promise.all([
     getBackendHealth(),
-    listFunds().catch(() => []),
+    countFunds().catch(() => ({ count: 0 })),
   ]);
 
   return (
@@ -60,7 +60,7 @@ export default async function Home() {
             className="rounded-lg border border-neutral-800 p-6 space-y-2 hover:border-neutral-700 transition-colors"
           >
             <h2 className="text-sm uppercase tracking-wide text-neutral-500">Funds Covered</h2>
-            <p className="text-2xl font-semibold">{funds.length}</p>
+            <p className="text-2xl font-semibold">{fundCount.count}</p>
             <p className="text-xs text-neutral-500">Browse Research →</p>
           </Link>
 

@@ -30,6 +30,11 @@ export interface FundDetail extends FundSummary {
   variants: VariantSummary[];
 }
 
+export interface FundListResponse {
+  items: FundSummary[];
+  has_more: boolean;
+}
+
 export interface ReturnWindow {
   available: boolean;
   cagr_pct: number | null;
@@ -88,6 +93,25 @@ export interface RollingReturnsResponse {
   disclaimer: string;
 }
 
+export type RollingSeriesWindow = "1m" | "3m" | "6m" | "1y";
+export type RollingSeriesLookback = "1y" | "3y" | "5y" | "10y";
+
+export interface RollingReturnPoint {
+  date: string;
+  return_pct: number;
+}
+
+export interface RollingReturnSeriesResponse {
+  window: RollingSeriesWindow;
+  lookback: RollingSeriesLookback;
+  window_years: number;
+  annualized: boolean;
+  available: boolean;
+  reason: string | null;
+  points: RollingReturnPoint[];
+  disclaimer: string;
+}
+
 export interface DrawdownResponse {
   available: boolean;
   reason: string | null;
@@ -112,5 +136,15 @@ export interface NavHistoryResponse {
   benchmark_name: string | null;
   fund_points: NavPoint[];
   benchmark_points: NavPoint[];
+  disclaimer: string;
+}
+
+export interface IntelligenceResponse {
+  fund: FundDetail;
+  variant: VariantSummary;
+  returns: ReturnsResponse;
+  risk: RiskResponse;
+  rolling_3y: RollingReturnsResponse;
+  drawdown: DrawdownResponse;
   disclaimer: string;
 }

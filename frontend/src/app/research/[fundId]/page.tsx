@@ -4,12 +4,10 @@ import { notFound } from "next/navigation";
 import {
   ApiError,
   getFund,
-  getFundDrawdown,
+  getFundIntelligence,
   getFundMarketRegimes,
   getFundNavHistory,
   getFundPortfolio,
-  getFundReturns,
-  getFundRisk,
   getFundRollingReturns,
   getFundStressTest,
 } from "@/lib/api";
@@ -19,6 +17,7 @@ import { DistributionBar } from "@/components/fund/DistributionBar";
 import { HoldingsTable } from "@/components/fund/HoldingsTable";
 import { MarketRegimeTable } from "@/components/fund/MarketRegimeTable";
 import { NavChart } from "@/components/fund/NavChart";
+import { RollingReturnBarChart } from "@/components/fund/RollingReturnBarChart";
 import { StatCard } from "@/components/fund/StatCard";
 import { AiSummaryPanel } from "@/components/fund/AiSummaryPanel";
 import { StressTestPanel } from "@/components/fund/StressTestPanel";
@@ -79,16 +78,24 @@ export default async function FundDetailPage({
     // the Promise.all below. Every one of these endpoints resolves the
     // same variant server-side and triggers ensure_nav_history's one-time
     // mfapi.in backfill on a brand-new fund (see lazy_nav_backfill.py) —
-    // firing all seven at once would let each independently race to
+    // firing everything at once would let each independently race to
     // start that same fetch before any has committed the "done" flag.
     // Awaiting one first means it's already committed by the time the
     // rest run, so they see it and skip straight to a fast local read.
     navHistory = await getFundNavHistory(fundId, variantParams);
-    [returns, risk, rolling, drawdown, marketRegimes, stressTest] = await Promise.all([
-      getFundReturns(fundId, variantParams),
-      getFundRisk(fundId, variantParams),
-      getFundRollingReturns(fundId, { ...variantParams, window_years: windowYears }),
-      getFundDrawdown(fundId, variantParams),
+
+    // getFundIntelligence bundles returns + risk + rolling(3y) + drawdown
+    // into one backend call instead of four separate ones. It only
+    // computes the 3-year rolling case, so a non-default window still
+    // needs its own request — done in the same Promise.all as the two
+    // endpoints /intelligence doesn't cover at all.
+    const intelligence = await getFundIntelligence(fundId, variantParams);
+    returns = intelligence.returns;
+    risk = intelligence.risk;
+    drawdown = intelligence.drawdown;
+
+    [rolling, marketRegimes, stressTest] = await Promise.all([
+      windowYears === 3 ? Promise.resolve(intelligence.rolling_3y) : getFundRollingReturns(fundId, { ...variantParams, window_years: windowYears }),
       getFundMarketRegimes(fundId, variantParams),
       getFundStressTest(fundId, variantParams),
     ]);
@@ -321,6 +328,9 @@ export default async function FundDetailPage({
                     Not enough NAV history for a {windowYears}-year rolling window yet.
                   </p>
                 )}
+                <div className="pt-4 border-t border-neutral-900">
+                  <RollingReturnBarChart fundId={fundId} plan={plan} option={option} />
+                </div>
               </div>
             </section>
 

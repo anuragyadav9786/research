@@ -25,6 +25,27 @@ def test_rolling_returns_constant_growth_rate_recovers_annual_rate():
     assert rolling.std() < 1e-6  # deterministic series -> ~zero dispersion
 
 
+def test_rolling_returns_sub_annual_window_uses_simple_not_annualized_return():
+    # Same deterministic 10%/year compounding series as the test above.
+    # A correct *annualized* 3-month rolling return would still recover
+    # ~10% (that's the whole point of annualizing). A *simple* return
+    # instead reports the actual quarter's growth: (1.10)**0.25 - 1 ~= 2.4%
+    # — an order of magnitude smaller. Asserting the smaller figure proves
+    # sub-annual windows use simple_return, not cagr.
+    annual_rate = 0.10
+    daily_rate = (1 + annual_rate) ** (1 / 365.25) - 1
+    n_days = 800
+    dates = pd.date_range("2020-01-01", periods=n_days, freq="D")
+    nav = pd.Series([100.0 * (1 + daily_rate) ** i for i in range(n_days)], index=dates)
+
+    rolling = rolling_returns(nav, window_years=0.25)
+
+    expected_simple_quarterly_return = (1 + annual_rate) ** 0.25 - 1
+    assert not rolling.empty
+    assert rolling.mean() == pytest.approx(expected_simple_quarterly_return, abs=1e-4)
+    assert rolling.mean() < annual_rate / 2  # sanity check it's nowhere near the annualized rate
+
+
 def test_rolling_returns_empty_when_history_shorter_than_window():
     dates = pd.date_range("2024-01-01", periods=100, freq="D")
     nav = pd.Series([100.0] * 100, index=dates)

@@ -40,6 +40,11 @@ class FundDetail(FundSummary):
     variants: list[VariantSummary]
 
 
+class FundListResponse(BaseModel):
+    items: list[FundSummary]
+    has_more: bool = Field(..., description="True if more funds exist past this page's offset+limit")
+
+
 class ReturnWindow(BaseModel):
     available: bool
     cagr_pct: float | None
@@ -95,6 +100,28 @@ class RollingReturnsResponse(BaseModel):
     reason: str | None
     distribution: RollingReturnDistribution
     benchmark_consistency: BenchmarkConsistency | None
+    disclaimer: str = DISCLAIMER
+
+
+class RollingReturnPoint(BaseModel):
+    date: date
+    return_pct: float = Field(
+        ..., description="Rolling return ending on this date — annualized for 1y windows, simple/non-annualized below"
+    )
+
+
+class RollingReturnSeriesResponse(BaseModel):
+    """A plottable rolling-return time series (bar chart), distinct from
+    RollingReturnsResponse's distribution summary — see
+    fund_analytics_service.compute_rolling_return_series."""
+
+    window: str = Field(..., description="Rolling window length: 1m, 3m, 6m, or 1y")
+    lookback: str = Field(..., description="How far back the series is trimmed: 1y, 3y, 5y, or 10y")
+    window_years: float
+    annualized: bool = Field(..., description="True for the 1y window (CAGR); sub-annual windows are simple returns")
+    available: bool
+    reason: str | None
+    points: list[RollingReturnPoint]
     disclaimer: str = DISCLAIMER
 
 
