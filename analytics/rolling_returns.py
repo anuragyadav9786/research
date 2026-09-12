@@ -10,14 +10,20 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from analytics.returns import cagr
+from analytics.returns import cagr, simple_return
 
 
 def rolling_returns(nav: pd.Series, window_years: float, step_days: int = 1) -> pd.Series:
-    """Rolling CAGR series.
+    """Rolling return series.
 
     Formula: for each start date t with an end date t + window_years in the
-    series, CAGR(nav[t], nav[t + window], window_years).
+    series, the return from nav[t] to nav[t + window] — annualized (CAGR)
+    for windows of a year or longer, a plain point-to-point return
+    (`simple_return`) for anything shorter. This mirrors `simple_return`'s
+    own documented convention (see analytics/returns.py): annualizing a
+    sub-year window amplifies noise into misleading figures, so e.g. a
+    "1-month rolling return" series reports the actual month-over-month
+    return, not that return compounded out to a yearly rate.
 
     Input: a NAV series indexed by date (assumed sorted, deduplicated —
     callers are responsible for passing already-validated NAV history).
@@ -56,7 +62,10 @@ def rolling_returns(nav: pd.Series, window_years: float, step_days: int = 1) -> 
         actual_years = (pd.Timestamp(end_date) - pd.Timestamp(start_date)).days / 365.25
         if actual_years <= 0:
             continue
-        results[pd.Timestamp(start_date)] = cagr(nav_start, nav_end, actual_years)
+        if window_years < 1:
+            results[pd.Timestamp(start_date)] = simple_return(nav_start, nav_end)
+        else:
+            results[pd.Timestamp(start_date)] = cagr(nav_start, nav_end, actual_years)
 
     return pd.Series(results, dtype=float).sort_index()
 

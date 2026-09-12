@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { ApiError, getFundOverlap, listFunds } from "@/lib/api";
+import { ApiError, getFundOverlap, listAllFunds } from "@/lib/api";
 import { formatDate, formatNumber } from "@/lib/format";
 
 const OVERLAP_LABELS: Record<string, string> = {
@@ -17,7 +17,7 @@ export default async function CompareFundsPage({
   searchParams: Promise<{ a?: string; b?: string }>;
 }) {
   const { a, b } = await searchParams;
-  const funds = await listFunds();
+  const funds = await listAllFunds();
 
   const fundIdA = a ? Number(a) : undefined;
   const fundIdB = b ? Number(b) : undefined;

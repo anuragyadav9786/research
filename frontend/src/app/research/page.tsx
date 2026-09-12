@@ -4,13 +4,32 @@ import { listFunds } from "@/lib/api";
 
 export const metadata = { title: "Research — ThinkFin" };
 
+const PAGE_SIZE = 50;
+
 export default async function ResearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; category?: string; amc?: string }>;
+  searchParams: Promise<{ search?: string; category?: string; amc?: string; page?: string }>;
 }) {
-  const { search, category, amc } = await searchParams;
-  const funds = await listFunds({ search, category, amc });
+  const { search, category, amc, page: pageParam } = await searchParams;
+  const page = Math.max(1, Number(pageParam) || 1);
+  const { items: funds, has_more: hasMore } = await listFunds({
+    search,
+    category,
+    amc,
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+  });
+
+  function pageUrlFor(targetPage: number) {
+    const qs = new URLSearchParams();
+    if (search) qs.set("search", search);
+    if (category) qs.set("category", category);
+    if (amc) qs.set("amc", amc);
+    if (targetPage > 1) qs.set("page", String(targetPage));
+    const query = qs.toString();
+    return query ? `/research?${query}` : "/research";
+  }
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
@@ -30,9 +49,12 @@ export default async function ResearchPage({
       <main className="px-8 py-10 max-w-5xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-semibold">Fund Research</h1>
-          <p className="text-neutral-400 text-sm mt-1">
-            {funds.length} fund{funds.length === 1 ? "" : "s"} covered in the current dataset.
-          </p>
+          {funds.length > 0 && (
+            <p className="text-neutral-400 text-sm mt-1">
+              Showing {funds.length} fund{funds.length === 1 ? "" : "s"}
+              {page > 1 ? ` — page ${page}` : ""}.
+            </p>
+          )}
         </div>
 
         <form method="get" className="flex flex-wrap gap-3">
@@ -87,6 +109,29 @@ export default async function ResearchPage({
                 </div>
               </Link>
             ))}
+          </div>
+        )}
+
+        {(page > 1 || hasMore) && (
+          <div className="flex items-center justify-between pt-2">
+            {page > 1 ? (
+              <Link
+                href={pageUrlFor(page - 1)}
+                className="rounded-md border border-neutral-800 px-4 py-2 text-sm text-neutral-300 hover:border-neutral-700 hover:text-neutral-100"
+              >
+                ← Previous
+              </Link>
+            ) : (
+              <span />
+            )}
+            {hasMore && (
+              <Link
+                href={pageUrlFor(page + 1)}
+                className="rounded-md border border-neutral-800 px-4 py-2 text-sm text-neutral-300 hover:border-neutral-700 hover:text-neutral-100"
+              >
+                Next →
+              </Link>
+            )}
           </div>
         )}
       </main>

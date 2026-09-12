@@ -29,6 +29,17 @@ from analytics.rolling_returns import benchmark_consistency, rolling_return_dist
 RETURN_WINDOWS_YEARS = {"1y": 1, "3y": 3, "5y": 5, "7y": 7, "10y": 10}
 MIN_OBSERVATIONS_FOR_RISK = 2
 
+# Rolling-return bar chart (see compute_rolling_return_series): two
+# independent axes, matching the request in plain terms — "3-month rolling
+# return, plotted over the last 1 year" — rather than one flat list of
+# window choices.
+ROLLING_SERIES_WINDOWS_YEARS = {"1m": 1 / 12, "3m": 0.25, "6m": 0.5, "1y": 1.0}
+ROLLING_SERIES_LOOKBACK_YEARS = {"1y": 1, "3y": 3, "5y": 5, "10y": 10}
+# A bar per NAV date over a 10-year lookback would be thousands of
+# illegible slivers — cap and evenly downsample, the same
+# every-Nth-point approach NavChart.tsx already uses for its line chart.
+MAX_ROLLING_SERIES_POINTS = 60
+
 
 def series_to_points(series: pd.Series) -> list[dict]:
     """Serialize a date-indexed NAV/benchmark series for the raw
@@ -176,6 +187,60 @@ def compute_rolling_returns(nav: pd.Series, benchmark: pd.Series | None, window_
         "reason": None if not roll.empty else "insufficient_history",
         "distribution": distribution,
         "benchmark_consistency": consistency,
+    }
+
+
+def compute_rolling_return_series(nav: pd.Series, window: str, lookback: str) -> dict:
+    """A plottable time series for the rolling-return bar chart: one point
+    per (downsampled) start date, each the rolling return for `window`
+    ending on that date. Unlike `compute_rolling_returns`, this returns the
+    actual series, not a distribution summary.
+
+    `window` selects the rolling window length (1m/3m/6m/1y — sub-annual
+    windows report a non-annualized simple return, see
+    analytics/rolling_returns.py); `lookback` trims that series down to
+    only the most recent 1/3/5/10 years' worth of start dates, so a fund
+    with more history than the chosen lookback doesn't dump years of
+    now-irrelevant bars into the chart.
+
+    `available: False` means there isn't enough NAV history for even one
+    `window`-length rolling return yet — not that the lookback trimmed
+    everything away (a fund with less history than the lookback still
+    returns whatever points it has, covering its actual available span).
+    """
+    window_years = ROLLING_SERIES_WINDOWS_YEARS[window]
+    lookback_years = ROLLING_SERIES_LOOKBACK_YEARS[lookback]
+
+    roll = rolling_returns(nav, window_years)
+    if roll.empty:
+        return {
+            "window": window,
+            "lookback": lookback,
+            "window_years": window_years,
+            "annualized": window_years >= 1,
+            "available": False,
+            "reason": "insufficient_history",
+            "points": [],
+        }
+
+    cutoff = roll.index[-1] - pd.Timedelta(days=round(lookback_years * 365.25))
+    windowed = roll.loc[roll.index >= cutoff]
+
+    # Ceiling division so the sampled count never exceeds the cap (floor
+    # division under-steps whenever len(windowed) isn't an exact multiple
+    # of MAX_ROLLING_SERIES_POINTS, e.g. 395 points // 60 = 6, but
+    # iloc[::6] still yields 66 — one step too dense).
+    step = max(1, -(-len(windowed) // MAX_ROLLING_SERIES_POINTS))
+    sampled = windowed.iloc[::step]
+
+    return {
+        "window": window,
+        "lookback": lookback,
+        "window_years": window_years,
+        "annualized": window_years >= 1,
+        "available": True,
+        "reason": None,
+        "points": [{"date": _to_date(idx), "return_pct": round(float(v) * 100, 4)} for idx, v in sampled.items()],
     }
 
 

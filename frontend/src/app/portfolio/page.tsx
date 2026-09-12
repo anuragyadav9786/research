@@ -1,12 +1,12 @@
 import Link from "next/link";
 
-import { listFunds } from "@/lib/api";
+import { listAllFunds } from "@/lib/api";
 import { PortfolioAnalysisForm } from "@/components/portfolio/PortfolioAnalysisForm";
 
 export const metadata = { title: "Portfolio Analysis — ThinkFin" };
 
 export default async function PortfolioAnalysisPage() {
-  const funds = await listFunds();
+  const funds = await listAllFunds();
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">

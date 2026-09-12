@@ -6,15 +6,17 @@ benchmark_history via app/services/fund_analytics_service.py, which wraps
 the deterministic analytics/ engine — this endpoint layer contains no
 financial arithmetic of its own.
 
-Known limitation (documented, not hidden): metrics are computed live on
-every request rather than precomputed into fund_metrics/analytics_runs
-(Section 31's "precompute, don't recompute" guidance). For the current
-data volumes (a handful of sample schemes) this is fast enough; wiring up
-precomputation is a follow-up once real ingestion brings in the full fund
-universe.
+/risk is the one exception: it first checks for a precomputed row set in
+fund_metrics (data_pipeline/orchestration/precompute_metrics.py runs
+nightly) and only falls back to a live computation on a cache miss. That
+module's docstring explains why /returns and /drawdown still stay live —
+their response shapes (per-window availability/dates; drawdown's own date
+and boolean fields) don't fit fund_metrics' flat, numeric-only rows
+without lossy encoding, whereas /risk's shape does, losslessly.
 """
 from __future__ import annotations
 
+from datetime import date as _date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -27,14 +29,17 @@ from app.core.database import get_db
 from app.models.reference import Scheme, SchemeVariant
 from app.repositories import fund_repository, market_regime_repository, portfolio_repository
 from data_pipeline.orchestration.lazy_nav_backfill import ensure_nav_history
+from data_pipeline.orchestration.precompute_metrics import RISK_OPTIONAL_FIELDS, RISK_REQUIRED_FIELDS
 from app.schemas.funds import (
     DrawdownResponse,
     FundDetail,
+    FundListResponse,
     FundSummary,
     IntelligenceResponse,
     NavHistoryResponse,
     ReturnsResponse,
     RiskResponse,
+    RollingReturnSeriesResponse,
     RollingReturnsResponse,
     VariantSummary,
 )
@@ -115,15 +120,70 @@ def _benchmark_series(db: Session, scheme: Scheme):
     return fund_repository.get_benchmark_series(db, scheme.benchmark_id)
 
 
-@router.get("", response_model=list[FundSummary])
+def _risk_from_cache(db: Session, variant: SchemeVariant) -> dict | None:
+    """Today's precomputed risk metrics for `variant`, reconstructed into
+    the exact shape compute_risk returns — without touching raw
+    nav_history at all. None on a cache miss (not yet precomputed today,
+    or risk genuinely unavailable for this fund), in which case the
+    caller falls back to a live computation exactly as before."""
+    cached = fund_repository.get_cached_metrics(
+        db, variant.id, RISK_REQUIRED_FIELDS + RISK_OPTIONAL_FIELDS, _date.today(), get_settings().analytics_version
+    )
+    if not all(field in cached for field in RISK_REQUIRED_FIELDS):
+        return None
+    return {
+        "available": True,
+        "reason": None,
+        "observations_used": int(cached["observations_used"]),
+        "risk_free_rate_pct": round(get_settings().risk_free_rate * 100, 4),
+        "volatility_pct": cached["volatility_pct"],
+        "downside_deviation_pct": cached["downside_deviation_pct"],
+        "sharpe_ratio": cached.get("sharpe_ratio"),
+        "sortino_ratio": cached.get("sortino_ratio"),
+        "upside_capture_pct": cached.get("upside_capture_pct"),
+        "downside_capture_pct": cached.get("downside_capture_pct"),
+        "beta": cached.get("beta"),
+        "jensen_alpha_pct": cached.get("jensen_alpha_pct"),
+    }
+
+
+@router.get("", response_model=FundListResponse)
 def list_funds(
-    search: str | None = Query(None, description="Case-insensitive substring match on scheme name"),
+    search: str | None = Query(
+        None, description="Scheme name search — substring match, tolerant of minor typos"
+    ),
+    category: str | None = Query(None, description="Exact category match, e.g. 'Equity - Large Cap'"),
+    amc: str | None = Query(None, description="Case-insensitive substring match on AMC name"),
+    limit: int = Query(
+        50, gt=0, le=2000,
+        description="Max funds to return. The 2000 ceiling covers 'give me every fund' "
+        "callers (a plan/option selector, say) as well as paged browsing.",
+    ),
+    offset: int = Query(0, ge=0, description="Number of funds to skip, for paging"),
+    db: Session = Depends(get_db),
+) -> dict:
+    # One extra row past `limit` (never returned to the caller) reveals
+    # whether a next page exists, without a separate COUNT(*) query over
+    # what's now a 1,800+ row table.
+    schemes = fund_repository.list_schemes(
+        db, search=search, category=category, amc_name=amc, limit=limit + 1, offset=offset
+    )
+    has_more = len(schemes) > limit
+    return {"items": [_fund_summary(s) for s in schemes[:limit]], "has_more": has_more}
+
+
+@router.get("/count")
+def count_funds(
+    search: str | None = Query(
+        None, description="Scheme name search — substring match, tolerant of minor typos"
+    ),
     category: str | None = Query(None, description="Exact category match, e.g. 'Equity - Large Cap'"),
     amc: str | None = Query(None, description="Case-insensitive substring match on AMC name"),
     db: Session = Depends(get_db),
-) -> list[FundSummary]:
-    schemes = fund_repository.list_schemes(db, search=search, category=category, amc_name=amc)
-    return [_fund_summary(s) for s in schemes]
+) -> dict:
+    """A lightweight total count — e.g. the dashboard's "Funds Covered"
+    tile — without downloading every fund just to read len(list)."""
+    return {"count": fund_repository.count_schemes(db, search=search, category=category, amc_name=amc)}
 
 
 @router.get("/{fund_id}", response_model=FundDetail)
@@ -173,6 +233,11 @@ def get_fund_risk(
 ) -> dict:
     scheme = _resolve_scheme(db, fund_id)
     variant = _resolve_variant(db, scheme, plan, option)
+
+    cached = _risk_from_cache(db, variant)
+    if cached is not None:
+        return cached
+
     nav = fund_repository.get_nav_series(db, variant.id)
     benchmark = _benchmark_series(db, scheme)
     risk_free_rate = get_settings().risk_free_rate
@@ -192,6 +257,25 @@ def get_fund_rolling_returns(
     nav = fund_repository.get_nav_series(db, variant.id)
     benchmark = _benchmark_series(db, scheme)
     return fund_analytics_service.compute_rolling_returns(nav, benchmark, window_years)
+
+
+@router.get("/{fund_id}/rolling-returns-series", response_model=RollingReturnSeriesResponse)
+def get_fund_rolling_returns_series(
+    fund_id: int,
+    plan: Literal["direct", "regular"] = "direct",
+    option: Literal["growth", "idcw"] = "growth",
+    window: Literal["1m", "3m", "6m", "1y"] = Query("3m", description="Rolling window length"),
+    lookback: Literal["1y", "3y", "5y", "10y"] = Query("1y", description="How far back the chart goes"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Plottable rolling-return series for the bar chart — see
+    RollingReturnSeriesResponse and compute_rolling_return_series. Distinct
+    from /rolling-returns, which reports a distribution summary rather than
+    a time series."""
+    scheme = _resolve_scheme(db, fund_id)
+    variant = _resolve_variant(db, scheme, plan, option)
+    nav = fund_repository.get_nav_series(db, variant.id)
+    return fund_analytics_service.compute_rolling_return_series(nav, window, lookback)
 
 
 @router.get("/{fund_id}/drawdown", response_model=DrawdownResponse)

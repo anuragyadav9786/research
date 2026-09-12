@@ -31,6 +31,7 @@ def variant(db):
     v = db.query(SchemeVariant).filter(SchemeVariant.amfi_code.isnot(None)).first()
     assert v is not None, "requires Phase 2 seed data to be loaded"
     original_backfilled_at = v.nav_history_backfilled_at
+    original_amfi_code = v.amfi_code  # one test below sets this to None — must be restored, not just reset in memory
     v.nav_history_backfilled_at = None
     db.commit()
     yield v
@@ -38,6 +39,7 @@ def variant(db):
         NavHistory.scheme_variant_id == v.id, NavHistory.date.in_(FIXTURE_DATES)
     ).delete(synchronize_session=False)
     v.nav_history_backfilled_at = original_backfilled_at
+    v.amfi_code = original_amfi_code
     db.commit()
 
 
