@@ -15,9 +15,16 @@ Our schema also wants a FundFamily beneath the AMC (Section 16-17), so
 FundFamily here is created with the same name as its AMC rather than an
 invented sub-grouping the source data doesn't provide.
 
+Also deliberately growth-only: an IDCW (dividend) option is recognized
+here (see scheme_identity.py's parse_option) specifically so it can be
+skipped, not onboarded — this platform's users research and invest in
+growth-option funds only, so there is no reason to carry IDCW variants'
+identity or NAV history at all.
+
 Records skipped here (unparseable plan/option — most ETFs and Bonus-option
-variants among them, or a missing/unrecognized category) are reported back
-so the caller can log *why*, never silently dropped.
+variants among them; a recognized-but-unwanted IDCW option; or a missing/
+unrecognized category) are reported back so the caller can log *why*,
+never silently dropped.
 
 Performance note: this batches new-row creation per level (AMC, then
 FundFamily, then Scheme, then SchemeVariant) via a single multi-row
@@ -110,6 +117,14 @@ def _classify(raw_records: list[RawNavRecord], known_amfi_codes: set[str], known
             result.skipped.append(
                 SkippedScheme(rec.scheme_code, rec.scheme_name, f"could not determine option from {rec.option_raw!r}")
             )
+            continue
+
+        if option == "idcw":
+            # This platform only tracks growth-option variants — IDCW
+            # (dividend) plans are deliberately never onboarded, not just
+            # hidden after the fact, so nav_history never accumulates data
+            # for them in the first place.
+            result.skipped.append(SkippedScheme(rec.scheme_code, rec.scheme_name, "idcw_option_not_tracked"))
             continue
 
         if rec.scheme_code in seen_scheme_codes:
