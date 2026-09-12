@@ -33,6 +33,7 @@ doesn't have returns `404`, not a fabricated/substituted result.
 | `GET /api/funds/{fund_id}/market-regimes` | Market-Cycle Behaviour (Phase 10): fund vs. benchmark return, volatility and max drawdown within each defined market regime, plus a deterministic outperform/underperform summary per regime. |
 | `GET /api/market/regimes` | Plain reference list of all defined market regimes (name, type, date range) — no fund attached. |
 | `GET /api/funds/{fund_id}/stress-test` | Stress-Test Engine (Phase 11): hypothetical scenario impact estimates. 3 of 7 spec scenarios are computed (broad market via beta, midcap/sector via disclosed exposure); the other 4 (rates, recession, INR, inflation) are explicitly marked `available: false` — no fabricated sensitivities for data this platform doesn't have. |
+| `GET /api/funds/{fund_id}/ai-summary` | AI Explanation Layer (Phase 12): a human-readable summary generated from the same figures the other endpoints above already computed. The AI performs no calculation and every number it writes is verified against those figures before being returned — see below. |
 
 Interactive docs: `http://localhost:8000/docs` (Swagger UI, auto-generated
 from the same Pydantic schemas).
@@ -55,6 +56,62 @@ Everything the response reports is built by combining existing per-fund
 analytics (Phase 7's concentration/allocation, Phase 8's overlap, Phase
 4's risk/drawdown) via `analytics/portfolio.py`'s weight-combination
 formulas — no new ad hoc "portfolio risk" calculation exists.
+
+### `GET /api/funds/{fund_id}/ai-summary`
+
+Architecture (Section 24):
+
+```
+Existing analytics endpoints (returns, risk, drawdown, rolling,
+market-regimes, portfolio) — already computed, already tested
+        |
+        v
+build_fund_facts() — a small, flat, named dict of just the figures
+above (app/services/ai_explanation_service.py)
+        |
+        v
+One LLM call, given ONLY that dict, instructed to use only those numbers
+        |
+        v
+validate_no_fabricated_numbers() — every number in the AI's text must be
+traceable (within rounding tolerance) to a number in the facts dict, or
+the response is discarded — never shown unverified
+        |
+        v
+{"available": true, "summary": "...", "facts_used": {...}}
+```
+
+**The AI never computes a financial number.** It's given the same figures
+every other endpoint above already produced and tested, and its only job
+is to describe them in plain language. `facts_used` is always returned
+alongside the summary (or instead of one, if generation failed) so the
+claim "every number is traceable" is checkable, not just asserted.
+
+**Response when working**: `{"available": true, "summary": "...",
+"facts_used": {...}, "ai_disclaimer": "...", "disclaimer": "..."}`.
+
+**Response when the AI service isn't configured** (no `ANTHROPIC_API_KEY`
+— the expected state in this dev environment, see Known limitations
+below): `{"available": false, "reason": "AI explanation layer is not
+configured...", "summary": null, "facts_used": {...}}` — `facts_used` is
+still populated from real computed analytics even when no summary could
+be generated, so the endpoint is useful for inspecting what data the AI
+*would* see.
+
+**Response when the model's output fails the fabrication check**: same
+shape, `reason` names the specific unmatched number(s). This is treated
+as a bug in that one generation, not a reason to relax the check — the
+unverified text is discarded, never shown.
+
+**Known limitation**: this sandboxed dev environment has outbound network
+access to `api.anthropic.com` (confirmed reachable — a deliberately
+invalid key correctly returns HTTP 401, not a connection failure) but no
+`ANTHROPIC_API_KEY` is provisioned for the application to use. The
+guardrail, facts-building, and orchestration are fully tested with the
+LLM call mocked (`backend/tests/unit/test_ai_explanation_service.py`,
+`backend/tests/api/test_ai_summary.py`); the live "available: true" path
+has not been exercised end-to-end against the real API. Set
+`ANTHROPIC_API_KEY` in `.env` to enable it — no code changes needed.
 
 ## Design decisions worth knowing
 
@@ -107,17 +164,21 @@ formulas — no new ad hoc "portfolio risk" calculation exists.
 ## Testing
 
 `backend/tests/api/test_funds.py`, `test_portfolio.py`, `test_overlap.py`,
-`test_portfolio_analysis.py`, `test_market_regime.py` and
-`test_stress_test.py` run all of the above against the real Phase 2 seed
-data (no mocking) via FastAPI's `TestClient`: fund listing/search,
-full-detail variant listings, each analytics endpoint's happy path, the
-explicit insufficient-history path (10-year window against ~4 years of
-seed history), top-holdings/HHI/allocation correctness (including the
-bonds' "unclassified" case), pairwise overlap correctness and symmetry,
+`test_portfolio_analysis.py`, `test_market_regime.py`, `test_stress_test.py`
+and `test_ai_summary.py` run all of the above against the real Phase 2
+seed data via FastAPI's `TestClient`: fund listing/search, full-detail
+variant listings, each analytics endpoint's happy path, the explicit
+insufficient-history path (10-year window against ~4 years of seed
+history), top-holdings/HHI/allocation correctness (including the bonds'
+"unclassified" case), pairwise overlap correctness and symmetry,
 multi-fund combination correctness (hand-verified effective weights for a
 3-fund mix, allocation reconciliation), per-regime behaviour correctness
 (excess return reconciliation, summary text matching the sign of over/
 underperformance), stress-scenario correctness (index/exposure impact
 formulas reconciled against beta and disclosed allocation, all four macro
-scenarios confirmed explicitly unavailable), and 404/422/400 error
-handling.
+scenarios confirmed explicitly unavailable), the AI layer's "not
+configured" path (live, no mocking needed) and its "available"/"discarded
+fabrication" paths (LLM call mocked), and 404/422/400 error handling.
+`backend/tests/unit/test_ai_explanation_service.py` unit-tests the
+fabrication guardrail itself in isolation (number extraction, rounding
+tolerance, exact and fabricated-number cases).

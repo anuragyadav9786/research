@@ -37,11 +37,13 @@ from app.schemas.funds import (
     RollingReturnsResponse,
     VariantSummary,
 )
+from app.schemas.ai_explanation import AISummaryResponse
 from app.schemas.market_regime import MarketRegimeBehaviorResponse
 from app.schemas.overlap import OverlapResponse
 from app.schemas.portfolio import PortfolioResponse
 from app.schemas.stress_test import StressTestResponse
 from app.services import (
+    ai_explanation_service,
     fund_analytics_service,
     market_regime_service,
     overlap_service,
@@ -258,6 +260,50 @@ def get_fund_stress_test(
         "fund_beta": round(fund_beta, 4) if fund_beta is not None else None,
         "scenarios": scenarios,
     }
+
+
+@router.get("/{fund_id}/ai-summary", response_model=AISummaryResponse)
+def get_fund_ai_summary(
+    fund_id: int,
+    plan: Literal["direct", "regular"] = "direct",
+    option: Literal["growth", "idcw"] = "growth",
+    db: Session = Depends(get_db),
+) -> dict:
+    """AI Explanation Layer (Phase 12). The AI computes nothing — it only
+    ever sees the `facts_used` dict below (built entirely from the other
+    already-computed, already-tested endpoints on this router) and every
+    number in its output is verified against those same facts before
+    being returned. See ai_explanation_service.py's module docstring."""
+    scheme = _resolve_scheme(db, fund_id)
+    variant = _resolve_variant(db, scheme, plan, option)
+    nav = fund_repository.get_nav_series(db, variant.id)
+    benchmark = _benchmark_series(db, scheme)
+    risk_free_rate = get_settings().risk_free_rate
+
+    returns = fund_analytics_service.compute_returns(nav)
+    risk = fund_analytics_service.compute_risk(nav, benchmark, risk_free_rate)
+    drawdown = fund_analytics_service.compute_drawdown(nav)
+    rolling = fund_analytics_service.compute_rolling_returns(nav, benchmark, 3.0)
+
+    regimes = market_regime_repository.list_regimes(db)
+    regime_behavior = market_regime_service.compute_regime_behavior(nav, benchmark, regimes) if regimes else None
+
+    holdings, _ = _get_latest_holdings(db, scheme.id)
+    portfolio_dna = portfolio_intelligence_service.compute_portfolio_dna(holdings) if holdings else None
+
+    facts = ai_explanation_service.build_fund_facts(
+        fund_name=scheme.name,
+        category=scheme.category,
+        amc_name=scheme.fund_family.amc.name,
+        benchmark_name=scheme.benchmark.name if scheme.benchmark else None,
+        returns=returns,
+        risk=risk,
+        drawdown=drawdown,
+        rolling=rolling,
+        regime_behavior=regime_behavior,
+        portfolio_dna=portfolio_dna,
+    )
+    return ai_explanation_service.generate_fund_summary(facts)
 
 
 @router.get("/{fund_id}/portfolio", response_model=PortfolioResponse)

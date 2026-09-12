@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     # Documented assumption — see analytics/risk.py for methodology notes.
     risk_free_rate: float = 0.07
 
+    # AI Explanation Layer (Phase 12) — reads only precomputed structured
+    # facts, never computes a number itself (Rule 4). None by default: the
+    # feature is architecturally complete but not enabled without a real
+    # key. See docs/api.md for what "not configured" looks like at the API.
+    anthropic_api_key: str | None = None
+    ai_explanation_model: str = "claude-sonnet-5"
+
 
 @lru_cache
 def get_settings() -> Settings:
