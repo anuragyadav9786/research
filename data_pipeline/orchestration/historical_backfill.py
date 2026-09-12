@@ -110,6 +110,7 @@ def run_historical_backfill(
         except NavFetchError as exc:
             chunk_result.error = str(exc)
             result.chunks.append(chunk_result)
+            print(f"  [{index + 1}/{len(chunk_ranges)}] {frmdt} to {todt}: FAILED: {exc}", flush=True)
             if index < len(chunk_ranges) - 1:
                 time.sleep(request_delay_seconds)
             continue
@@ -126,6 +127,17 @@ def run_historical_backfill(
         chunk_result.rejected = len(validation.rejected) + len(mapping.unmatched)
         chunk_result.inserted = inserted
         result.chunks.append(chunk_result)
+
+        # Printed as each chunk finishes, not just in the caller's final
+        # summary — a multi-year backfill can run for tens of minutes, and
+        # a mid-run failure (see write_nav_records' batching note above for
+        # a real example) should leave visible progress up to that point,
+        # not only a traceback with no context for how far it got.
+        print(
+            f"  [{index + 1}/{len(chunk_ranges)}] {frmdt} to {todt}: downloaded={chunk_result.downloaded} "
+            f"accepted={chunk_result.accepted} rejected={chunk_result.rejected} inserted={chunk_result.inserted}",
+            flush=True,
+        )
 
         if index < len(chunk_ranges) - 1:
             time.sleep(request_delay_seconds)
