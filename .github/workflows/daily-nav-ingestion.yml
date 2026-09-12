@@ -24,10 +24,6 @@ on:
         description: "Print a raw sample of the fetched AMFI file and exit, without touching the database"
         type: boolean
         default: false
-      debug_mfapi_sample:
-        description: "Fetch one real onboarded scheme's history from api.mfapi.in and print its raw JSON shape, without writing to the database"
-        type: boolean
-        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -72,42 +68,11 @@ jobs:
               print(repr(line))
           "
 
-      - name: Debug — print raw api.mfapi.in response shape for one real scheme (no DB writes)
-        if: ${{ inputs.debug_mfapi_sample == true }}
-        run: |
-          python -c "
-          import json
-          import httpx
-          import sys, os
-          sys.path.insert(0, os.path.join(os.getcwd(), 'backend'))
-          from app.core.database import SessionLocal
-          from app.models.reference import SchemeVariant
-
-          db = SessionLocal()
-          variant = db.query(SchemeVariant).filter(SchemeVariant.amfi_code.isnot(None)).first()
-          db.close()
-          if variant is None:
-              print('No onboarded scheme_variant with an amfi_code found — run daily ingestion first.')
-              raise SystemExit(1)
-
-          code = variant.amfi_code
-          print(f'Using real onboarded amfi_code={code!r}')
-          resp = httpx.get(f'https://api.mfapi.in/mf/{code}', timeout=30.0)
-          print(f'HTTP {resp.status_code}')
-          body = resp.json()
-          print('top-level keys:', list(body.keys()))
-          print('meta:', json.dumps(body.get('meta'), indent=2))
-          data = body.get('data', [])
-          print(f'data length: {len(data)}')
-          print('first 5 entries:', json.dumps(data[:5], indent=2))
-          print('last 5 entries:', json.dumps(data[-5:], indent=2))
-          "
-
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_mfapi_sample != true }}
+        if: ${{ inputs.debug_sample != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_mfapi_sample != true }}
+        if: ${{ inputs.debug_sample != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline

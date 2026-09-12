@@ -26,6 +26,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.reference import Scheme, SchemeVariant
 from app.repositories import fund_repository, market_regime_repository, portfolio_repository
+from data_pipeline.orchestration.lazy_nav_backfill import ensure_nav_history
 from app.schemas.funds import (
     DrawdownResponse,
     FundDetail,
@@ -99,6 +100,12 @@ def _resolve_variant(db: Session, scheme: Scheme, plan: str, option: str) -> Sch
             status_code=404,
             detail=f"Fund {scheme.id} has no {plan}/{option} variant",
         )
+    # First-view lazy backfill (Phase 15): fetches this variant's full NAV
+    # history from mfapi.in the first time it's ever requested, then
+    # persists it — every request after that is a no-op here. Never raises:
+    # a failed attempt still lets the page render with whatever NAV history
+    # already exists, and simply retries on the next view.
+    ensure_nav_history(db, variant)
     return variant
 
 

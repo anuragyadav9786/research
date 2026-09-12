@@ -2,6 +2,8 @@
 ingestion pipeline that touches the database for writes."""
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -33,28 +35,15 @@ def get_or_create_data_source(db: Session, name: str, url: str, source_type: str
 _INSERT_BATCH_SIZE = 5000
 
 
-def write_nav_records(db: Session, source: DataSource, mapped: list[MappedNavRecord]) -> int:
-    """Upsert NAV rows, keyed on (scheme_variant_id, date).
-
-    Uses INSERT ... ON CONFLICT DO NOTHING against the existing
-    uq_nav_variant_date constraint, so re-running ingestion for a date
-    already stored is a safe no-op rather than a unique-constraint error —
-    daily ingestion runs are expected to be re-run/retried.
-
+def _insert_nav_rows(db: Session, rows: list[dict]) -> int:
+    """Shared batched-upsert core behind write_nav_records and
+    write_nav_points. Uses INSERT ... ON CONFLICT DO NOTHING against the
+    existing uq_nav_variant_date constraint, so re-running for a date
+    already stored is a safe no-op rather than a unique-constraint error.
     Returns the number of rows actually inserted (conflicts don't count).
     """
-    if not mapped:
+    if not rows:
         return 0
-
-    rows = [
-        {
-            "scheme_variant_id": m.scheme_variant_id,
-            "date": m.record.nav_date,
-            "nav": m.record.nav,
-            "source_id": source.id,
-        }
-        for m in mapped
-    ]
 
     inserted = 0
     for i in range(0, len(rows), _INSERT_BATCH_SIZE):
@@ -64,3 +53,39 @@ def write_nav_records(db: Session, source: DataSource, mapped: list[MappedNavRec
         result = db.execute(stmt)
         inserted += result.rowcount or 0
     return inserted
+
+
+def write_nav_records(db: Session, source: DataSource, mapped: list[MappedNavRecord]) -> int:
+    """Upsert NAV rows for AMFI-file-sourced records (daily feed and bulk
+    historical backfill), keyed on (scheme_variant_id, date). See
+    _insert_nav_rows for the batching/upsert mechanics.
+    """
+    rows = [
+        {
+            "scheme_variant_id": m.scheme_variant_id,
+            "date": m.record.nav_date,
+            "nav": m.record.nav,
+            "source_id": source.id,
+        }
+        for m in mapped
+    ]
+    return _insert_nav_rows(db, rows)
+
+
+def write_nav_points(
+    db: Session, source: DataSource, scheme_variant_id: int, points: list[tuple[date, float]]
+) -> int:
+    """Upsert NAV rows for a single scheme_variant from a list of (date,
+    nav) points — the shape data_pipeline/orchestration/lazy_nav_backfill.py
+    (the mfapi.in-based on-demand per-scheme backfill) produces. Unlike
+    write_nav_records, the caller already knows exactly which
+    scheme_variant it's writing for, so there's no AMFI-shaped
+    ValidatedNavRecord/MappedNavRecord to unwrap — just the identity this
+    table actually stores. See _insert_nav_rows for the batching/upsert
+    mechanics.
+    """
+    rows = [
+        {"scheme_variant_id": scheme_variant_id, "date": d, "nav": nav, "source_id": source.id}
+        for d, nav in points
+    ]
+    return _insert_nav_rows(db, rows)
