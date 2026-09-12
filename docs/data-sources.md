@@ -97,82 +97,65 @@ diagnostics). As a result:
   fully done — e.g. `python -m data_pipeline.orchestration.daily_pipeline`
   from a normal developer machine or a CI runner with unrestricted egress.
 
-## 2b. AMFI historical NAV report (real source — backfill for returns analysis)
+## 2b. api.mfapi.in (real source — on-demand per-scheme NAV history)
 
-**Source**: Association of Mutual Funds in India,
-`https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx`
-**Source type**: `amfi` (see `data_sources` table, row name `"AMFI Historical
-NAV Report (backfill)"` — distinct from the live feed's `"AMFI
-NAVAll.txt"` row, so `nav_history.source_id` always shows which endpoint a
+**Source**: `https://api.mfapi.in/mf/{amfi_code}` — a third-party
+aggregator that republishes AMFI's own official NAV data, indexed for fast
+lookup of one scheme's full history by AMFI scheme code
+**Source type**: `mfapi` (see `data_sources` table, row name `"api.mfapi.in
+(on-demand per-scheme backfill)"` — distinct from the live feed's `"AMFI
+NAVAll.txt"` row, so `nav_history.source_id` always shows which source a
 given row came from)
-**Update cadence**: run manually/occasionally (`historical-nav-backfill.yml`,
-`workflow_dispatch` only — not scheduled), unlike the daily live feed
-**License / access**: publicly accessible, same as the live feed, no API
-key or registration
+**Update cadence**: on demand, once per scheme, the first time its
+research page is requested — not scheduled
+**License / access**: publicly accessible, no API key or registration
 
 **Why this exists**: the live NAVAll.txt feed only ever carries *today's*
-NAV — daily ingestion accumulates history one day at a time going forward,
-which isn't enough for annualized-return calculations (1Y/3Y/5Y) until
-that much time has actually passed. This endpoint accepts a `frmdt`/`todt`
-date range and returns every NAV published in it, letting existing history
-be backfilled instead of waited for.
+NAV, which isn't enough for annualized-return calculations (1Y/3Y/5Y)
+until that much time has actually passed. A first approach backfilled the
+*entire* fund universe's history in bulk from AMFI's own historical report
+endpoint (`portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx`, see git
+history for that pipeline before it was superseded) — that worked, but
+stored history for every onboarded scheme whether or not anyone ever
+researched it, a real cost on a free-tier Postgres instance (a single
+3-year backfill run inserted 408,738 rows). Since AMFI's own historical
+endpoint only accepts a date range and always returns the *whole*
+universe for it (no per-scheme filter), it can't be used for a narrower,
+on-demand fetch — mfapi.in can, since it indexes by scheme code directly.
 
-**Format**: semicolon-delimited, same alternating category/AMC-name
-section-header structure as the live feed, but a DIFFERENT column
-order — `Scheme Code;NAV Name;Plan;Option;ISIN Div Payout/ISIN
-Growth;ISIN Div Reinvestment;Net Asset Value;Date` — confirmed via a
-GitHub Actions debug run on 2026-09-12 (this sandbox cannot reach
-amfiindia.com directly; see `data_pipeline/sources/amfi/historical_parser.py`'s
-module docstring). "NAV Name" is a compound field (scheme name plus
-plan/option suffix folded in), unlike the live feed's clean "Scheme Name"
-column, and this file's own scheme_code repeats once per date in the
-requested range rather than once per file.
+**Format**: JSON, confirmed via a GitHub Actions debug run against a real
+onboarded scheme (this sandbox cannot reach external hosts directly; see
+`data_pipeline/sources/mfapi/client.py`'s module docstring for the full
+verified response). Top-level keys are `meta` (scheme identity),
+`data` (a list of `{"date": "DD-MM-YYYY", "nav": "123.45670"}`, newest
+first — note this date format is DD-MM-YYYY, DIFFERENT from AMFI's own
+endpoints' DD-Mon-YYYY), and `status`.
 
 **What this pipeline does with it** (see
-`data_pipeline/orchestration/historical_backfill.py`):
-1. The requested `[start, end]` range is split into whole-calendar-month
-   chunks. Sizing is based on real, measured AMFI response times: a
-   1-month request took ~14s/24MB, a 3-month request ~41s/74MB, and an
-   8-month single request reproducibly timed out server-side around 45s —
-   monthly chunks stay comfortably inside that envelope.
-2. Each chunk is fetched with an explicit `httpx.Timeout` (a plain float
-   passed to `httpx` only bounds the gap *between* received chunks, not
-   total request duration — this was discovered the hard way when an
-   early wide-range probe ran 9+ minutes before being cancelled) and a
-   courteous delay before the next chunk.
-3. `historical_parser.py` parses it into the same `RawNavRecord` shape the
-   live parser uses, leaving `category`/`amc_name` unset (not needed here).
-4. `validate_historical_records` (in `nav_validation.py`) applies the same
-   field/NAV/date checks as the live feed, but dedupes on
-   `(scheme_code, date)` rather than `scheme_code` alone, since a
-   multi-day range legitimately repeats the same scheme once per date.
-5. `scheme_mapping.py`'s existing `map_to_scheme_variants` matches each
-   accepted row by AMFI code, falling back to ISIN — **this backfill never
-   onboards new schemes** (unlike the live feed's daily pipeline), since
-   this endpoint's compound "NAV Name" is less precise identity than the
-   live feed's dedicated Plan/Option columns. A row here can only match a
-   scheme_variant already onboarded from a previous live-feed run.
-6. `database_writer.py`'s existing `write_nav_records` upserts into
-   `nav_history` exactly as the live feed does (`ON CONFLICT DO NOTHING`
-   on `(scheme_variant_id, date)`), so re-running an overlapping or
-   identical range is a safe no-op. This function batches its INSERT
-   statements at 5,000 rows each — a first real run against the live
-   Supabase database crashed mid-transfer ("SSL connection has been closed
-   unexpectedly") on a single month-chunk's ~45,000-row, 180,000+-parameter
-   INSERT covering the whole fund universe; the daily feed's one-row-per-
-   scheme volume never approached that, so the issue only surfaced here.
-7. Each month-chunk's outcome (downloaded/accepted/rejected/inserted, or
-   an error) is tracked independently, so one chunk failing doesn't lose
-   chunks already committed — a re-run of the same `--start`/`--end`
-   retries only what's actually missing.
+`data_pipeline/orchestration/lazy_nav_backfill.py`):
+1. Every fund-detail API call resolves a `scheme_variant`
+   (`app/api/funds.py`'s `_resolve_variant`), which calls
+   `ensure_nav_history` on it before returning.
+2. If `scheme_variants.nav_history_backfilled_at` is already set, this is
+   a no-op — no network call, just the existing fast local query.
+3. Otherwise, `mfapi/client.py` fetches that one scheme's full history by
+   its `amfi_code`, `mfapi/parser.py` parses each entry into a `(date,
+   nav)` point (skipping any unparseable date or non-positive NAV), and
+   `database_writer.py`'s `write_nav_points` upserts them into
+   `nav_history` (`ON CONFLICT DO NOTHING` on `(scheme_variant_id, date)`,
+   the same batched-insert mechanics `write_nav_records` uses for the
+   daily feed — see that function's docstring for why batching matters at
+   volume).
+4. `nav_history_backfilled_at` is set only on success, so a failed attempt
+   (network error, unknown scheme code) leaves it unset and simply retries
+   on the next view — it never raises and never blocks the page from
+   rendering with whatever NAV history already exists.
 
-**How to run it**: manually via the "Historical NAV Backfill" GitHub
-Actions workflow (`workflow_dispatch`, optional `start_date`/`end_date`
-inputs, `DD-Mon-YYYY`; defaults to the last 3 years through today), or
-locally with `python -m data_pipeline.orchestration.run_historical_backfill
---start 01-Jan-2023 --end 12-Sep-2026`. Run the live daily-ingestion
-workflow at least once first — this backfill has no schemes to match
-against otherwise.
+**Never onboards new schemes** — unlike the live feed's daily pipeline,
+this always starts from a `scheme_variant` the caller already resolved (the
+one whose page is being viewed), so there is no identity ambiguity to
+resolve here; a scheme must already be onboarded from the live feed before
+its history can be lazily backfilled.
 
 ## 3. Planned sources (not yet built)
 
@@ -181,4 +164,3 @@ against otherwise.
 | AMC factsheets (PDF, monthly) | Portfolio holdings | Not started — needs per-AMC parsing or manual entry; see `docs/BUILD_PLAN.md` open decision #2 |
 | NSE index data | Benchmark history | Not started — licensing/availability to confirm; open decision #3 |
 | RBI 91-day T-bill rate | Risk-free rate for Sharpe/Sortino | Not started — currently a manually configured placeholder (`Settings.risk_free_rate = 0.07`); open decision #4 |
-| mfapi.in | Alternative/backfill NAV source, per-scheme historical | Not started — also blocked by this sandbox's network policy during any future dev session here |

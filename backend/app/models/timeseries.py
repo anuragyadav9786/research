@@ -22,7 +22,7 @@ class DataSource(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     url: Mapped[str | None] = mapped_column(String(500))
-    source_type: Mapped[str] = mapped_column(String(50), nullable=False)  # amfi | amc | sebi | nse | rbi | manual
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)  # amfi | amc | sebi | nse | rbi | mfapi | manual
 
 
 class DataIngestionRun(Base):

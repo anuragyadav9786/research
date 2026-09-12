@@ -66,6 +66,12 @@ class SchemeVariant(Base):
     amfi_code: Mapped[str | None] = mapped_column(String(20), unique=True)
     isin: Mapped[str | None] = mapped_column(String(20), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Set once a full NAV history backfill (data_pipeline/orchestration/
+    # lazy_nav_backfill.py, via api.mfapi.in) has run for this variant, so
+    # repeat fund-page views don't re-fetch on every request. NULL means
+    # "not yet backfilled" — either brand new, or the daily feed's ongoing
+    # NAV points are all we have so far.
+    nav_history_backfilled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     scheme: Mapped["Scheme"] = relationship(back_populates="variants")
 
