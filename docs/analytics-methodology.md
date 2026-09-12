@@ -204,6 +204,37 @@ real markets then). Every regime-behaviour API response repeats this as
 `methodology_note`. Real regime classification, against real index data,
 is unbuilt — see `docs/data-sources.md`.
 
+## Stress testing (`analytics/stress_testing.py`)
+
+**Index shock**: `impact_pct = beta * shock_pct` — the standard first-order
+CAPM approximation (a fund with beta B moves ~B times its benchmark).
+Documented limitation: assumes the linear beta relationship, estimated
+from ordinary historical daily returns, continues to hold during an
+extreme, discontinuous move — real crises typically see both correlation
+and volatility rise beyond what calm-period beta predicts.
+
+**Exposure shock** (sector or market-cap): `impact_pct = (exposure_pct /
+100) * shock_pct` — the fund's estimated impact from a shock isolated to
+one segment it holds, assuming every other holding is unaffected.
+Documented limitation: no contagion/spillover modeled (e.g. a severe IT
+selloff dragging down broader sentiment isn't captured — only the fund's
+direct, disclosed exposure to IT itself is).
+
+**Configurable scenario table**: the 7 scenarios named in the product
+spec are defined as data (`SCENARIOS`), each tagged `shock_type`. Three
+map onto data this platform actually has and are computed
+(`broad_market_down_25`, `midcap_down_40`, `it_sector_down_30`); four
+(interest rates rising, recession, INR depreciation, inflation) are
+tagged `shock_type="unmodeled"` with an explicit reason, because
+estimating them honestly would need data this platform doesn't have yet —
+bond duration/rate-sensitivity, currency exposure, a macro factor model.
+**Inventing plausible-sounding sensitivity coefficients for those would
+violate Rule 2/4** (no fabricated financial figures); marking them
+unavailable is the documented-uncertainty alternative the project's own
+rules call for. Every stress-test API response carries this list of
+what's modeled and what isn't, never silently omitting the unmodeled
+scenarios.
+
 ## Testing approach
 
 Each module has a corresponding `backend/tests/analytics/test_*.py` file.

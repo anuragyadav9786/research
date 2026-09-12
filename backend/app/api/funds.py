@@ -20,6 +20,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from analytics.alpha_beta import beta as compute_beta
 from analytics.returns import returns_series
 from app.core.config import get_settings
 from app.core.database import get_db
@@ -39,7 +40,14 @@ from app.schemas.funds import (
 from app.schemas.market_regime import MarketRegimeBehaviorResponse
 from app.schemas.overlap import OverlapResponse
 from app.schemas.portfolio import PortfolioResponse
-from app.services import fund_analytics_service, market_regime_service, overlap_service, portfolio_intelligence_service
+from app.schemas.stress_test import StressTestResponse
+from app.services import (
+    fund_analytics_service,
+    market_regime_service,
+    overlap_service,
+    portfolio_intelligence_service,
+    stress_test_service,
+)
 
 router = APIRouter(prefix="/api/funds", tags=["funds"])
 
@@ -207,6 +215,49 @@ def get_fund_market_regimes(
     benchmark = _benchmark_series(db, scheme)
     regimes = market_regime_repository.list_regimes(db)
     return market_regime_service.compute_regime_behavior(nav, benchmark, regimes)
+
+
+@router.get("/{fund_id}/stress-test", response_model=StressTestResponse)
+def get_fund_stress_test(
+    fund_id: int,
+    plan: Literal["direct", "regular"] = "direct",
+    option: Literal["growth", "idcw"] = "growth",
+    db: Session = Depends(get_db),
+) -> dict:
+    """Hypothetical stress scenarios (Phase 11) — see
+    StressTestResponse.hypothetical_notice. Index-shock scenarios use beta
+    against this fund's own benchmark; sector/market-cap scenarios use
+    Phase 7's disclosed holdings exposure. Scenarios needing data this
+    platform doesn't have (rates, recession, currency, inflation) are
+    explicitly marked unavailable rather than estimated with invented
+    sensitivities."""
+    scheme = _resolve_scheme(db, fund_id)
+    variant = _resolve_variant(db, scheme, plan, option)
+    nav = fund_repository.get_nav_series(db, variant.id)
+    benchmark = _benchmark_series(db, scheme)
+
+    fund_beta = None
+    if benchmark is not None and not benchmark.empty:
+        fund_returns = returns_series(nav)
+        benchmark_returns = returns_series(benchmark)
+        try:
+            fund_beta = compute_beta(fund_returns, benchmark_returns)
+        except ValueError:
+            fund_beta = None
+
+    holdings, _ = _get_latest_holdings(db, scheme.id)
+    sector_allocation = None
+    market_cap_allocation = None
+    if holdings:
+        dna = portfolio_intelligence_service.compute_portfolio_dna(holdings)
+        sector_allocation = {s["label"]: s["weight_pct"] for s in dna["sector_allocation"]}
+        market_cap_allocation = {s["label"]: s["weight_pct"] for s in dna["market_cap_allocation"]}
+
+    scenarios = stress_test_service.run_stress_test(fund_beta, sector_allocation, market_cap_allocation)
+    return {
+        "fund_beta": round(fund_beta, 4) if fund_beta is not None else None,
+        "scenarios": scenarios,
+    }
 
 
 @router.get("/{fund_id}/portfolio", response_model=PortfolioResponse)
