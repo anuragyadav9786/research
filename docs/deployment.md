@@ -21,34 +21,44 @@ CI" wasn't just an assumption.
 
 ## Daily NAV ingestion: `.github/workflows/daily-nav-ingestion.yml`
 
-**Not yet scheduled.** Its `schedule:` trigger is commented out in the
-workflow file itself. Unlike CI, this job needs a real, persistent,
-CI-reachable Postgres instance — ingested NAV data has to still be there
-tomorrow, so a per-run throwaway container doesn't work here.
+**Live and scheduled**, running daily at ~06:00 IST (`30 0 * * *` UTC
+cron). Unlike CI, this job needs a real, persistent, CI-reachable
+Postgres instance — ingested NAV data has to still be there tomorrow, so
+a per-run throwaway container doesn't work here. It's backed by a
+Supabase free-tier project, with `DATABASE_URL` set as a repository
+secret (Settings → Secrets and variables → Actions).
 
-To enable it:
+**Important Supabase-specific gotcha**: use the **Session pooler**
+connection string (Project Settings → Database → Connection string →
+"Session pooler"), not the "Direct connection" one. The direct-connection
+hostname (`db.<project-ref>.supabase.co`) resolves to an IPv6-only
+address that GitHub-hosted runners cannot route to ("Network is
+unreachable"); the pooler hostname (`aws-0-<region>.pooler.supabase.com`)
+resolves over IPv4. The pooler also requires the username to include the
+project ref (`postgres.<project-ref>`, not bare `postgres`) — Supabase's
+copy-pasteable connection string already has this right, so prefer
+copying it whole over hand-editing the direct-connection one.
 
-1. Provision a Postgres instance reachable from GitHub-hosted runners
-   (Supabase's free tier is the natural zero-budget choice — see
-   `docs/data-sources.md` and `docs/BUILD_PLAN.md`'s open decisions).
-2. Add its connection string as a repository secret named `DATABASE_URL`
-   (Settings → Secrets and variables → Actions).
-3. Run the workflow once by hand (Actions tab → "Daily NAV Ingestion" →
-   Run workflow) to confirm it can actually reach both that database and
-   AMFI, before trusting a schedule to it.
-4. Uncomment the `schedule:` block in the workflow file.
+A manual `workflow_dispatch` run was used to verify this end-to-end
+before enabling the schedule: `alembic upgrade head` applied cleanly
+against the live Supabase database, and `daily_pipeline` fetched real
+AMFI NAV data (downloaded=14361). **That run's `records_accepted` was 0**
+— expected, not a bug: this database currently only holds the fictional
+Phase 2 sample funds (see `database/seeds/seed_sample_data.py`), whose
+scheme codes don't match any real AMFI scheme, so every real record is
+correctly rejected as unmatched by `map_to_scheme_variants`. Nothing here
+will show real ingested data until real fund schemes are loaded.
 
-If the secret is missing, the workflow fails immediately with a clear
-`::error::` message naming exactly what's missing — never a cryptic
-connection failure buried in a Python traceback, and never silently
-"succeeding" without having ingested anything.
+This also resolved a previously open question: this project's own
+sandboxed dev environment could not reach `amfiindia.com` at all
+(outbound blocked — see `docs/data-sources.md`), but a GitHub-hosted
+runner has ordinary internet access and reached it successfully.
 
-**A second, independent unknown**: this project's own sandboxed dev
-environment could not reach `amfiindia.com` at all (outbound blocked —
-see `docs/data-sources.md`), so the live AMFI fetch has never been
-exercised end-to-end from here. A GitHub-hosted runner has ordinary
-internet access and may well succeed where this sandbox couldn't, but
-that hasn't been confirmed. Step 3 above is exactly how to find out.
+If the `DATABASE_URL` secret is ever removed, the workflow fails
+immediately with a clear `::error::` message naming exactly what's
+missing — never a cryptic connection failure buried in a Python
+traceback, and never silently "succeeding" without having ingested
+anything.
 
 ## No monthly holdings/factsheet workflow yet
 
