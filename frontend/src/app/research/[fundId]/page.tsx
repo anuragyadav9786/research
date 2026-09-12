@@ -11,6 +11,7 @@ import {
   getFundReturns,
   getFundRisk,
   getFundRollingReturns,
+  getFundStressTest,
 } from "@/lib/api";
 import { formatDate, formatNav, formatNumber, formatPct, signColorClass } from "@/lib/format";
 import { AllocationBar } from "@/components/fund/AllocationBar";
@@ -19,8 +20,10 @@ import { HoldingsTable } from "@/components/fund/HoldingsTable";
 import { MarketRegimeTable } from "@/components/fund/MarketRegimeTable";
 import { NavChart } from "@/components/fund/NavChart";
 import { StatCard } from "@/components/fund/StatCard";
+import { StressTestPanel } from "@/components/fund/StressTestPanel";
 import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, RiskResponse, RollingReturnsResponse } from "@/types/fund";
 import type { MarketRegimeBehaviorResponse } from "@/types/marketRegime";
+import type { StressTestResponse } from "@/types/stressTest";
 
 const HHI_LABELS: Record<string, string> = {
   diversified: "Diversified",
@@ -67,16 +70,18 @@ export default async function FundDetailPage({
   let drawdown: DrawdownResponse | null = null;
   let navHistory: NavHistoryResponse | null = null;
   let marketRegimes: MarketRegimeBehaviorResponse | null = null;
+  let stressTest: StressTestResponse | null = null;
   let variantError: string | null = null;
 
   try {
-    [returns, risk, rolling, drawdown, navHistory, marketRegimes] = await Promise.all([
+    [returns, risk, rolling, drawdown, navHistory, marketRegimes, stressTest] = await Promise.all([
       getFundReturns(fundId, variantParams),
       getFundRisk(fundId, variantParams),
       getFundRollingReturns(fundId, { ...variantParams, window_years: windowYears }),
       getFundDrawdown(fundId, variantParams),
       getFundNavHistory(fundId, variantParams),
       getFundMarketRegimes(fundId, variantParams),
+      getFundStressTest(fundId, variantParams),
     ]);
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
@@ -355,6 +360,12 @@ export default async function FundDetailPage({
               ) : (
                 <p className="text-sm text-neutral-500">No market regimes defined yet.</p>
               )}
+            </section>
+
+            <section>
+              <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-1">Stress Test</h2>
+              <p className="text-xs text-neutral-600 mb-3">{stressTest!.hypothetical_notice}</p>
+              <StressTestPanel scenarios={stressTest!.scenarios} />
             </section>
           </>
         )}

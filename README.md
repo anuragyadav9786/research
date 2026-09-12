@@ -260,16 +260,38 @@ cd backend && source .venv/bin/activate
 pytest tests/analytics/test_market_regime.py tests/api/test_market_regime.py -q
 ```
 
+### 13. Stress-Test Engine (Phase 11)
+
+`GET /api/funds/{id}/stress-test` — hypothetical scenario impact
+estimates for the 7 scenarios named in the product spec. **3 are
+computed**: a broad-market decline (via the fund's beta to its
+benchmark), a mid-cap-segment decline and a sector decline (via disclosed
+exposure from Phase 7). **4 are honestly marked unmodeled** — interest
+rates rising, recession, INR depreciation, inflation shock — each with a
+specific reason naming the data this platform doesn't have yet (bond
+duration, currency exposure, a macro factor model). No invented
+sensitivity coefficients stand in for missing data; see
+`docs/analytics-methodology.md` for why, and the configurable
+`SCENARIOS` table in `analytics/stress_testing.py`.
+
+Wired into the fund detail page as a "Stress Test" section, right after
+Market-Cycle Behaviour.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/analytics/test_stress_testing.py tests/api/test_stress_test.py -q
+```
+
 ## Status
 
-**Phase 0, 1, 2, 4, 5, 6, 7, 8, 9 and 10** complete. **Phase 3** (NAV
+**Phase 0, 1, 2, 4, 5, 6, 7, 8, 9, 10 and 11** complete. **Phase 3** (NAV
 ingestion) is architecturally complete and tested down to the network
 boundary — see Known limitations for exactly what remains to verify.
 
-Next: **Phase 11** — Stress-Test Engine (configurable hypothetical
-scenarios — e.g. "Nifty falls 25%", "midcaps fall 40%" — estimating
-fund/portfolio impact from historical relationships and exposure,
-explicitly labelled as hypothetical, never predictive).
+Next: **Phase 12** — AI Explanation Layer (an AI layer that reads only
+precomputed structured JSON from the analytics endpoints above and
+generates human-readable research summaries — never computes a number
+itself, per Rule 4).
 
 ### Known limitations
 

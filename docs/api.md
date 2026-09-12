@@ -32,6 +32,7 @@ doesn't have returns `404`, not a fabricated/substituted result.
 | `POST /api/portfolio/analyse` | Multi-fund Portfolio Analysis (Phase 9): combine 2-10 funds by weight into look-through holdings, sector/market-cap allocation, concentration, pairwise overlap, and portfolio-level risk/drawdown. **Stateless** — see below. |
 | `GET /api/funds/{fund_id}/market-regimes` | Market-Cycle Behaviour (Phase 10): fund vs. benchmark return, volatility and max drawdown within each defined market regime, plus a deterministic outperform/underperform summary per regime. |
 | `GET /api/market/regimes` | Plain reference list of all defined market regimes (name, type, date range) — no fund attached. |
+| `GET /api/funds/{fund_id}/stress-test` | Stress-Test Engine (Phase 11): hypothetical scenario impact estimates. 3 of 7 spec scenarios are computed (broad market via beta, midcap/sector via disclosed exposure); the other 4 (rates, recession, INR, inflation) are explicitly marked `available: false` — no fabricated sensitivities for data this platform doesn't have. |
 
 Interactive docs: `http://localhost:8000/docs` (Swagger UI, auto-generated
 from the same Pydantic schemas).
@@ -93,18 +94,30 @@ formulas — no new ad hoc "portfolio risk" calculation exists.
   synthetic data, not verified real-world market classifications — see
   `docs/data-sources.md`. Regime summaries are deterministic string
   templates built from the computed return numbers, never an LLM call.
+- **`/stress-test` is honest about what it can't model.** Four of the
+  seven spec scenarios (interest rates, recession, INR depreciation,
+  inflation) come back `available: false` with a specific `reason` —
+  never a guessed sensitivity coefficient. The three that are computed
+  say exactly what they're based on (`exposure_pct`: the fund's beta for
+  an index shock, or its disclosed sector/market-cap weight for an
+  exposure shock) so the number is always traceable to a real input.
+  Every response also carries `hypothetical_notice`: these are
+  illustrative scenarios, not predictions.
 
 ## Testing
 
 `backend/tests/api/test_funds.py`, `test_portfolio.py`, `test_overlap.py`,
-`test_portfolio_analysis.py` and `test_market_regime.py` run all of the
-above against the real Phase 2 seed data (no mocking) via FastAPI's
-`TestClient`: fund listing/search, full-detail variant listings, each
-analytics endpoint's happy path, the explicit insufficient-history path
-(10-year window against ~4 years of seed history), top-holdings/HHI/
-allocation correctness (including the bonds' "unclassified" case),
-pairwise overlap correctness and symmetry, multi-fund combination
-correctness (hand-verified effective weights for a 3-fund mix, allocation
-reconciliation), per-regime behaviour correctness (excess return
-reconciliation, summary text matching the sign of over/underperformance),
-and 404/422/400 error handling.
+`test_portfolio_analysis.py`, `test_market_regime.py` and
+`test_stress_test.py` run all of the above against the real Phase 2 seed
+data (no mocking) via FastAPI's `TestClient`: fund listing/search,
+full-detail variant listings, each analytics endpoint's happy path, the
+explicit insufficient-history path (10-year window against ~4 years of
+seed history), top-holdings/HHI/allocation correctness (including the
+bonds' "unclassified" case), pairwise overlap correctness and symmetry,
+multi-fund combination correctness (hand-verified effective weights for a
+3-fund mix, allocation reconciliation), per-regime behaviour correctness
+(excess return reconciliation, summary text matching the sign of over/
+underperformance), stress-scenario correctness (index/exposure impact
+formulas reconciled against beta and disclosed allocation, all four macro
+scenarios confirmed explicitly unavailable), and 404/422/400 error
+handling.
