@@ -26,6 +26,16 @@ or be left in a database that also holds real ingested data without a
 clear way to tell them apart (see the script's `--reset` flag, which only
 touches its own sample rows).
 
+**Market regimes are sample data too.** The 4 rows the seed script writes
+to `market_regimes` (`"Sample Regime — Recovery/Bull"`, `"— Correction"`,
+etc.) are illustrative date windows picked to match the shape of this
+*same synthetic* NAV/benchmark series — they do not assert anything about
+real historical market conditions in those calendar dates. Every API
+response built from them (`GET /api/funds/{id}/market-regimes`, `GET
+/api/market/regimes`) repeats this as an explicit `methodology_note` so
+it's never mistaken for verified market history. Real regime
+classification against real index data is unbuilt — see section 3 below.
+
 ## 2. AMFI NAVAll.txt (real source — architecture built, live fetch unverified)
 
 **Source**: Association of Mutual Funds in India, `https://www.amfiindia.com/spages/NAVAll.txt`

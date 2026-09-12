@@ -40,6 +40,7 @@ export default async function CompareFundsPage({
           <Link href="/research" className="hover:text-neutral-100">Research</Link>
           <Link href="/research/compare" className="text-neutral-100">Compare</Link>
           <Link href="/portfolio" className="hover:text-neutral-100">Portfolio</Link>
+          <Link href="/market" className="hover:text-neutral-100">Market Intelligence</Link>
         </nav>
       </header>
 

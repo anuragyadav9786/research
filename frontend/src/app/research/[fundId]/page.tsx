@@ -5,6 +5,7 @@ import {
   ApiError,
   getFund,
   getFundDrawdown,
+  getFundMarketRegimes,
   getFundNavHistory,
   getFundPortfolio,
   getFundReturns,
@@ -15,9 +16,11 @@ import { formatDate, formatNav, formatNumber, formatPct, signColorClass } from "
 import { AllocationBar } from "@/components/fund/AllocationBar";
 import { DistributionBar } from "@/components/fund/DistributionBar";
 import { HoldingsTable } from "@/components/fund/HoldingsTable";
+import { MarketRegimeTable } from "@/components/fund/MarketRegimeTable";
 import { NavChart } from "@/components/fund/NavChart";
 import { StatCard } from "@/components/fund/StatCard";
 import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, RiskResponse, RollingReturnsResponse } from "@/types/fund";
+import type { MarketRegimeBehaviorResponse } from "@/types/marketRegime";
 
 const HHI_LABELS: Record<string, string> = {
   diversified: "Diversified",
@@ -63,15 +66,17 @@ export default async function FundDetailPage({
   let rolling: RollingReturnsResponse | null = null;
   let drawdown: DrawdownResponse | null = null;
   let navHistory: NavHistoryResponse | null = null;
+  let marketRegimes: MarketRegimeBehaviorResponse | null = null;
   let variantError: string | null = null;
 
   try {
-    [returns, risk, rolling, drawdown, navHistory] = await Promise.all([
+    [returns, risk, rolling, drawdown, navHistory, marketRegimes] = await Promise.all([
       getFundReturns(fundId, variantParams),
       getFundRisk(fundId, variantParams),
       getFundRollingReturns(fundId, { ...variantParams, window_years: windowYears }),
       getFundDrawdown(fundId, variantParams),
       getFundNavHistory(fundId, variantParams),
+      getFundMarketRegimes(fundId, variantParams),
     ]);
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
@@ -105,6 +110,7 @@ export default async function FundDetailPage({
           <Link href="/research" className="hover:text-neutral-100">Research</Link>
           <Link href="/research/compare" className="hover:text-neutral-100">Compare</Link>
           <Link href="/portfolio" className="hover:text-neutral-100">Portfolio</Link>
+          <Link href="/market" className="hover:text-neutral-100">Market Intelligence</Link>
         </nav>
       </header>
 
@@ -332,6 +338,22 @@ export default async function FundDetailPage({
                 </div>
               ) : (
                 <p className="text-sm text-neutral-500">Not enough NAV history to compute drawdown yet.</p>
+              )}
+            </section>
+
+            <section>
+              <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-1">Market-Cycle Behaviour</h2>
+              <p className="text-xs text-neutral-600 mb-3">{marketRegimes!.methodology_note}</p>
+              {marketRegimes!.regimes.length > 0 ? (
+                <>
+                  <p className="text-sm text-neutral-400 mb-3">
+                    Beat its benchmark in {marketRegimes!.regimes_outperformed} of{" "}
+                    {marketRegimes!.regimes_with_comparison} comparable periods.
+                  </p>
+                  <MarketRegimeTable regimes={marketRegimes!.regimes} />
+                </>
+              ) : (
+                <p className="text-sm text-neutral-500">No market regimes defined yet.</p>
               )}
             </section>
           </>
