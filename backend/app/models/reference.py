@@ -82,6 +82,17 @@ class Security(Base):
     isin: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     sector_id: Mapped[int | None] = mapped_column(ForeignKey("sectors.id"))
+    # Null for non-equity instruments (bonds, etc.) where market-cap
+    # classification doesn't apply, or where we simply don't have the
+    # classification yet — never guessed to fill the field.
+    market_cap_category: Mapped[str | None] = mapped_column(String(20))
+
+    __table_args__ = (
+        CheckConstraint(
+            "market_cap_category in ('large_cap', 'mid_cap', 'small_cap', 'other')",
+            name="ck_security_market_cap_category",
+        ),
+    )
 
 
 class Sector(Base):

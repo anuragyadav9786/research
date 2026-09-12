@@ -6,15 +6,24 @@ import {
   getFund,
   getFundDrawdown,
   getFundNavHistory,
+  getFundPortfolio,
   getFundReturns,
   getFundRisk,
   getFundRollingReturns,
 } from "@/lib/api";
 import { formatDate, formatNav, formatNumber, formatPct, signColorClass } from "@/lib/format";
+import { AllocationBar } from "@/components/fund/AllocationBar";
 import { DistributionBar } from "@/components/fund/DistributionBar";
+import { HoldingsTable } from "@/components/fund/HoldingsTable";
 import { NavChart } from "@/components/fund/NavChart";
 import { StatCard } from "@/components/fund/StatCard";
 import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, RiskResponse, RollingReturnsResponse } from "@/types/fund";
+
+const HHI_LABELS: Record<string, string> = {
+  diversified: "Diversified",
+  moderate_concentration: "Moderate Concentration",
+  high_concentration: "High Concentration",
+};
 
 const RETURN_WINDOW_LABELS: Record<string, string> = { "1y": "1Y", "3y": "3Y", "5y": "5Y", "7y": "7Y", "10y": "10Y" };
 const ROLLING_WINDOW_OPTIONS = [1, 3, 5];
@@ -42,6 +51,11 @@ export default async function FundDetailPage({
     if (err instanceof ApiError && err.status === 404) notFound();
     throw err;
   }
+
+  // Portfolio is variant-independent (holdings are the same across
+  // plan/option), so it's fetched separately and renders even if the
+  // requested plan/option combination doesn't exist.
+  const portfolio = await getFundPortfolio(fundId);
 
   const variantParams = { plan, option };
   let returns: ReturnsResponse | null = null;
@@ -313,8 +327,64 @@ export default async function FundDetailPage({
           </>
         )}
 
+        <section>
+          <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-3">Portfolio DNA &amp; Concentration</h2>
+          {portfolio.available ? (
+            <div className="space-y-4">
+              <p className="text-xs text-neutral-500">
+                Holdings as of {formatDate(portfolio.as_of_date)} · Source: {portfolio.source_name ?? "unknown"}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCard label="Holdings Disclosed" value={String(portfolio.total_holdings)} />
+                <StatCard
+                  label="Top 5 Weight"
+                  value={portfolio.top5_weight_pct !== null ? `${formatNumber(portfolio.top5_weight_pct, 1)}%` : "—"}
+                />
+                <StatCard
+                  label="Top 10 Weight"
+                  value={portfolio.top10_weight_pct !== null ? `${formatNumber(portfolio.top10_weight_pct, 1)}%` : "—"}
+                />
+                <StatCard
+                  label="HHI Concentration"
+                  value={portfolio.hhi !== null ? formatNumber(portfolio.hhi, 0) : "—"}
+                  hint={portfolio.hhi_label ? HHI_LABELS[portfolio.hhi_label] ?? portfolio.hhi_label : undefined}
+                  valueClassName={
+                    portfolio.hhi_label === "high_concentration"
+                      ? "text-rose-400"
+                      : portfolio.hhi_label === "moderate_concentration"
+                        ? "text-amber-400"
+                        : "text-emerald-400"
+                  }
+                />
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div className="rounded-lg border border-neutral-800 p-4">
+                  <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-3">Sector Allocation</h3>
+                  <AllocationBar slices={portfolio.sector_allocation} />
+                </div>
+                <div className="rounded-lg border border-neutral-800 p-4">
+                  <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-3">Market-Cap Allocation</h3>
+                  <AllocationBar slices={portfolio.market_cap_allocation} />
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-3">Top Holdings</h3>
+                <HoldingsTable holdings={portfolio.top_holdings} />
+              </div>
+              <p className="text-xs text-neutral-500">
+                Weights shown are of disclosed holdings only ({formatNumber(portfolio.total_disclosed_weight_pct, 1)}%
+                of the portfolio) — remaining exposure (cash, undisclosed holdings) is not shown.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-500">No portfolio holdings data available for this fund yet.</p>
+          )}
+        </section>
+
         <p className="text-xs text-neutral-600 border-t border-neutral-900 pt-4">
-          {(returns ?? risk ?? rolling ?? drawdown)?.disclaimer ??
+          {(returns ?? risk ?? rolling ?? drawdown ?? portfolio)?.disclaimer ??
             "Historical performance does not guarantee future results."}
         </p>
       </main>

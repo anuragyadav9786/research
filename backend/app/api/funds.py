@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.reference import Scheme, SchemeVariant
-from app.repositories import fund_repository
+from app.repositories import fund_repository, portfolio_repository
 from app.schemas.funds import (
     DrawdownResponse,
     FundDetail,
@@ -35,7 +35,8 @@ from app.schemas.funds import (
     RollingReturnsResponse,
     VariantSummary,
 )
-from app.services import fund_analytics_service
+from app.schemas.portfolio import PortfolioResponse
+from app.services import fund_analytics_service, portfolio_intelligence_service
 
 router = APIRouter(prefix="/api/funds", tags=["funds"])
 
@@ -184,6 +185,27 @@ def get_fund_drawdown(
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
     return fund_analytics_service.compute_drawdown(nav)
+
+
+@router.get("/{fund_id}/portfolio", response_model=PortfolioResponse)
+def get_fund_portfolio(fund_id: int, db: Session = Depends(get_db)) -> dict:
+    """Portfolio DNA + concentration (Phase 7). Scheme-level, not
+    variant-specific — holdings are identical across a scheme's plan/
+    option variants."""
+    scheme = _resolve_scheme(db, fund_id)
+    snapshot = portfolio_repository.get_latest_snapshot(db, scheme.id)
+    if snapshot is None:
+        result = portfolio_intelligence_service.compute_portfolio_dna([])
+        result["as_of_date"] = None
+        result["source_name"] = None
+        return result
+
+    holdings = portfolio_repository.get_holdings(db, snapshot.id)
+    source = portfolio_repository.get_snapshot_source(db, snapshot)
+    result = portfolio_intelligence_service.compute_portfolio_dna(holdings)
+    result["as_of_date"] = snapshot.as_of_date
+    result["source_name"] = source.name if source else None
+    return result
 
 
 @router.get("/{fund_id}/intelligence", response_model=IntelligenceResponse)

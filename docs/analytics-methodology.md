@@ -89,6 +89,34 @@ means the fund outperformed what its market exposure (beta) alone would
 predict via CAPM — not a claim that a manager's stock-picking specifically
 caused the excess.
 
+## Concentration (`analytics/concentration.py`)
+
+**Herfindahl-Hirschman Index (HHI)**: `sum((weight_pct_i / 100)^2) * 10000`.
+The standard 0-10000 HHI scale, the same one used in US DOJ/FTC merger
+antitrust analysis, applied here to portfolio weights instead of market
+shares. A portfolio of N equal-weight holdings has `HHI = 10000/N`.
+Labelled `diversified` (<1500), `moderate_concentration` (1500-2500), or
+`high_concentration` (>=2500) — the DOJ/FTC thresholds, reused by
+convention, not derived from portfolio-specific research. Understates true
+concentration if the input weights don't sum close to 100% (e.g. only
+top-holdings are disclosed) — always shown alongside total disclosed
+weight so this is visible, never hidden.
+
+**Top-N weight**: sum of the N largest holding weights (e.g. "top 5
+holdings = X% of the portfolio"). Sums all holdings if there are fewer
+than N — not an error, just a small/concentrated portfolio.
+
+**Group weights**: a generic groupby-sum used for both sector allocation
+and market-cap allocation — there's nothing holdings-specific about
+"total weight per category."
+
+Market-cap category (`securities.market_cap_category`) is presently only
+populated for the Phase 2 synthetic sample securities, assigned by the
+same "clearly-labelled fictional data" logic as the rest of that seed —
+see `database/seeds/seed_sample_data.py`'s header. It is `null` for bonds
+and other non-equity instruments, and for any real security not yet
+classified — grouped under "unclassified" rather than guessed.
+
 ## Testing approach
 
 Each module has a corresponding `backend/tests/analytics/test_*.py` file.

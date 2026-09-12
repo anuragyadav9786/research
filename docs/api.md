@@ -26,7 +26,8 @@ doesn't have returns `404`, not a fabricated/substituted result.
 | `GET /api/funds/{fund_id}/rolling-returns` | Rolling-CAGR distribution + benchmark-consistency stats for a given `window_years` (default 3, query param). |
 | `GET /api/funds/{fund_id}/drawdown` | Maximum drawdown episode: peak/trough dates and NAVs, recovery date or explicit "not yet recovered". |
 | `GET /api/funds/{fund_id}/nav-history` | Raw NAV/benchmark series (Phase 6 addition — no analytics, just the data feed the frontend's charts render). |
-| `GET /api/funds/{fund_id}/intelligence` | Bundles all of the above (except `nav-history`) plus fund/variant metadata into one response. |
+| `GET /api/funds/{fund_id}/portfolio` | Portfolio DNA + concentration (Phase 7): top holdings, sector/market-cap allocation, HHI. **Scheme-level, not variant-specific** — holdings are identical across a scheme's plan/option variants, so this endpoint takes no `plan`/`option` params. |
+| `GET /api/funds/{fund_id}/intelligence` | Bundles the variant-specific analytics (except `nav-history` and `portfolio`) plus fund/variant metadata into one response. |
 
 Interactive docs: `http://localhost:8000/docs` (Swagger UI, auto-generated
 from the same Pydantic schemas).
@@ -52,11 +53,19 @@ from the same Pydantic schemas).
   would be a fabricated conclusion (Rule 2/4), so it's deferred, not faked.
 - **Every response carries the compliance disclaimer** (Section 33):
   historical performance is not a guarantee of future results.
+- **`/portfolio` only reports what's disclosed.** Weights are of disclosed
+  holdings only; `total_disclosed_weight_pct` is always shown alongside
+  concentration figures so a portfolio with only top-10 holdings on file
+  doesn't imply undisclosed exposure (cash, remaining holdings) is zero.
+  Securities with no market-cap classification (all bonds, currently) are
+  grouped as `"unclassified"`, never guessed into a cap bucket.
 
 ## Testing
 
-`backend/tests/api/test_funds.py` runs all of the above against the real
-Phase 2 seed data (no mocking) via FastAPI's `TestClient`: fund listing/
-search, full-detail variant listings, each analytics endpoint's happy
-path, the explicit insufficient-history path (10-year window against ~4
-years of seed history), and 404/422 error handling.
+`backend/tests/api/test_funds.py` and `test_portfolio.py` run all of the
+above against the real Phase 2 seed data (no mocking) via FastAPI's
+`TestClient`: fund listing/search, full-detail variant listings, each
+analytics endpoint's happy path, the explicit insufficient-history path
+(10-year window against ~4 years of seed history), top-holdings/HHI/
+allocation correctness (including the bonds' "unclassified" case), and
+404/422 error handling.

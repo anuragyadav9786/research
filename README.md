@@ -168,15 +168,36 @@ the rolling-returns window selector, the insufficient-history and
 no-such-variant states, and a themed 404 page. See `docs/api.md` for the
 new endpoint.
 
+### 9. Holdings Engine — Portfolio DNA & Concentration (Phase 7)
+
+`GET /api/funds/{id}/portfolio` — top holdings, sector allocation,
+market-cap allocation, and concentration (HHI + top-5/top-10 weight),
+computed by `analytics/concentration.py` from the Phase 2 seed portfolio
+snapshots. Scheme-level (not variant-specific: holdings don't depend on
+plan/option). Required a small schema addition,
+`securities.market_cap_category` (nullable — `null` for bonds and
+anything unclassified, grouped as `"unclassified"` rather than guessed).
+Wired into the fund detail page as a "Portfolio DNA & Concentration"
+section. See `docs/analytics-methodology.md` for the HHI methodology and
+`docs/api.md` for the endpoint.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/analytics/test_concentration.py tests/api/test_portfolio.py -q
+```
+
+Cross-fund "hidden concentration" (seeing the *same* stock/sector
+overexposure across several funds an investor holds) is explicitly out of
+scope here — that needs the Overlap Engine, Phase 8.
+
 ## Status
 
-**Phase 0, 1, 2, 4, 5 and 6** complete. **Phase 3** (NAV ingestion) is
+**Phase 0, 1, 2, 4, 5, 6 and 7** complete. **Phase 3** (NAV ingestion) is
 architecturally complete and tested down to the network boundary — see
 Known limitations for exactly what remains to verify.
 
-Next: **Phase 7** — Holdings Engine (portfolio snapshots, sectors,
-concentration, market-cap/style classification), which the seed data and
-schema already support but no API/UI exposes yet.
+Next: **Phase 8** — Fund Overlap Engine (security/weighted/sector overlap
+and redundancy detection across multiple funds).
 
 ### Known limitations
 

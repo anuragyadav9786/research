@@ -9,6 +9,7 @@ import type {
   RiskResponse,
   RollingReturnsResponse,
 } from "@/types/fund";
+import type { PortfolioResponse } from "@/types/portfolio";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -74,6 +75,10 @@ export function getFundRollingReturns(
 
 export function getFundDrawdown(fundId: number, params: VariantParams = {}): Promise<DrawdownResponse> {
   return apiGet<DrawdownResponse>(`/api/funds/${fundId}/drawdown`, params);
+}
+
+export function getFundPortfolio(fundId: number): Promise<PortfolioResponse> {
+  return apiGet<PortfolioResponse>(`/api/funds/${fundId}/portfolio`);
 }
 
 export function getFundNavHistory(fundId: number, params: VariantParams = {}): Promise<NavHistoryResponse> {
