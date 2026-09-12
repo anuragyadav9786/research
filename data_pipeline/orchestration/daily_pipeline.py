@@ -39,6 +39,13 @@ def main() -> None:
                 f"schemes={onboarding.schemes_created} variants={onboarding.variants_created} "
                 f"skipped={len(onboarding.skipped)}"
             )
+            if onboarding.skipped:
+                from collections import Counter
+
+                reason_counts = Counter(s.reason for s in onboarding.skipped)
+                onboarding_msg += " (" + ", ".join(f"{r}={c}" for r, c in reason_counts.most_common()) + ")"
+                for sample in onboarding.skipped[:5]:
+                    print(f"  skip sample: code={sample.scheme_code!r} name={sample.scheme_name!r} reason={sample.reason!r}")
         print(
             f"NAV ingestion run {run.id}: status={run.status} "
             f"downloaded={run.records_downloaded} accepted={run.records_accepted} "
