@@ -25,6 +25,7 @@ if _BACKEND_DIR not in sys.path:
 
 from app.core.database import SessionLocal  # noqa: E402
 from data_pipeline.ingestion.nav_ingestion import run_amfi_nav_ingestion  # noqa: E402
+from data_pipeline.orchestration.precompute_metrics import run_precompute  # noqa: E402
 
 
 def main() -> None:
@@ -53,6 +54,18 @@ def main() -> None:
             + (f" error={run.error_message}" if run.error_message else "")
             + onboarding_msg
         )
+
+        # Only worth recomputing analytics against a NAV set that just
+        # updated cleanly — a failed ingestion run means today's nav_history
+        # is whatever yesterday's precompute already saw, so skip re-doing
+        # that work rather than pointlessly re-running it.
+        if run.status == "success":
+            precompute = run_precompute(db)
+            print(
+                f"Metrics precompute: variants_processed={precompute.variants_processed} "
+                f"variants_skipped_no_history={precompute.variants_skipped_no_history} "
+                f"metrics_written={precompute.metrics_written}"
+            )
     finally:
         db.close()
 
