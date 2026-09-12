@@ -99,13 +99,41 @@ This creates 2 sample AMCs, 4 schemes, 8 scheme variants (direct/regular ×
 growth), synthetic NAV and benchmark history (seeded random walk, not real
 market data), sample portfolio holdings, managers, and market regimes.
 
+### 5. Analytics engine (Phase 4)
+
+Deterministic financial calculations live in `analytics/` at the repo root
+(never in the frontend, never computed by an LLM — see Rule 4). Covered so
+far: CAGR/simple returns, rolling returns + benchmark consistency,
+annualized volatility, Sharpe, Sortino, max drawdown + recovery, upside/
+downside capture, beta and Jensen's alpha. Full methodology — formulas,
+assumptions, limitations — is in `docs/analytics-methodology.md`.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/analytics -q
+```
+
 ## Status
 
-**Phase 0** (architecture), **Phase 1** (foundation) and **Phase 2**
-(core schema + sample data) complete:
-frontend and backend start, Postgres connects, health endpoint returns OK,
-migration applies cleanly, the full identifier hierarchy (AMC → fund family
-→ scheme → variant) and every core table can be populated and queried, and
-the seed script is idempotent and safely resettable.
+**Phase 0-2** complete (see above). **Phase 4** (analytics engine) is also
+complete and unit-tested against independently computed reference values;
+**Phase 3** (real NAV ingestion) is still open — see Known limitations.
 
-Next: **Phase 3** — real NAV ingestion (AMFI/mfapi.in adapter).
+Next: **Phase 3** — real NAV ingestion (AMFI/mfapi.in adapter), then
+Phase 5 (Fund Intelligence API) to expose the analytics engine's output.
+
+### Known limitations
+
+- The analytics engine has been smoke-tested against the Phase 2 synthetic
+  seed data (runs cleanly, produces sane output), but that seed generates
+  the fund and its benchmark as *independent* random walks — so beta/alpha
+  figures computed against it are not representative of a real fund. This
+  is a property of the sample data, not the analytics functions (which are
+  unit-tested against known values); real NAV/benchmark data will behave
+  more realistically once Phase 3 lands.
+- Phase 3 (real NAV ingestion) has not been executed against a live source
+  in this dev environment — outbound network access to amfiindia.com and
+  api.mfapi.in was blocked by this sandbox's network policy during
+  development. The ingestion pipeline architecture is designed against
+  these real sources but must be verified end-to-end in an environment
+  with outbound internet access before being considered done.
