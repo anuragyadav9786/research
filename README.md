@@ -83,10 +83,93 @@ health-check response, confirming the full stack is wired end-to-end.
 - Every computed metric carries an `analytics_version` so methodology changes are traceable over time.
 - Historical performance is never presented as a guarantee; stress tests are explicitly hypothetical.
 
+### 4. Sample data (Phase 2)
+
+The core schema ships empty. To exercise it end to end with a small set of
+**entirely fictional, clearly-labelled** sample funds (see the file header
+in `database/seeds/seed_sample_data.py` for exactly what is and isn't real):
+
+```bash
+cd backend && source .venv/bin/activate
+python ../database/seeds/seed_sample_data.py            # idempotent
+python ../database/seeds/seed_sample_data.py --reset     # wipe + reseed
+```
+
+This creates 2 sample AMCs, 4 schemes, 8 scheme variants (direct/regular ×
+growth), synthetic NAV and benchmark history (seeded random walk, not real
+market data), sample portfolio holdings, managers, and market regimes.
+
+### 5. Analytics engine (Phase 4)
+
+Deterministic financial calculations live in `analytics/` at the repo root
+(never in the frontend, never computed by an LLM — see Rule 4). Covered so
+far: CAGR/simple returns, rolling returns + benchmark consistency,
+annualized volatility, Sharpe, Sortino, max drawdown + recovery, upside/
+downside capture, beta and Jensen's alpha. Full methodology — formulas,
+assumptions, limitations — is in `docs/analytics-methodology.md`.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/analytics -q
+```
+
+### 6. NAV ingestion pipeline (Phase 3)
+
+`data_pipeline/` implements the AMFI NAVAll.txt adapter end to end: fetch
+(`sources/amfi/client.py`) -> parse (`sources/amfi/parser.py`) -> validate
+(`validation/nav_validation.py`) -> map to existing schemes
+(`normalization/scheme_mapping.py`) -> upsert + log
+(`storage/database_writer.py`, `ingestion/nav_ingestion.py`). Every run is
+logged to `data_ingestion_runs` with accept/reject counts, success or
+failure. Full source documentation, including exactly what has and hasn't
+been verified live, is in `docs/data-sources.md`.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/unit/test_amfi_parser.py tests/unit/test_nav_validation.py \
+       tests/unit/test_amfi_client.py tests/integration/test_nav_ingestion.py -q
+
+# Run for real once network access + Phase 2 seed data are available:
+python -m data_pipeline.orchestration.daily_pipeline
+```
+
 ## Status
 
-**Phase 0** (architecture) and **Phase 1** (foundation) complete:
-frontend and backend start, Postgres connects, health endpoint returns OK,
-first migration (full core schema) applies cleanly, one test passes.
+**Phase 0, 1, 2 and 4** complete. **Phase 3** (NAV ingestion) is
+architecturally complete and tested down to the network boundary — see
+Known limitations for exactly what remains to verify.
 
-Next: **Phase 2** — seed data for a small set of realistic, clearly-labelled sample funds.
+Next: **Phase 5** — Fund Intelligence API, to expose the analytics
+engine's output as structured, validated JSON.
+
+### Known limitations
+
+- The analytics engine has been smoke-tested against the Phase 2 synthetic
+  seed data (runs cleanly, produces sane output), but that seed generates
+  the fund and its benchmark as *independent* random walks — so beta/alpha
+  figures computed against it are not representative of a real fund. This
+  is a property of the sample data, not the analytics functions (which are
+  unit-tested against known values).
+- **Phase 3's live network fetch has not been executed** in this dev
+  environment — outbound HTTPS to `amfiindia.com` (and `api.mfapi.in`) is
+  blocked by this sandbox's network policy (confirmed via a 403 policy
+  denial on the proxy's CONNECT attempt). Everything downstream of the
+  fetch — parsing, validation, scheme mapping, storage, idempotency,
+  failure logging — is tested end-to-end against the real database using
+  a synthetic fixture in place of the live download (see
+  `backend/tests/integration/test_nav_ingestion.py`). Running
+  `python -m data_pipeline.orchestration.daily_pipeline` from an
+  environment with outbound internet access, and confirming it inserts
+  real NAV rows, is the one remaining step before Phase 3 can be marked
+  fully done.
+- The pipeline only ingests NAV for `scheme_variants` that already exist
+  in the database (matched by AMFI code or ISIN) — it deliberately never
+  creates a new scheme from a NAV file alone (see
+  `data_pipeline/normalization/scheme_mapping.py`). Onboarding new schemes
+  needs curated identity data (AMC, category, plan/option), which is a
+  separate, not-yet-built workflow.
+- No GitHub Actions workflow exists yet to run this daily (Phase 13). That
+  needs a deployed, CI-reachable Postgres instance (e.g. Supabase) as a
+  `DATABASE_URL` secret, which hasn't been provisioned — adding a workflow
+  that can't actually run against real infrastructure would violate the
+  "run and verify before moving on" rule this build follows.
