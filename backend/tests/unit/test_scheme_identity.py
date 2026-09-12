@@ -29,6 +29,9 @@ def test_option_growth_variants():
     assert parse_option("Growth Option") == "growth"
     assert parse_option("GROWTH") == "growth"
     assert parse_option("Growth") == "growth"
+    # "Cumulative" is an official mutual-fund industry synonym for Growth.
+    assert parse_option("Cumulative") == "growth"
+    assert parse_option("Cumulative Option") == "growth"
 
 
 def test_option_idcw_variants():
@@ -38,6 +41,11 @@ def test_option_idcw_variants():
     assert parse_option("MONTHLY DCW Payout") == "idcw"
     assert parse_option("QUARTERLY IDCW Payout") == "idcw"
     assert parse_option("Daily Dividend") == "idcw"
+    # "Income Distribution cum Capital Withdrawal" is what IDCW stands for
+    # — real AMFI rows spell it out in full instead of the abbreviation.
+    assert parse_option("Payout of Income Distribution cum capital withdrawal option") == "idcw"
+    assert parse_option("Monthly Income Distribution Cum Capital Withdrawal") == "idcw"
+    assert parse_option("Reinvestment of Income Distribution cum capital withdrawal option") == "idcw"
 
 
 def test_option_blank_returns_none():
