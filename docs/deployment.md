@@ -76,15 +76,41 @@ adapter), then this workflow.
 
 ## Backend hosting (not yet chosen)
 
-The FastAPI backend needs a host reachable from the deployed frontend —
-Render, Railway, or Fly.io free tiers are the natural zero-budget
-candidates (see the main README). Not provisioned or evaluated yet.
+The FastAPI backend needs a host reachable from the deployed frontend.
+**Render** (free tier) is the chosen host — `render.yaml` at the repo
+root is a Blueprint Render reads automatically. To deploy:
+
+1. Render dashboard -> New -> Blueprint -> connect this GitHub repo.
+   Render detects `render.yaml` and provisions a `thinkfin-backend` web
+   service (root dir `backend`, `pip install -r requirements.txt`,
+   `alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port
+   $PORT`, health check at `/api/health`).
+2. When prompted for env vars, set:
+   - `DATABASE_URL` — the same Supabase Session Pooler connection string
+     used by `daily-nav-ingestion.yml` (see above): backend and the
+     ingestion job share one database.
+   - `CORS_ORIGINS` — a JSON array containing the deployed frontend's
+     origin, e.g. `["https://<your-app>.vercel.app"]`. Without this the
+     browser blocks the frontend's requests (CORS), even though the API
+     itself is reachable.
+   - `ANTHROPIC_API_KEY` — optional; leave blank to keep the AI
+     Explanation Layer in its documented `available: false` state.
+3. Once live, copy the service's public URL (`https://thinkfin-backend
+   -<hash>.onrender.com`) into the frontend's `NEXT_PUBLIC_API_URL` (see
+   below).
+
+Render's free tier spins down after inactivity, so the first request
+after a period of idleness will be slow (cold start) — acceptable for
+this project's zero-budget constraint, documented here rather than
+silently surprising.
 
 ## Frontend hosting
 
-Vercel, per the original architecture (`docs/BUILD_PLAN.md`) — connect
-the repo, set `NEXT_PUBLIC_API_URL` to wherever the backend ends up
-hosted. Not yet deployed.
+Vercel, per the original architecture (`docs/BUILD_PLAN.md`). Deployed —
+set the `NEXT_PUBLIC_API_URL` environment variable in the Vercel
+project's settings to the Render backend's public URL from above, then
+redeploy: Next.js inlines `NEXT_PUBLIC_*` variables at build time, so
+changing the env var alone does not take effect without a rebuild.
 
 ## Known dependency vulnerability (tracked, not yet fixed)
 
