@@ -1,75 +1,58 @@
-"""Tests for parsing plan/option/base-name identity out of AMFI scheme
-names (data_pipeline/normalization/scheme_identity.py). All scheme names
-below are fictional fixtures mirroring AMFI's real naming conventions —
-never actual fund names.
+"""Tests for classifying AMFI's Plan/Option column values
+(data_pipeline/normalization/scheme_identity.py). The Option examples
+below mirror real-world variety confirmed against the live file (see
+parser.py's module docstring) — "Growth Option", "IDCW-Re-investment",
+"MONTHLY DCW Payout" etc. are genuine AMFI vocabulary, not fictional.
 """
-from data_pipeline.normalization.scheme_identity import parse_category_header, parse_scheme_identity
+from data_pipeline.normalization.scheme_identity import parse_category_header, parse_option, parse_plan
 
 
-def test_direct_plan_growth():
-    result = parse_scheme_identity("Sample Fixture Bluechip Fund - Direct Plan - Growth")
-    assert result is not None
-    assert result.base_name == "Sample Fixture Bluechip Fund"
-    assert result.plan == "direct"
-    assert result.option == "growth"
+def test_plan_direct():
+    assert parse_plan("Direct Plan") == "direct"
 
 
-def test_regular_plan_idcw():
-    result = parse_scheme_identity("Sample Fixture Overnight Fund - Regular Plan - IDCW")
-    assert result is not None
-    assert result.base_name == "Sample Fixture Overnight Fund"
-    assert result.plan == "regular"
-    assert result.option == "idcw"
+def test_plan_regular():
+    assert parse_plan("Regular Plan") == "regular"
 
 
-def test_dividend_synonym_maps_to_idcw():
-    result = parse_scheme_identity("Sample Fixture Liquid Fund - Direct Plan - Daily Dividend")
-    assert result is not None
-    assert result.option == "idcw"
-    assert result.base_name == "Sample Fixture Liquid Fund"
+def test_plan_blank_returns_none():
+    # Typical of an ETF: no distributor-plan concept at all.
+    assert parse_plan("") is None
+    assert parse_plan("-") is None
 
 
-def test_no_spaces_around_dashes():
-    result = parse_scheme_identity("Sample Fixture Fund-Direct-Growth")
-    assert result is not None
-    assert result.base_name == "Sample Fixture Fund"
-    assert result.plan == "direct"
-    assert result.option == "growth"
+def test_plan_mentioning_both_returns_none():
+    assert parse_plan("Direct and Regular Plan") is None
 
 
-def test_fund_name_containing_option_word_is_preserved():
-    # "Growth" inside the fund's own name must survive; only the trailing,
-    # purely-noise "Growth" segment should be stripped.
-    result = parse_scheme_identity("Sample Fixture Growth Opportunities Fund - Direct Plan - Growth")
-    assert result is not None
-    assert result.base_name == "Sample Fixture Growth Opportunities Fund"
-    assert result.plan == "direct"
-    assert result.option == "growth"
+def test_option_growth_variants():
+    assert parse_option("Growth Option") == "growth"
+    assert parse_option("GROWTH") == "growth"
+    assert parse_option("Growth") == "growth"
 
 
-def test_extra_series_segment_is_preserved():
-    result = parse_scheme_identity("Sample Fixture Fund - Series A - Direct Plan - Growth")
-    assert result is not None
-    assert result.base_name == "Sample Fixture Fund - Series A"
+def test_option_idcw_variants():
+    assert parse_option("IDCW Option") == "idcw"
+    assert parse_option("IDCW") == "idcw"
+    assert parse_option("IDCW-Re-investment") == "idcw"
+    assert parse_option("MONTHLY DCW Payout") == "idcw"
+    assert parse_option("QUARTERLY IDCW Payout") == "idcw"
+    assert parse_option("Daily Dividend") == "idcw"
 
 
-def test_missing_plan_returns_none():
-    # Typical of an ETF: no Direct/Regular plan concept at all.
-    assert parse_scheme_identity("Sample Fixture Nifty 50 ETF") is None
+def test_option_blank_returns_none():
+    assert parse_option("") is None
+    assert parse_option("-") is None
 
 
-def test_both_plans_mentioned_returns_none():
-    assert parse_scheme_identity("Sample Fixture Fund - Direct and Regular Plan - Growth") is None
+def test_option_unsupported_returns_none():
+    # "Bonus" isn't growth or IDCW — schema doesn't model it, so skip
+    # rather than guess.
+    assert parse_option("Bonus") is None
 
 
-def test_both_options_mentioned_returns_none():
-    assert parse_scheme_identity("Sample Fixture Fund - Direct Plan - Growth and IDCW") is None
-
-
-def test_unsupported_option_returns_none():
-    # "Bonus" isn't growth or IDCW — schema doesn't model it, so skip rather
-    # than guess.
-    assert parse_scheme_identity("Sample Fixture Fund - Direct Plan - Bonus") is None
+def test_option_mentioning_both_returns_none():
+    assert parse_option("Growth and IDCW") is None
 
 
 def test_category_header_extraction():

@@ -14,12 +14,14 @@ from data_pipeline.sources.amfi.parser import parse_navall
 TEST_AMC_NAME = "Onboarding Test Fund House"
 
 FIXTURE_TEXT = (
-    "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Net Asset Value;Date\n\n"
+    "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date\n\n"
     "Open Ended Schemes(Equity Scheme - Large Cap Fund)\n\n"
     f"{TEST_AMC_NAME}\n"
-    "ONB700001;ONB-ISIN-01;-;Onboarding Test Bluechip Fund - Direct Plan - Growth;123.4567;12-Sep-2026\n"
-    "ONB700002;ONB-ISIN-02;-;Onboarding Test Bluechip Fund - Regular Plan - Growth;120.1234;12-Sep-2026\n"
-    "ONB700003;-;-;Onboarding Test Nifty 50 ETF;250.0000;12-Sep-2026\n"
+    "ONB700001;ONB-ISIN-01;-;Onboarding Test Bluechip Fund;Direct Plan;Growth;123.4567;12-Sep-2026\n"
+    "ONB700002;ONB-ISIN-02;-;Onboarding Test Bluechip Fund;Regular Plan;Growth;120.1234;12-Sep-2026\n"
+    # Blank Plan/Option — mirrors a real ETF row, which carries no
+    # distributor-plan concept at all.
+    "ONB700003;-;-;Onboarding Test Nifty 50 ETF;;;250.0000;12-Sep-2026\n"
 )
 
 
@@ -54,7 +56,7 @@ def test_onboards_amc_family_scheme_and_variants(db):
         assert result.schemes_created == 1  # both Direct/Regular rows share one base scheme
         assert result.variants_created == 2
         assert len(result.skipped) == 1
-        assert result.skipped[0].reason == "could not determine plan/option from scheme name"
+        assert result.skipped[0].reason == "could not determine plan from ''"
         assert result.skipped[0].scheme_code == "ONB700003"
 
         amc = db.query(AMC).filter(AMC.name == TEST_AMC_NAME).one()

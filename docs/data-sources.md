@@ -43,8 +43,15 @@ classification against real index data is unbuilt — see section 3 below.
 **Update cadence**: once per business day (AMFI's own publishing schedule)
 **License / access**: publicly published, no API key or registration
 **Format**: semicolon-delimited text, one row per scheme variant, grouped
-under alternating AMC-name and category-header lines. Documented in full
-in `data_pipeline/sources/amfi/parser.py`'s module docstring.
+under alternating AMC-name and category-header lines, with 8 columns —
+`Scheme Code;ISIN Div Payout/ISIN Growth;ISIN Div Reinvestment;Scheme
+Name;Plan;Option;Net Asset Value;Date`. Plan and Option are their own
+columns; Scheme Name is already the bare fund name. This was verified
+against the live file via a GitHub Actions debug run on 2026-09-12 (this
+sandbox itself cannot reach amfiindia.com) after an earlier, unverified
+6-column assumption turned out to be wrong and silently misread every
+real row's NAV/date — see `data_pipeline/sources/amfi/parser.py`'s module
+docstring for the full story and current format.
 
 **What this pipeline does with it**:
 1. `data_pipeline/sources/amfi/client.py` downloads the raw file.
@@ -53,10 +60,11 @@ in `data_pipeline/sources/amfi/parser.py`'s module docstring.
    `AMC`/`FundFamily`/`Scheme`/`SchemeVariant` rows for schemes the file
    describes that aren't in our database yet — conservatively, using only
    fields the file itself provides (AMC name, category header, scheme
-   name, AMFI code, ISIN), and skipping (not guessing at) anything whose
-   plan/option can't be confidently parsed from its name. Most ETFs fall
-   into that skipped category today, since they carry no Direct/Regular
-   or Growth/IDCW split in their name at all — see that module's and
+   name, Plan, Option, AMFI code, ISIN), and skipping (not guessing at)
+   anything whose Plan/Option column can't be confidently classified.
+   Most ETFs fall into that skipped category today, since their Plan and
+   Option columns are simply blank — there is no distributor-plan concept
+   for an exchange-traded instrument — see that module's and
    `scheme_identity.py`'s docstrings.
 4. `data_pipeline/validation/nav_validation.py` rejects (with a specific
    reason) any row with a missing field, non-numeric or non-positive NAV,
