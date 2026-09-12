@@ -14,6 +14,7 @@ idna==3.19
 iniconfig==2.3.0
 Mako==1.4.1
 MarkupSafe==3.0.3
+numpy==2.4.6
 packaging==26.3
 pluggy==1.6.0
 psycopg2-binary==2.9.13

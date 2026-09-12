@@ -83,10 +83,29 @@ health-check response, confirming the full stack is wired end-to-end.
 - Every computed metric carries an `analytics_version` so methodology changes are traceable over time.
 - Historical performance is never presented as a guarantee; stress tests are explicitly hypothetical.
 
+### 4. Sample data (Phase 2)
+
+The core schema ships empty. To exercise it end to end with a small set of
+**entirely fictional, clearly-labelled** sample funds (see the file header
+in `database/seeds/seed_sample_data.py` for exactly what is and isn't real):
+
+```bash
+cd backend && source .venv/bin/activate
+python ../database/seeds/seed_sample_data.py            # idempotent
+python ../database/seeds/seed_sample_data.py --reset     # wipe + reseed
+```
+
+This creates 2 sample AMCs, 4 schemes, 8 scheme variants (direct/regular ×
+growth), synthetic NAV and benchmark history (seeded random walk, not real
+market data), sample portfolio holdings, managers, and market regimes.
+
 ## Status
 
-**Phase 0** (architecture) and **Phase 1** (foundation) complete:
+**Phase 0** (architecture), **Phase 1** (foundation) and **Phase 2**
+(core schema + sample data) complete:
 frontend and backend start, Postgres connects, health endpoint returns OK,
-first migration (full core schema) applies cleanly, one test passes.
+migration applies cleanly, the full identifier hierarchy (AMC → fund family
+→ scheme → variant) and every core table can be populated and queried, and
+the seed script is idempotent and safely resettable.
 
-Next: **Phase 2** — seed data for a small set of realistic, clearly-labelled sample funds.
+Next: **Phase 3** — real NAV ingestion (AMFI/mfapi.in adapter).
