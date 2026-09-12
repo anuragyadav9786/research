@@ -1,6 +1,9 @@
+import json
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -11,8 +14,23 @@ class Settings(BaseSettings):
     app_name: str = "ThinkFin Research Engine"
     environment: str = "development"
     database_url: str = "postgresql+psycopg2://postgres:postgres@localhost:5432/thinkfin"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # NoDecode: pydantic-settings' default env-var handling for list fields
+    # requires strict JSON (e.g. '["a","b"]') and raises a startup-crashing
+    # SettingsError on anything else — a one-character mistake in a host's
+    # dashboard (missing bracket/quote) takes the whole app down. The
+    # validator below also accepts a plain comma-separated string.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
     analytics_version: str = "v0.1.0"
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_cors_origins(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        value = value.strip()
+        if value.startswith("["):
+            return json.loads(value)
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
 
     # Annualized, decimal form (e.g. 0.07 = 7%). Used by the Sharpe ratio.
     # Documented assumption — see analytics/risk.py for methodology notes.
