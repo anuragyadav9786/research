@@ -25,8 +25,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Pull the DB URL from application settings (.env) rather than hard-coding it in alembic.ini
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Pull the DB URL from application settings (.env) rather than hard-coding it in alembic.ini.
+# set_main_option() stores this in a configparser ConfigParser, which treats
+# "%" as interpolation syntax — a literal "%" in the URL (e.g. a percent-encoded
+# character in a Supabase-generated password) raises ValueError otherwise, so
+# it must be escaped as "%%" first.
+config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 
