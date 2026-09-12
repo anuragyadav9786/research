@@ -20,6 +20,7 @@ import { HoldingsTable } from "@/components/fund/HoldingsTable";
 import { MarketRegimeTable } from "@/components/fund/MarketRegimeTable";
 import { NavChart } from "@/components/fund/NavChart";
 import { StatCard } from "@/components/fund/StatCard";
+import { AiSummaryPanel } from "@/components/fund/AiSummaryPanel";
 import { StressTestPanel } from "@/components/fund/StressTestPanel";
 import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, RiskResponse, RollingReturnsResponse } from "@/types/fund";
 import type { MarketRegimeBehaviorResponse } from "@/types/marketRegime";
@@ -366,6 +367,11 @@ export default async function FundDetailPage({
               <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-1">Stress Test</h2>
               <p className="text-xs text-neutral-600 mb-3">{stressTest!.hypothetical_notice}</p>
               <StressTestPanel scenarios={stressTest!.scenarios} />
+            </section>
+
+            <section>
+              <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-3">ThinkFin AI Summary</h2>
+              <AiSummaryPanel fundId={fundId} plan={plan} option={option} />
             </section>
           </>
         )}

@@ -14,6 +14,7 @@ import type { OverlapResponse } from "@/types/overlap";
 import type { PortfolioResponse } from "@/types/portfolio";
 import type { PortfolioAnalysisResponse, PortfolioHoldingInput } from "@/types/portfolioAnalysis";
 import type { StressTestResponse } from "@/types/stressTest";
+import type { AISummaryResponse } from "@/types/aiSummary";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -133,4 +134,8 @@ export function listMarketRegimes(): Promise<MarketRegimeSummary[]> {
 
 export function getFundStressTest(fundId: number, params: VariantParams = {}): Promise<StressTestResponse> {
   return apiGet<StressTestResponse>(`/api/funds/${fundId}/stress-test`, params);
+}
+
+export function getFundAiSummary(fundId: number, params: VariantParams = {}): Promise<AISummaryResponse> {
+  return apiGet<AISummaryResponse>(`/api/funds/${fundId}/ai-summary`, params);
 }

@@ -282,16 +282,42 @@ cd backend && source .venv/bin/activate
 pytest tests/analytics/test_stress_testing.py tests/api/test_stress_test.py -q
 ```
 
+### 14. AI Explanation Layer (Phase 12)
+
+`GET /api/funds/{id}/ai-summary` — a human-readable summary of a fund's
+already-computed figures (returns, risk, drawdown, rolling returns,
+market-regime behaviour, concentration). **The AI computes nothing**: it's
+given a small, flat, named dict built entirely from the existing tested
+endpoints above (`app/services/ai_explanation_service.build_fund_facts`),
+and every number in its output is checked against that same dict before
+being returned — a fabricated number gets the whole summary discarded,
+not softened or ignored. On the frontend it's an opt-in "Generate AI
+Summary" button on the fund page (not auto-loaded — an LLM call costs
+real money, and this is a zero-budget project).
+
+**Known limitation**: `api.anthropic.com` is reachable from this dev
+environment (confirmed — an invalid key correctly gets HTTP 401, not a
+connection failure) but no `ANTHROPIC_API_KEY` is provisioned for the
+application. Everything up to that boundary is tested with the LLM call
+mocked; set the key in `.env` to enable the live path, no code changes
+needed. See `docs/api.md` for the full architecture diagram.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/unit/test_ai_explanation_service.py tests/api/test_ai_summary.py -q
+```
+
 ## Status
 
-**Phase 0, 1, 2, 4, 5, 6, 7, 8, 9, 10 and 11** complete. **Phase 3** (NAV
-ingestion) is architecturally complete and tested down to the network
-boundary — see Known limitations for exactly what remains to verify.
+**Phase 0 through 12** complete. **Phase 3** (NAV ingestion) and
+**Phase 12** (AI Explanation Layer) are each architecturally complete and
+fully tested down to their respective network/credential boundary — see
+Known limitations for exactly what remains to verify live.
 
-Next: **Phase 12** — AI Explanation Layer (an AI layer that reads only
-precomputed structured JSON from the analytics endpoints above and
-generates human-readable research summaries — never computes a number
-itself, per Rule 4).
+Next: **Phase 13** — Automation (GitHub Actions for daily NAV ingestion
+and monthly holdings/factsheet refresh, each run logged) — needs a
+CI-reachable Postgres instance (e.g. Supabase) provisioned first, which
+hasn't happened yet.
 
 ### Known limitations
 
