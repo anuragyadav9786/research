@@ -1,17 +1,17 @@
 """Map validated AMFI NAV records onto our own scheme_variants.
 
-Design decision: this pipeline only ingests NAV for scheme_variants that
-already exist in our database (matched by amfi_code, falling back to
-ISIN). It never auto-creates a new AMC/fund-family/scheme/variant from a
-NAV file alone — that hierarchy (Section 16-17) needs curated identity
-data (AMC, category, plan/option) that NAVAll.txt's flat row doesn't
-reliably carry, and inventing it from a NAV row would risk the exact kind
-of fabricated/low-confidence fund-identity data Rule 2 forbids. Onboarding
-a new scheme is a separate, explicit step (Phase 2-style seeding or a
-future admin workflow), not a side effect of a daily NAV refresh.
+This pipeline matches NAV records to scheme_variants by amfi_code, falling
+back to ISIN. As of scheme_onboarding.py, new scheme_variants ARE created
+automatically from AMFI's file — conservatively, using only fields the
+file itself provides, and skipping anything whose plan/option can't be
+confidently parsed (see scheme_identity.py) rather than guessing at it.
+Onboarding runs before this mapping step (in nav_ingestion.py), so a
+scheme onboarded from today's file can still match today's NAV row.
 
-Records for schemes not yet in our universe are reported as "unmapped" in
-the ingestion log — visible, not silently dropped.
+Records that remain unmatched here — mostly ones onboarding itself
+skipped, since a schemevariant that doesn't exist can't be matched by
+definition — are reported as "unmapped" in the ingestion log, visible,
+not silently dropped.
 """
 from __future__ import annotations
 

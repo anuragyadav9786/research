@@ -49,18 +49,26 @@ in `data_pipeline/sources/amfi/parser.py`'s module docstring.
 **What this pipeline does with it**:
 1. `data_pipeline/sources/amfi/client.py` downloads the raw file.
 2. `data_pipeline/sources/amfi/parser.py` parses it into structured rows.
-3. `data_pipeline/validation/nav_validation.py` rejects (with a specific
+3. `data_pipeline/normalization/scheme_onboarding.py` creates real
+   `AMC`/`FundFamily`/`Scheme`/`SchemeVariant` rows for schemes the file
+   describes that aren't in our database yet — conservatively, using only
+   fields the file itself provides (AMC name, category header, scheme
+   name, AMFI code, ISIN), and skipping (not guessing at) anything whose
+   plan/option can't be confidently parsed from its name. Most ETFs fall
+   into that skipped category today, since they carry no Direct/Regular
+   or Growth/IDCW split in their name at all — see that module's and
+   `scheme_identity.py`'s docstrings.
+4. `data_pipeline/validation/nav_validation.py` rejects (with a specific
    reason) any row with a missing field, non-numeric or non-positive NAV,
    an unparseable date, an "N.A." NAV, or a duplicate scheme code within
    the same file.
-4. `data_pipeline/normalization/scheme_mapping.py` matches each accepted
-   row to an existing `scheme_variants` row by AMFI code (falling back to
-   ISIN). **A NAV file alone never creates a new scheme** — see that
-   module's docstring for why.
-5. `data_pipeline/storage/database_writer.py` upserts matched rows into
+5. `data_pipeline/normalization/scheme_mapping.py` matches each accepted
+   row to a `scheme_variants` row (now including ones onboarded in step 3
+   of this same run) by AMFI code, falling back to ISIN.
+6. `data_pipeline/storage/database_writer.py` upserts matched rows into
    `nav_history` (`ON CONFLICT DO NOTHING` on `(scheme_variant_id, date)`,
    so re-running for an already-ingested date is a safe no-op).
-6. Every run — success or failure — is logged to `data_ingestion_runs`
+7. Every run — success or failure — is logged to `data_ingestion_runs`
    with download/accept/reject counts and, on failure, an error message.
 
 **Current status — IMPORTANT**: this sandboxed development environment's

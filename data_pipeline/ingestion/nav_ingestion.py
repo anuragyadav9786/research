@@ -1,5 +1,5 @@
-"""Orchestrates one AMFI NAV ingestion run: fetch -> parse -> validate ->
-map -> store -> log.
+"""Orchestrates one AMFI NAV ingestion run: fetch -> parse -> onboard ->
+validate -> map -> store -> log.
 
 Every run produces a `data_ingestion_runs` row (Section 19/34) regardless
 of outcome — including failures — so "is the data fresh, and did the last
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.timeseries import DataIngestionRun
 from data_pipeline.normalization.scheme_mapping import map_to_scheme_variants
+from data_pipeline.normalization.scheme_onboarding import onboard_schemes
 from data_pipeline.sources.amfi.client import NAVALL_URL, NavFetchError, fetch_navall
 from data_pipeline.sources.amfi.parser import parse_navall
 from data_pipeline.storage.database_writer import get_or_create_data_source, write_nav_records
@@ -41,6 +42,15 @@ def run_amfi_nav_ingestion(db: Session) -> DataIngestionRun:
         raw_text = fetch_navall()
         raw_records = parse_navall(raw_text)
         run.records_downloaded = len(raw_records)
+
+        # Create real AMC/Scheme/SchemeVariant rows for schemes this file
+        # describes that we don't yet track, before mapping — so a scheme
+        # onboarded from today's file can also have today's NAV stored
+        # against it, not just from tomorrow's run. See scheme_onboarding.py
+        # for what is and isn't onboarded (e.g. most ETFs are skipped, not
+        # guessed at).
+        onboarding = onboard_schemes(db, raw_records)
+        run.onboarding_summary = onboarding  # not persisted — for the caller's log line only
 
         validation = validate_navall_records(raw_records)
         mapping = map_to_scheme_variants(db, validation.accepted)
