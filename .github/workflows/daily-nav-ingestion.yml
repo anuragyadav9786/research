@@ -36,6 +36,10 @@ on:
         description: "Read-only: report how many scheme_variants/schemes are IDCW-only vs growth, to scope removing IDCW support"
         type: boolean
         default: false
+      run_cleanup_idcw:
+        description: "DESTRUCTIVE: delete all IDCW-option scheme_variants (and their nav_history), plus any scheme left with zero variants as a result. Growth-only going forward per user request."
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -211,11 +215,54 @@ jobs:
               print(f'schemes with NO growth variant at all (would be orphaned): {orphaned} of {total_schemes} total schemes')
           "
 
+      - name: Cleanup — delete IDCW-option variants, their NAV history, and any now-empty schemes
+        if: ${{ inputs.run_cleanup_idcw == true }}
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, os.path.join(os.getcwd(), 'backend'))
+          from sqlalchemy import text
+          from app.core.database import engine
+
+          with engine.connect() as conn:
+              nav_deleted = conn.execute(text('''
+                  DELETE FROM nav_history WHERE scheme_variant_id IN (
+                      SELECT id FROM scheme_variants WHERE option = 'idcw'
+                  )
+              ''')).rowcount
+              print(f'Deleted {nav_deleted} nav_history rows for IDCW variants')
+
+              variants_deleted = conn.execute(text(\"DELETE FROM scheme_variants WHERE option = 'idcw'\")).rowcount
+              print(f'Deleted {variants_deleted} IDCW scheme_variants')
+
+              schemes_deleted = conn.execute(text('''
+                  DELETE FROM schemes s WHERE NOT EXISTS (
+                      SELECT 1 FROM scheme_variants sv WHERE sv.scheme_id = s.id
+                  )
+              ''')).rowcount
+              print(f'Deleted {schemes_deleted} schemes left with zero variants (growth-only, never offered growth)')
+
+              conn.commit()
+
+          with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
+              for tbl in ('nav_history', 'scheme_variants', 'schemes'):
+                  conn.execute(text(f'VACUUM FULL {tbl}'))
+
+          with engine.connect() as conn:
+              size = conn.execute(text('SELECT pg_size_pretty(pg_database_size(current_database()))')).scalar()
+              remaining_variants = conn.execute(text(\"SELECT count(*) FROM scheme_variants\")).scalar()
+              remaining_options = dict(conn.execute(text('SELECT option, count(*) FROM scheme_variants GROUP BY option')).all())
+              remaining_schemes = conn.execute(text('SELECT count(*) FROM schemes')).scalar()
+              print(f'database size after: {size}')
+              print(f'scheme_variants remaining: {remaining_variants} {remaining_options}')
+              print(f'schemes remaining: {remaining_schemes}')
+          "
+
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline

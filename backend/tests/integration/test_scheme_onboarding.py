@@ -75,6 +75,28 @@ def test_onboards_amc_family_scheme_and_variants(db):
         _cleanup(db)
 
 
+def test_idcw_variants_are_skipped_not_onboarded(db):
+    fixture_text = (
+        "Scheme Code;ISIN Div Payout/ ISIN Growth;ISIN Div Reinvestment;Scheme Name;Plan;Option;Net Asset Value;Date\n\n"
+        "Open Ended Schemes(Debt Scheme - Overnight Fund)\n\n"
+        f"{TEST_AMC_NAME}\n"
+        "ONB700004;-;ONB-ISIN-04;Onboarding Test Overnight Fund;Direct Plan;IDCW;1000.0000;12-Sep-2026\n"
+    )
+    raw_records = parse_navall(fixture_text)
+    try:
+        result = onboard_schemes(db, raw_records)
+
+        assert result.variants_created == 0
+        assert result.schemes_created == 0
+        assert len(result.skipped) == 1
+        assert result.skipped[0].reason == "idcw_option_not_tracked"
+        assert result.skipped[0].scheme_code == "ONB700004"
+
+        assert db.query(SchemeVariant).filter(SchemeVariant.amfi_code == "ONB700004").first() is None
+    finally:
+        _cleanup(db)
+
+
 def test_rerunning_onboarding_is_idempotent(db):
     raw_records = parse_navall(FIXTURE_TEXT)
     try:

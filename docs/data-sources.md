@@ -65,7 +65,11 @@ docstring for the full story and current format.
    Most ETFs fall into that skipped category today, since their Plan and
    Option columns are simply blank — there is no distributor-plan concept
    for an exchange-traded instrument — see that module's and
-   `scheme_identity.py`'s docstrings.
+   `scheme_identity.py`'s docstrings. **Growth-only by design**: an IDCW
+   (dividend) option is correctly recognized here, specifically so it can
+   be skipped (reason `idcw_option_not_tracked`) rather than onboarded —
+   this platform only tracks growth-option variants, so IDCW identity and
+   NAV history are never created in the first place.
 4. `data_pipeline/validation/nav_validation.py` rejects (with a specific
    reason) any row with a missing field, non-numeric or non-positive NAV,
    an unparseable date, an "N.A." NAV, or a duplicate scheme code within
