@@ -27,11 +27,19 @@ on:
 jobs:
   ingest:
     runs-on: ubuntu-latest
+    # `secrets` is not a recognized named-value inside `if:` conditions —
+    # GitHub Actions only exposes it directly in `run:`/`env:`. Routing it
+    # through job-level `env` here lets the "is it configured" check below
+    # use `env.DATABASE_URL` instead (this was only caught by actually
+    # triggering the workflow, not by review — GitHub's own workflow
+    # parser rejects the direct `secrets.DATABASE_URL` form at dispatch time).
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Check DATABASE_URL is configured
-        if: ${{ secrets.DATABASE_URL == '' }}
+        if: ${{ env.DATABASE_URL == '' }}
         run: |
           echo "::error::DATABASE_URL repository secret is not set. See docs/deployment.md — a real, persistent Postgres instance must be provisioned and its connection string added as a secret before this workflow can run."
           exit 1
@@ -47,11 +55,7 @@ jobs:
 
       - name: Run database migrations
         working-directory: backend
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m data_pipeline.orchestration.daily_pipeline
