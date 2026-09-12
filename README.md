@@ -146,14 +146,37 @@ cd backend && source .venv/bin/activate
 pytest tests/api/test_funds.py -q
 ```
 
+### 8. Fund Intelligence UI (Phase 6)
+
+The Next.js frontend now has a real Research section, not just the health
+check shell: `/research` (search/browse funds) and `/research/[fundId]`
+(the fund intelligence page — returns, risk, a NAV-vs-benchmark chart,
+rolling-return distribution with benchmark consistency, and drawdown, with
+direct/regular and growth/IDCW plan toggles). Built against a small
+Phase-6 addition to the API, `GET /api/funds/{id}/nav-history`, since
+charting needs the raw series, not just computed metrics.
+
+```bash
+# with the backend running on :8000
+cd frontend && npm run dev
+# visit http://localhost:3000/research
+```
+
+Verified in a real browser (Playwright + the pre-installed Chromium) against
+live seeded data, including the search/filter form, plan/option toggles,
+the rolling-returns window selector, the insufficient-history and
+no-such-variant states, and a themed 404 page. See `docs/api.md` for the
+new endpoint.
+
 ## Status
 
-**Phase 0, 1, 2, 4 and 5** complete. **Phase 3** (NAV ingestion) is
+**Phase 0, 1, 2, 4, 5 and 6** complete. **Phase 3** (NAV ingestion) is
 architecturally complete and tested down to the network boundary — see
 Known limitations for exactly what remains to verify.
 
-Next: **Phase 6** — Fund Intelligence UI, to render this API's output as
-the actual fund research page.
+Next: **Phase 7** — Holdings Engine (portfolio snapshots, sectors,
+concentration, market-cap/style classification), which the seed data and
+schema already support but no API/UI exposes yet.
 
 ### Known limitations
 

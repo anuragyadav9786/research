@@ -25,7 +25,8 @@ doesn't have returns `404`, not a fabricated/substituted result.
 | `GET /api/funds/{fund_id}/risk` | Volatility, downside deviation, Sharpe, Sortino, upside/downside capture, beta, Jensen's alpha. |
 | `GET /api/funds/{fund_id}/rolling-returns` | Rolling-CAGR distribution + benchmark-consistency stats for a given `window_years` (default 3, query param). |
 | `GET /api/funds/{fund_id}/drawdown` | Maximum drawdown episode: peak/trough dates and NAVs, recovery date or explicit "not yet recovered". |
-| `GET /api/funds/{fund_id}/intelligence` | Bundles all of the above plus fund/variant metadata into one response. |
+| `GET /api/funds/{fund_id}/nav-history` | Raw NAV/benchmark series (Phase 6 addition — no analytics, just the data feed the frontend's charts render). |
+| `GET /api/funds/{fund_id}/intelligence` | Bundles all of the above (except `nav-history`) plus fund/variant metadata into one response. |
 
 Interactive docs: `http://localhost:8000/docs` (Swagger UI, auto-generated
 from the same Pydantic schemas).

@@ -29,6 +29,7 @@ from app.schemas.funds import (
     FundDetail,
     FundSummary,
     IntelligenceResponse,
+    NavHistoryResponse,
     ReturnsResponse,
     RiskResponse,
     RollingReturnsResponse,
@@ -121,6 +122,25 @@ def get_fund_returns(
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
     return fund_analytics_service.compute_returns(nav)
+
+
+@router.get("/{fund_id}/nav-history", response_model=NavHistoryResponse)
+def get_fund_nav_history(
+    fund_id: int,
+    plan: Literal["direct", "regular"] = "direct",
+    option: Literal["growth", "idcw"] = "growth",
+    db: Session = Depends(get_db),
+) -> dict:
+    scheme = _resolve_scheme(db, fund_id)
+    variant = _resolve_variant(db, scheme, plan, option)
+    nav = fund_repository.get_nav_series(db, variant.id)
+    benchmark = _benchmark_series(db, scheme)
+    return {
+        "variant": _variant_summary(db, variant),
+        "benchmark_name": scheme.benchmark.name if scheme.benchmark else None,
+        "fund_points": fund_analytics_service.series_to_points(nav),
+        "benchmark_points": fund_analytics_service.series_to_points(benchmark) if benchmark is not None else [],
+    }
 
 
 @router.get("/{fund_id}/risk", response_model=RiskResponse)

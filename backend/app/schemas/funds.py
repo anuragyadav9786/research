@@ -112,6 +112,23 @@ class DrawdownResponse(BaseModel):
     disclaimer: str = DISCLAIMER
 
 
+class NavPoint(BaseModel):
+    date: date
+    value: float
+
+
+class NavHistoryResponse(BaseModel):
+    """Raw NAV/benchmark series for charting (Section 22's "Performance:
+    interactive charts" / "Drawdown: drawdown chart"). Deliberately just a
+    data feed — no analytics computed here; that's the other endpoints."""
+
+    variant: VariantSummary
+    benchmark_name: str | None
+    fund_points: list[NavPoint]
+    benchmark_points: list[NavPoint]
+    disclaimer: str = DISCLAIMER
+
+
 class IntelligenceResponse(BaseModel):
     """A precomputed-analytics bundle for one fund. Deliberately does NOT
     yet include the qualitative "Strong/Moderate/Weak" assessment framework

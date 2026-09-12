@@ -30,6 +30,12 @@ RETURN_WINDOWS_YEARS = {"1y": 1, "3y": 3, "5y": 5, "7y": 7, "10y": 10}
 MIN_OBSERVATIONS_FOR_RISK = 2
 
 
+def series_to_points(series: pd.Series) -> list[dict]:
+    """Serialize a date-indexed NAV/benchmark series for the raw
+    nav-history endpoint. No analytics — a straight data feed for charts."""
+    return [{"date": _to_date(idx), "value": round(float(v), 4)} for idx, v in series.items()]
+
+
 def _to_date(value) -> date | None:
     if value is None:
         return None

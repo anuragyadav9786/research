@@ -56,6 +56,18 @@ def test_get_fund_detail_includes_both_variants(seeded_fund_id):
         assert variant["latest_nav_date"] is not None
 
 
+def test_get_fund_nav_history_returns_ordered_series(seeded_fund_id):
+    response = client.get(f"/api/funds/{seeded_fund_id}/nav-history")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["benchmark_name"] == "Nifty 50 TRI (Sample Series)"
+    assert len(body["fund_points"]) > 1000
+    assert len(body["benchmark_points"]) > 1000
+    dates = [p["date"] for p in body["fund_points"]]
+    assert dates == sorted(dates)
+    assert all(p["value"] > 0 for p in body["fund_points"])
+
+
 def test_get_fund_returns_reports_all_windows(seeded_fund_id):
     response = client.get(f"/api/funds/{seeded_fund_id}/returns")
     assert response.status_code == 200
