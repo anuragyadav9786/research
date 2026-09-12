@@ -307,20 +307,63 @@ cd backend && source .venv/bin/activate
 pytest tests/unit/test_ai_explanation_service.py tests/api/test_ai_summary.py -q
 ```
 
+### 15. Automation (Phase 13)
+
+`.github/workflows/ci.yml` — runs the full backend test suite (159 tests,
+against a throwaway Postgres service container — no secrets needed) and
+the frontend build/lint on every push and PR. Verified by actually
+running the same sequence against a genuinely fresh database before
+committing it, not assumed to work.
+
+`.github/workflows/daily-nav-ingestion.yml` — built and ready, but its
+`schedule:` trigger is deliberately commented out: it needs a real,
+persistent `DATABASE_URL` secret pointing at a provisioned database,
+which doesn't exist yet. Fails fast with a clear error if triggered
+without it, rather than a cryptic connection failure. See
+`docs/deployment.md` for exactly how to turn it on once that database
+exists.
+
+**A monthly holdings/factsheet workflow was deliberately not built.**
+There's no real holdings-ingestion source yet (AMC factsheets aren't
+parsed — see `docs/data-sources.md`), and a scheduled job with nothing
+real to call would be automation theater, not automation.
+
+**Bug found and fixed along the way**: `data_pipeline/orchestration/
+daily_pipeline.py`'s documented invocation (`python -m data_pipeline.
+orchestration.daily_pipeline`) had never actually been run — Phase 3's
+tests exercised the ingestion logic via pytest and the API, not this CLI
+entry point. Running it for the first time while building this phase's
+workflow immediately hit `ModuleNotFoundError: No module named 'app'`
+(the script imports `app.core.database` but nothing had put `backend/`
+on `sys.path`). Fixed with the same sys.path bootstrap already used by
+`backend/conftest.py` and `database/migrations/env.py`, then re-verified:
+it now runs, connects to the database, and fails cleanly at the already-
+documented AMFI network boundary — exactly the intended behaviour.
+
 ## Status
 
-**Phase 0 through 12** complete. **Phase 3** (NAV ingestion) and
+**Phase 0 through 13** complete. **Phase 3** (NAV ingestion) and
 **Phase 12** (AI Explanation Layer) are each architecturally complete and
-fully tested down to their respective network/credential boundary — see
-Known limitations for exactly what remains to verify live.
+fully tested down to their respective network/credential boundary; Phase
+13's scheduled ingestion workflow is built and tested logically but not
+yet turned on, pending real database infrastructure — see Known
+limitations and `docs/deployment.md` for exactly what remains.
 
-Next: **Phase 13** — Automation (GitHub Actions for daily NAV ingestion
-and monthly holdings/factsheet refresh, each run logged) — needs a
-CI-reachable Postgres instance (e.g. Supabase) provisioned first, which
-hasn't happened yet.
+This completes the phases in the original build plan (`docs/BUILD_PLAN.md`).
+What's next is either provisioning the real infrastructure the remaining
+gaps need (a database reachable from CI, an LLM API key, a factsheet
+source for holdings) or extending the product itself (Section 15's
+qualitative Strengths/Risks/Portfolio-role framework, deliberately
+deferred throughout since it needs signal from engines like Manager
+Skill that don't exist yet).
 
 ### Known limitations
 
+- A transitive `postcss` dependency (via the pinned `next` version) has 2
+  known vulnerabilities per `npm audit` (1 high, 1 moderate) — build-time
+  CSS processing issues, not runtime user-input handling. The fix is a
+  breaking major Next.js upgrade that needs its own review pass; tracked
+  in `docs/deployment.md` rather than forced through unreviewed.
 - The analytics engine has been smoke-tested against the Phase 2 synthetic
   seed data (runs cleanly, produces sane output), but that seed generates
   the fund and its benchmark as *independent* random walks — so beta/alpha
