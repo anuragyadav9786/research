@@ -1,0 +1,23 @@
+name: Backend Keep-Alive
+
+# Render's free tier spins a web service down after a period of
+# inactivity; the next real visitor then pays for a slow "cold start"
+# (tens of seconds) before the site responds at all. A tiny periodic ping
+# to the health endpoint keeps the service warm so nobody sees that delay.
+# This is purely a keep-alive — /api/health does a lightweight DB
+# connectivity check and nothing else, no meaningful load added.
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/10 * * * *"
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          curl -sS -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" \
+            --max-time 30 \
+            "https://thinkfin-backend.onrender.com/api/health"
