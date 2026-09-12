@@ -8,7 +8,12 @@ name: Seed Sample Data
 # manually via a local run.
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      reset:
+        description: "Remove previously seeded sample rows instead of (re-)seeding them"
+        type: boolean
+        default: false
 
 jobs:
   seed:
@@ -34,4 +39,9 @@ jobs:
         run: pip install -r backend/requirements.txt
 
       - name: Seed sample data
+        if: ${{ inputs.reset != true }}
         run: python database/seeds/seed_sample_data.py
+
+      - name: Reset (remove) sample data
+        if: ${{ inputs.reset == true }}
+        run: python database/seeds/seed_sample_data.py --reset
