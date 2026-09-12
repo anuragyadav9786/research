@@ -5,7 +5,8 @@ import { listFunds } from "@/lib/api";
 const NAV = [
   { label: "Dashboard", href: "/" },
   { label: "Research", href: "/research" },
-  { label: "Portfolio", href: null }, // not built yet (Phase 9)
+  { label: "Compare", href: "/research/compare" },
+  { label: "Portfolio", href: "/portfolio" },
   { label: "Market Intelligence", href: null }, // not built yet (Phase 10)
   { label: "Reports", href: null },
   { label: "Admin", href: null }, // Data Status dashboard — Phase 3 automation follow-up

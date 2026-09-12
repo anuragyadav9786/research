@@ -145,6 +145,35 @@ variant exists) since holdings-based overlap doesn't depend on plan/
 option and a single representative return series is sufficient for this
 purpose — see `fund_repository.get_default_variant`.
 
+## Multi-fund portfolio combination (`analytics/portfolio.py`)
+
+**Combine effective weights**: `effective_weight[label] = sum_over_funds(
+fund_weight_pct/100 * per_fund_weight[fund].get(label, 0))`. The
+"look-through" formula: how much of the *overall portfolio* each security
+(or sector, or market-cap bucket — it's generic over the label) actually
+represents once each fund's own weight in the portfolio is accounted for.
+This is precisely how hidden cross-fund concentration becomes visible: two
+funds that each look diversified individually can combine into a
+portfolio that isn't, and this arithmetic is what surfaces that.
+
+**Combine weighted returns**: `portfolio_return[t] = sum(fund_weight_pct/
+100 * fund_return[t])`, restricted to dates present in every constituent
+fund's history (inner join — documented limitation: a fund with a shorter
+history shrinks the analyzable window for the whole portfolio) and
+assuming static weights throughout (no rebalancing modeled — a real
+portfolio drifts from target weights as constituent funds move; this
+does not simulate that drift).
+
+**Synthetic NAV from returns**: `nav[t] = base * prod(1 + returns[<=t])`
+— reconstructs a NAV-like level series purely so the existing
+`analytics.drawdown.max_drawdown` can run on a combined portfolio without
+a second drawdown implementation. It's a hypothetical ₹`base` investment
+growing at exactly the combined return series, not a real instrument.
+
+Portfolio-level volatility/Sharpe/Sortino reuse `analytics/risk.py`
+directly on the combined return series — no separate portfolio-risk
+formulas exist, by design (Rule 5: don't duplicate).
+
 ## Testing approach
 
 Each module has a corresponding `backend/tests/analytics/test_*.py` file.

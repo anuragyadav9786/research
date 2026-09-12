@@ -210,15 +210,38 @@ pytest tests/analytics/test_overlap.py tests/analytics/test_correlation.py tests
 Multi-fund (3+) "hidden concentration" and combined-portfolio analysis —
 the rest of Section 9/11 — need Phase 9's Portfolio Analysis engine.
 
+### 11. Portfolio Analysis (Phase 9)
+
+`POST /api/portfolio/analyse` — combine 2-10 funds by weight into a single
+hypothetical portfolio: look-through combined holdings, sector/market-cap
+allocation, concentration (HHI on the combined exposure), pairwise
+overlap between every constituent pair, and portfolio-level volatility/
+Sharpe/Sortino/drawdown computed from the weight-combined return series.
+Built entirely from existing Phase 4/7/8 analytics via
+`analytics/portfolio.py`'s combination formulas — no new risk/
+concentration math. **Stateless**: no auth system exists yet, so this
+takes funds+weights in the request rather than reading/writing a
+persisted "my portfolio" (see `docs/api.md` for why).
+
+A new `/portfolio` page lets you build a hypothetical portfolio from 2-10
+funds with a weight per fund and see the full breakdown — linked from the
+main nav on every page.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/analytics/test_portfolio.py tests/api/test_portfolio_analysis.py -q
+```
+
 ## Status
 
-**Phase 0, 1, 2, 4, 5, 6, 7 and 8** complete. **Phase 3** (NAV ingestion)
-is architecturally complete and tested down to the network boundary — see
-Known limitations for exactly what remains to verify.
+**Phase 0, 1, 2, 4, 5, 6, 7, 8 and 9** complete. **Phase 3** (NAV
+ingestion) is architecturally complete and tested down to the network
+boundary — see Known limitations for exactly what remains to verify.
 
-Next: **Phase 9** — Portfolio Analysis (combining multiple funds into one
-investor portfolio: combined holdings, effective exposure, concentration,
-overlap and risk at the portfolio level).
+Next: **Phase 10** — Market-Cycle Engine (classifying historical market
+regimes and showing fund behaviour — return, volatility, drawdown — within
+each one; the `market_regimes` table already exists but nothing populates
+or exposes it beyond the Phase 2 sample seed).
 
 ### Known limitations
 

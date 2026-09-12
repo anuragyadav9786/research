@@ -104,6 +104,7 @@ export default async function FundDetailPage({
           <Link href="/" className="hover:text-neutral-100">Dashboard</Link>
           <Link href="/research" className="hover:text-neutral-100">Research</Link>
           <Link href="/research/compare" className="hover:text-neutral-100">Compare</Link>
+          <Link href="/portfolio" className="hover:text-neutral-100">Portfolio</Link>
         </nav>
       </header>
 
