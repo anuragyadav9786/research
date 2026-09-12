@@ -1,0 +1,28 @@
+# Render Blueprint (https://render.com/docs/blueprint-spec) for the FastAPI
+# backend. In the Render dashboard: New -> Blueprint -> connect this repo ->
+# Render reads this file and provisions the service below. Env vars marked
+# `sync: false` are prompted for during setup rather than stored here, since
+# they're secrets/environment-specific values (see docs/deployment.md).
+services:
+  - type: web
+    name: thinkfin-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # alembic.ini's script_location is `%(here)s/../database/migrations`,
+    # resolved relative to alembic.ini itself (not the working directory),
+    # so this works regardless of rootDir.
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: APP_NAME
+        value: ThinkFin Research Engine
+      - key: ENVIRONMENT
+        value: production
