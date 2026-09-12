@@ -32,6 +32,10 @@ on:
         description: "DESTRUCTIVE: delete nav_history rows sourced from the superseded bulk AMFI historical backfill (see git history), then VACUUM FULL to actually reclaim disk space. One-time cleanup for the Supabase free-tier quota this caused."
         type: boolean
         default: false
+      debug_idcw_scope:
+        description: "Read-only: report how many scheme_variants/schemes are IDCW-only vs growth, to scope removing IDCW support"
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -170,11 +174,48 @@ jobs:
               print(f'nav_history rows remaining: {remaining}')
           "
 
+      - name: Debug — scope IDCW variants/schemes (no writes)
+        if: ${{ inputs.debug_idcw_scope == true }}
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, os.path.join(os.getcwd(), 'backend'))
+          from sqlalchemy import text
+          from app.core.database import engine
+
+          with engine.connect() as conn:
+              rows = conn.execute(text('SELECT option, count(*) FROM scheme_variants GROUP BY option')).all()
+              print('scheme_variants by option:', dict(rows))
+
+              nav_by_option = conn.execute(text('''
+                  SELECT sv.option, count(*) FROM nav_history nh
+                  JOIN scheme_variants sv ON sv.id = nh.scheme_variant_id
+                  GROUP BY sv.option
+              ''')).all()
+              print('nav_history rows by variant option:', dict(nav_by_option))
+
+              metrics_by_option = conn.execute(text('''
+                  SELECT sv.option, count(*) FROM fund_metrics fm
+                  JOIN scheme_variants sv ON sv.id = fm.scheme_variant_id
+                  GROUP BY sv.option
+              ''')).all()
+              print('fund_metrics rows by variant option:', dict(metrics_by_option))
+
+              orphaned = conn.execute(text('''
+                  SELECT count(*) FROM schemes s
+                  WHERE NOT EXISTS (
+                      SELECT 1 FROM scheme_variants sv WHERE sv.scheme_id = s.id AND sv.option = 'growth'
+                  )
+              ''')).scalar()
+              total_schemes = conn.execute(text('SELECT count(*) FROM schemes')).scalar()
+              print(f'schemes with NO growth variant at all (would be orphaned): {orphaned} of {total_schemes} total schemes')
+          "
+
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline
