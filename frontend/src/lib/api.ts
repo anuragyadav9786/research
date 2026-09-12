@@ -11,6 +11,7 @@ import type {
 } from "@/types/fund";
 import type { OverlapResponse } from "@/types/overlap";
 import type { PortfolioResponse } from "@/types/portfolio";
+import type { PortfolioAnalysisResponse, PortfolioHoldingInput } from "@/types/portfolioAnalysis";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -24,6 +25,16 @@ export class ApiError extends Error {
   }
 }
 
+function extractErrorMessage(body: unknown, fallback: string): string {
+  const detail = (body as { detail?: unknown })?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    // FastAPI/Pydantic validation error shape: [{loc, msg, type}, ...]
+    return detail.map((d) => (typeof d === "object" && d && "msg" in d ? String(d.msg) : String(d))).join("; ");
+  }
+  return fallback;
+}
+
 async function apiGet<T>(path: string, params?: Record<string, unknown>): Promise<T> {
   const url = new URL(`${API_BASE_URL}${path}`);
   for (const [key, value] of Object.entries(params ?? {})) {
@@ -33,7 +44,20 @@ async function apiGet<T>(path: string, params?: Record<string, unknown>): Promis
   const response = await fetch(url.toString(), { cache: "no-store" });
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new ApiError(response.status, body.detail ?? `Request to ${path} failed`);
+    throw new ApiError(response.status, extractErrorMessage(body, `Request to ${path} failed`));
+  }
+  return response.json();
+}
+
+async function apiPost<T>(path: string, payload: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new ApiError(response.status, extractErrorMessage(body, `Request to ${path} failed`));
   }
   return response.json();
 }
@@ -88,4 +112,8 @@ export function getFundOverlap(fundId: number, compareTo: number): Promise<Overl
 
 export function getFundNavHistory(fundId: number, params: VariantParams = {}): Promise<NavHistoryResponse> {
   return apiGet<NavHistoryResponse>(`/api/funds/${fundId}/nav-history`, params);
+}
+
+export function analysePortfolio(holdings: PortfolioHoldingInput[]): Promise<PortfolioAnalysisResponse> {
+  return apiPost<PortfolioAnalysisResponse>("/api/portfolio/analyse", { holdings });
 }

@@ -29,9 +29,29 @@ doesn't have returns `404`, not a fabricated/substituted result.
 | `GET /api/funds/{fund_id}/portfolio` | Portfolio DNA + concentration (Phase 7): top holdings, sector/market-cap allocation, HHI. **Scheme-level, not variant-specific** — holdings are identical across a scheme's plan/option variants, so this endpoint takes no `plan`/`option` params. |
 | `GET /api/funds/{fund_id}/overlap?compare_to={other_id}` | Pairwise fund overlap (Phase 8): common holdings, weighted/sector overlap, HHI-style overlap label, return correlation. Also scheme-level. Rejects comparing a fund to itself (`400`). |
 | `GET /api/funds/{fund_id}/intelligence` | Bundles the variant-specific analytics (except `nav-history`, `portfolio` and `overlap`) plus fund/variant metadata into one response. |
+| `POST /api/portfolio/analyse` | Multi-fund Portfolio Analysis (Phase 9): combine 2-10 funds by weight into look-through holdings, sector/market-cap allocation, concentration, pairwise overlap, and portfolio-level risk/drawdown. **Stateless** — see below. |
 
 Interactive docs: `http://localhost:8000/docs` (Swagger UI, auto-generated
 from the same Pydantic schemas).
+
+### `POST /api/portfolio/analyse`
+
+Request body: `{"holdings": [{"fund_id": 13, "weight_pct": 60}, {"fund_id": 14, "weight_pct": 40}]}`
+— 2 to 10 holdings, `weight_pct` values must sum to ~100% (±0.5 tolerance,
+`400` otherwise), no duplicate `fund_id`s (`400`), every `fund_id` must
+resolve to an existing scheme (`404` otherwise).
+
+**Stateless by design**: this computes a hypothetical combination on
+demand from the request body — it does not read or write
+`investor_portfolios`. There is no authentication system yet (Section 25
+lists it as a future expansion, not built), and persisting a "my
+portfolio" record with no account to own it would be a half-built data
+model; the schema is ready for that once auth exists.
+
+Everything the response reports is built by combining existing per-fund
+analytics (Phase 7's concentration/allocation, Phase 8's overlap, Phase
+4's risk/drawdown) via `analytics/portfolio.py`'s weight-combination
+formulas — no new ad hoc "portfolio risk" calculation exists.
 
 ## Design decisions worth knowing
 
@@ -68,11 +88,13 @@ from the same Pydantic schemas).
 
 ## Testing
 
-`backend/tests/api/test_funds.py`, `test_portfolio.py` and
-`test_overlap.py` run all of the above against the real Phase 2 seed data
-(no mocking) via FastAPI's `TestClient`: fund listing/search, full-detail
-variant listings, each analytics endpoint's happy path, the explicit
-insufficient-history path (10-year window against ~4 years of seed
-history), top-holdings/HHI/allocation correctness (including the bonds'
-"unclassified" case), pairwise overlap correctness and symmetry, and
+`backend/tests/api/test_funds.py`, `test_portfolio.py`, `test_overlap.py`
+and `test_portfolio_analysis.py` run all of the above against the real
+Phase 2 seed data (no mocking) via FastAPI's `TestClient`: fund listing/
+search, full-detail variant listings, each analytics endpoint's happy
+path, the explicit insufficient-history path (10-year window against ~4
+years of seed history), top-holdings/HHI/allocation correctness
+(including the bonds' "unclassified" case), pairwise overlap correctness
+and symmetry, multi-fund combination correctness (hand-verified effective
+weights for a 3-fund mix, allocation reconciliation), and
 404/422/400 error handling.
