@@ -1,0 +1,57 @@
+name: Daily NAV Ingestion
+
+# NOT yet scheduled — see docs/deployment.md. This workflow needs a real,
+# persistent, CI-reachable Postgres instance (e.g. Supabase), unlike
+# ci.yml's throwaway per-run service container: ingested NAV data has to
+# land somewhere that still exists tomorrow. Until DATABASE_URL is added
+# as a repository secret (Settings → Secrets and variables → Actions),
+# the schedule trigger below stays commented out — a cron job with no
+# working credential would just fail silently, red, every single day.
+#
+# Once the secret exists:
+#   1. Uncomment the `schedule:` block below.
+#   2. Trigger once by hand (Actions tab → this workflow → Run workflow)
+#      to confirm it can actually reach both the database and AMFI.
+#
+# AMFI's own network reachability is a separate, still-open question —
+# see docs/data-sources.md: this platform's dev sandbox could not reach
+# amfiindia.com (blocked outbound), so the live fetch itself has never
+# been exercised end-to-end. A GitHub-hosted runner has ordinary internet
+# access and may fare differently, but that has not been confirmed here.
+
+on:
+  workflow_dispatch: {}
+  # schedule:
+  #   - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check DATABASE_URL is configured
+        if: ${{ secrets.DATABASE_URL == '' }}
+        run: |
+          echo "::error::DATABASE_URL repository secret is not set. See docs/deployment.md — a real, persistent Postgres instance must be provisioned and its connection string added as a secret before this workflow can run."
+          exit 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run database migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: alembic upgrade head
+
+      - name: Run NAV ingestion
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m data_pipeline.orchestration.daily_pipeline
