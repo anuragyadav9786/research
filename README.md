@@ -133,14 +133,71 @@ pytest tests/unit/test_amfi_parser.py tests/unit/test_nav_validation.py \
 python -m data_pipeline.orchestration.daily_pipeline
 ```
 
+### 7. Fund Intelligence API (Phase 5)
+
+`GET /api/funds`, `/api/funds/{id}`, `/api/funds/{id}/{returns,risk,
+rolling-returns,drawdown,intelligence}` — structured, validated JSON built
+on the Phase 4 analytics engine. Full documentation, including the fund/
+variant identity model and design decisions, is in `docs/api.md`. Try it
+live at `http://localhost:8000/docs` once the backend is running.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/api/test_funds.py -q
+```
+
+### 8. Fund Intelligence UI (Phase 6)
+
+The Next.js frontend now has a real Research section, not just the health
+check shell: `/research` (search/browse funds) and `/research/[fundId]`
+(the fund intelligence page — returns, risk, a NAV-vs-benchmark chart,
+rolling-return distribution with benchmark consistency, and drawdown, with
+direct/regular and growth/IDCW plan toggles). Built against a small
+Phase-6 addition to the API, `GET /api/funds/{id}/nav-history`, since
+charting needs the raw series, not just computed metrics.
+
+```bash
+# with the backend running on :8000
+cd frontend && npm run dev
+# visit http://localhost:3000/research
+```
+
+Verified in a real browser (Playwright + the pre-installed Chromium) against
+live seeded data, including the search/filter form, plan/option toggles,
+the rolling-returns window selector, the insufficient-history and
+no-such-variant states, and a themed 404 page. See `docs/api.md` for the
+new endpoint.
+
+### 9. Holdings Engine — Portfolio DNA & Concentration (Phase 7)
+
+`GET /api/funds/{id}/portfolio` — top holdings, sector allocation,
+market-cap allocation, and concentration (HHI + top-5/top-10 weight),
+computed by `analytics/concentration.py` from the Phase 2 seed portfolio
+snapshots. Scheme-level (not variant-specific: holdings don't depend on
+plan/option). Required a small schema addition,
+`securities.market_cap_category` (nullable — `null` for bonds and
+anything unclassified, grouped as `"unclassified"` rather than guessed).
+Wired into the fund detail page as a "Portfolio DNA & Concentration"
+section. See `docs/analytics-methodology.md` for the HHI methodology and
+`docs/api.md` for the endpoint.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/analytics/test_concentration.py tests/api/test_portfolio.py -q
+```
+
+Cross-fund "hidden concentration" (seeing the *same* stock/sector
+overexposure across several funds an investor holds) is explicitly out of
+scope here — that needs the Overlap Engine, Phase 8.
+
 ## Status
 
-**Phase 0, 1, 2 and 4** complete. **Phase 3** (NAV ingestion) is
+**Phase 0, 1, 2, 4, 5, 6 and 7** complete. **Phase 3** (NAV ingestion) is
 architecturally complete and tested down to the network boundary — see
 Known limitations for exactly what remains to verify.
 
-Next: **Phase 5** — Fund Intelligence API, to expose the analytics
-engine's output as structured, validated JSON.
+Next: **Phase 8** — Fund Overlap Engine (security/weighted/sector overlap
+and redundancy detection across multiple funds).
 
 ### Known limitations
 

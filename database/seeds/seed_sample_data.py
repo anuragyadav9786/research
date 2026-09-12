@@ -167,25 +167,33 @@ def seed(db) -> None:
     db.flush()
 
     # --- Securities (fictitious companies) ---
+    # Market-cap category is another fictional attribute of these fictional
+    # companies (Rule 2) — assigned here by the same "clearly-labelled
+    # sample data" logic as everything else in this file, not derived from
+    # any real classification. None for the two bonds: market-cap doesn't
+    # apply to debt instruments.
     securities_spec = [
-        ("Sample Bank Corp Ltd", private_banks.id),
-        ("Sample Finserve Ltd", financials.id),
-        ("Sample IT Solutions Ltd", it_sector.id),
-        ("Sample Software Systems Ltd", it_sector.id),
-        ("Sample Energy Corp Ltd", energy.id),
-        ("Sample Refineries Ltd", energy.id),
-        ("Sample Consumer Goods Ltd", consumer.id),
-        ("Sample Foods Ltd", consumer.id),
-        ("Sample Pharma Ltd", healthcare.id),
-        ("Sample Hospitals Ltd", healthcare.id),
-        ("Sample Engineering Ltd", industrials.id),
-        ("Sample Infra Ltd", industrials.id),
-        ("Sample Govt Security 7.26% 2033 (Sample Bond)", None),
-        ("Sample NBFC Bond Series X (Sample Bond)", None),
+        ("Sample Bank Corp Ltd", private_banks.id, "large_cap"),
+        ("Sample Finserve Ltd", financials.id, "mid_cap"),
+        ("Sample IT Solutions Ltd", it_sector.id, "large_cap"),
+        ("Sample Software Systems Ltd", it_sector.id, "mid_cap"),
+        ("Sample Energy Corp Ltd", energy.id, "large_cap"),
+        ("Sample Refineries Ltd", energy.id, "large_cap"),
+        ("Sample Consumer Goods Ltd", consumer.id, "large_cap"),
+        ("Sample Foods Ltd", consumer.id, "mid_cap"),
+        ("Sample Pharma Ltd", healthcare.id, "large_cap"),
+        ("Sample Hospitals Ltd", healthcare.id, "mid_cap"),
+        ("Sample Engineering Ltd", industrials.id, "mid_cap"),
+        ("Sample Infra Ltd", industrials.id, "small_cap"),
+        ("Sample Govt Security 7.26% 2033 (Sample Bond)", None, None),
+        ("Sample NBFC Bond Series X (Sample Bond)", None, None),
     ]
     securities = {}
-    for i, (name, sector_id) in enumerate(securities_spec, start=1):
-        sec = Security(isin=f"SAMPLE-ISIN-{i:04d}", name=name, sector_id=sector_id)
+    for i, (name, sector_id, market_cap_category) in enumerate(securities_spec, start=1):
+        sec = Security(
+            isin=f"SAMPLE-ISIN-{i:04d}", name=name, sector_id=sector_id,
+            market_cap_category=market_cap_category,
+        )
         db.add(sec)
         securities[name] = sec
     db.flush()
