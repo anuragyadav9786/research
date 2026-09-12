@@ -27,7 +27,8 @@ doesn't have returns `404`, not a fabricated/substituted result.
 | `GET /api/funds/{fund_id}/drawdown` | Maximum drawdown episode: peak/trough dates and NAVs, recovery date or explicit "not yet recovered". |
 | `GET /api/funds/{fund_id}/nav-history` | Raw NAV/benchmark series (Phase 6 addition — no analytics, just the data feed the frontend's charts render). |
 | `GET /api/funds/{fund_id}/portfolio` | Portfolio DNA + concentration (Phase 7): top holdings, sector/market-cap allocation, HHI. **Scheme-level, not variant-specific** — holdings are identical across a scheme's plan/option variants, so this endpoint takes no `plan`/`option` params. |
-| `GET /api/funds/{fund_id}/intelligence` | Bundles the variant-specific analytics (except `nav-history` and `portfolio`) plus fund/variant metadata into one response. |
+| `GET /api/funds/{fund_id}/overlap?compare_to={other_id}` | Pairwise fund overlap (Phase 8): common holdings, weighted/sector overlap, HHI-style overlap label, return correlation. Also scheme-level. Rejects comparing a fund to itself (`400`). |
+| `GET /api/funds/{fund_id}/intelligence` | Bundles the variant-specific analytics (except `nav-history`, `portfolio` and `overlap`) plus fund/variant metadata into one response. |
 
 Interactive docs: `http://localhost:8000/docs` (Swagger UI, auto-generated
 from the same Pydantic schemas).
@@ -59,13 +60,19 @@ from the same Pydantic schemas).
   doesn't imply undisclosed exposure (cash, remaining holdings) is zero.
   Securities with no market-cap classification (all bonds, currently) are
   grouped as `"unclassified"`, never guessed into a cap bucket.
+- **`/overlap` is scheme-level and symmetric.** No `plan`/`option` params
+  (holdings don't vary by variant); `weighted_overlap_pct` and
+  `common_securities_count` are the same whichever fund is `{fund_id}`
+  and whichever is `compare_to` — verified in
+  `test_overlap_is_symmetric_in_weighted_pct`.
 
 ## Testing
 
-`backend/tests/api/test_funds.py` and `test_portfolio.py` run all of the
-above against the real Phase 2 seed data (no mocking) via FastAPI's
-`TestClient`: fund listing/search, full-detail variant listings, each
-analytics endpoint's happy path, the explicit insufficient-history path
-(10-year window against ~4 years of seed history), top-holdings/HHI/
-allocation correctness (including the bonds' "unclassified" case), and
-404/422 error handling.
+`backend/tests/api/test_funds.py`, `test_portfolio.py` and
+`test_overlap.py` run all of the above against the real Phase 2 seed data
+(no mocking) via FastAPI's `TestClient`: fund listing/search, full-detail
+variant listings, each analytics endpoint's happy path, the explicit
+insufficient-history path (10-year window against ~4 years of seed
+history), top-holdings/HHI/allocation correctness (including the bonds'
+"unclassified" case), pairwise overlap correctness and symmetry, and
+404/422/400 error handling.

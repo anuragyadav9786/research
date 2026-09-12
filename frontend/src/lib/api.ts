@@ -9,6 +9,7 @@ import type {
   RiskResponse,
   RollingReturnsResponse,
 } from "@/types/fund";
+import type { OverlapResponse } from "@/types/overlap";
 import type { PortfolioResponse } from "@/types/portfolio";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -79,6 +80,10 @@ export function getFundDrawdown(fundId: number, params: VariantParams = {}): Pro
 
 export function getFundPortfolio(fundId: number): Promise<PortfolioResponse> {
   return apiGet<PortfolioResponse>(`/api/funds/${fundId}/portfolio`);
+}
+
+export function getFundOverlap(fundId: number, compareTo: number): Promise<OverlapResponse> {
+  return apiGet<OverlapResponse>(`/api/funds/${fundId}/overlap`, { compare_to: compareTo });
 }
 
 export function getFundNavHistory(fundId: number, params: VariantParams = {}): Promise<NavHistoryResponse> {

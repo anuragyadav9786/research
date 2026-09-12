@@ -54,6 +54,20 @@ def get_variant(db: Session, scheme_id: int, plan: str, option: str) -> SchemeVa
     )
 
 
+def get_default_variant(db: Session, scheme_id: int) -> SchemeVariant | None:
+    """The variant used when a caller needs "a" NAV series for a scheme
+    without the user having picked plan/option — e.g. return correlation
+    in the Overlap Engine, which is a scheme-level comparison. Prefers
+    direct/growth (the standard comparison basis in fund research); falls
+    back to whatever variant exists rather than failing, since even the
+    regular plan's returns are highly correlated with direct's (same
+    portfolio, a small expense-ratio spread apart)."""
+    preferred = get_variant(db, scheme_id, "direct", "growth")
+    if preferred is not None:
+        return preferred
+    return db.query(SchemeVariant).filter(SchemeVariant.scheme_id == scheme_id).first()
+
+
 def get_latest_nav(db: Session, scheme_variant_id: int) -> NavHistory | None:
     return (
         db.query(NavHistory)

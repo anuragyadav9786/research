@@ -117,6 +117,34 @@ see `database/seeds/seed_sample_data.py`'s header. It is `null` for bonds
 and other non-equity instruments, and for any real security not yet
 classified — grouped under "unclassified" rather than guessed.
 
+## Overlap & correlation (`analytics/overlap.py`, `analytics/correlation.py`)
+
+**Weighted overlap**: `sum(min(weight_a[label], weight_b[label]) for label
+in union(weights_a, weights_b))`. The standard fund-research "portfolio
+overlap" methodology — only the smaller of the two weights counts per
+holding, since that's the exposure genuinely shared by both. Generic over
+any label set: the same function computes security-level overlap or
+sector-level overlap (`sector_overlap_pct` in the API is literally
+`weighted_overlap_pct` applied to sector-aggregated weights instead of
+per-security weights).
+
+**Overlap label**: `<20%` low, `20-50%` moderate, `>=50%` high. Unlike
+HHI's DOJ/FTC thresholds, **there is no official regulatory standard for
+portfolio overlap** — these are a commonly cited practitioner rule of
+thumb, documented here as exactly that (an explicit "uncertain
+methodology, documented rather than guessed" case per the project's
+financial-methodology rule), not a precise cutoff backed by regulation.
+
+**Return correlation**: standard Pearson correlation coefficient (`numpy.
+corrcoef`) between two funds' daily NAV returns, aligned on common dates
+only. Complements weighted overlap rather than replacing it — two funds
+can hold entirely different stocks yet have highly correlated returns
+(both quietly tracking the same market), or the reverse. Uses each
+scheme's direct/growth NAV series by default (falls back to whichever
+variant exists) since holdings-based overlap doesn't depend on plan/
+option and a single representative return series is sufficient for this
+purpose — see `fund_repository.get_default_variant`.
+
 ## Testing approach
 
 Each module has a corresponding `backend/tests/analytics/test_*.py` file.

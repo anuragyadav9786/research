@@ -190,14 +190,35 @@ Cross-fund "hidden concentration" (seeing the *same* stock/sector
 overexposure across several funds an investor holds) is explicitly out of
 scope here — that needs the Overlap Engine, Phase 8.
 
+### 10. Fund Overlap Engine (Phase 8)
+
+`GET /api/funds/{id}/overlap?compare_to={other_id}` — pairwise overlap
+between two funds: common holdings (weight in each), weighted overlap %
+(the standard "shared exposure" methodology), sector overlap, an overlap
+label (documented as a practitioner heuristic, not an official standard —
+unlike HHI's DOJ/FTC thresholds), and return correlation. Implemented in
+`analytics/{overlap,correlation}.py`. A new `/research/compare` page lets
+you pick any two funds and see the full breakdown, linked from every fund
+detail page ("Compare with…"). See `docs/analytics-methodology.md` for
+the overlap methodology and `docs/api.md` for the endpoint.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/analytics/test_overlap.py tests/analytics/test_correlation.py tests/api/test_overlap.py -q
+```
+
+Multi-fund (3+) "hidden concentration" and combined-portfolio analysis —
+the rest of Section 9/11 — need Phase 9's Portfolio Analysis engine.
+
 ## Status
 
-**Phase 0, 1, 2, 4, 5, 6 and 7** complete. **Phase 3** (NAV ingestion) is
-architecturally complete and tested down to the network boundary — see
+**Phase 0, 1, 2, 4, 5, 6, 7 and 8** complete. **Phase 3** (NAV ingestion)
+is architecturally complete and tested down to the network boundary — see
 Known limitations for exactly what remains to verify.
 
-Next: **Phase 8** — Fund Overlap Engine (security/weighted/sector overlap
-and redundancy detection across multiple funds).
+Next: **Phase 9** — Portfolio Analysis (combining multiple funds into one
+investor portfolio: combined holdings, effective exposure, concentration,
+overlap and risk at the portfolio level).
 
 ### Known limitations
 

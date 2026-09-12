@@ -20,6 +20,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from analytics.returns import returns_series
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.reference import Scheme, SchemeVariant
@@ -35,8 +36,9 @@ from app.schemas.funds import (
     RollingReturnsResponse,
     VariantSummary,
 )
+from app.schemas.overlap import OverlapResponse
 from app.schemas.portfolio import PortfolioResponse
-from app.services import fund_analytics_service, portfolio_intelligence_service
+from app.services import fund_analytics_service, overlap_service, portfolio_intelligence_service
 
 router = APIRouter(prefix="/api/funds", tags=["funds"])
 
@@ -193,18 +195,52 @@ def get_fund_portfolio(fund_id: int, db: Session = Depends(get_db)) -> dict:
     variant-specific — holdings are identical across a scheme's plan/
     option variants."""
     scheme = _resolve_scheme(db, fund_id)
-    snapshot = portfolio_repository.get_latest_snapshot(db, scheme.id)
+    holdings, snapshot = _get_latest_holdings(db, scheme.id)
     if snapshot is None:
         result = portfolio_intelligence_service.compute_portfolio_dna([])
         result["as_of_date"] = None
         result["source_name"] = None
         return result
 
-    holdings = portfolio_repository.get_holdings(db, snapshot.id)
     source = portfolio_repository.get_snapshot_source(db, snapshot)
     result = portfolio_intelligence_service.compute_portfolio_dna(holdings)
     result["as_of_date"] = snapshot.as_of_date
     result["source_name"] = source.name if source else None
+    return result
+
+
+def _get_latest_holdings(db: Session, scheme_id: int):
+    snapshot = portfolio_repository.get_latest_snapshot(db, scheme_id)
+    if snapshot is None:
+        return [], None
+    return portfolio_repository.get_holdings(db, snapshot.id), snapshot
+
+
+@router.get("/{fund_id}/overlap", response_model=OverlapResponse)
+def get_fund_overlap(fund_id: int, compare_to: int = Query(..., description="Fund id to compare against"),
+                      db: Session = Depends(get_db)) -> dict:
+    """Pairwise fund overlap (Phase 8). Scheme-level, like /portfolio.
+    Return correlation uses each scheme's direct/growth NAV series (or the
+    first available variant) — see fund_repository.get_default_variant."""
+    if fund_id == compare_to:
+        raise HTTPException(status_code=400, detail="Cannot compare a fund to itself")
+
+    scheme_a = _resolve_scheme(db, fund_id)
+    scheme_b = _resolve_scheme(db, compare_to)
+
+    holdings_a, snapshot_a = _get_latest_holdings(db, scheme_a.id)
+    holdings_b, snapshot_b = _get_latest_holdings(db, scheme_b.id)
+
+    variant_a = fund_repository.get_default_variant(db, scheme_a.id)
+    variant_b = fund_repository.get_default_variant(db, scheme_b.id)
+    returns_a = returns_series(fund_repository.get_nav_series(db, variant_a.id)) if variant_a else None
+    returns_b = returns_series(fund_repository.get_nav_series(db, variant_b.id)) if variant_b else None
+
+    result = overlap_service.compute_overlap(holdings_a, holdings_b, returns_a, returns_b)
+    result["fund_a"] = {"id": scheme_a.id, "scheme_name": scheme_a.name}
+    result["fund_b"] = {"id": scheme_b.id, "scheme_name": scheme_b.name}
+    result["as_of_date_a"] = snapshot_a.as_of_date if snapshot_a else None
+    result["as_of_date_b"] = snapshot_b.as_of_date if snapshot_b else None
     return result
 
 
