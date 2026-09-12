@@ -28,6 +28,10 @@ on:
         description: "Check the live DB's current alembic revision/schema and the Render health endpoint, without running migrations or ingestion"
         type: boolean
         default: false
+      run_cleanup_bulk_backfill:
+        description: "DESTRUCTIVE: delete nav_history rows sourced from the superseded bulk AMFI historical backfill (see git history), then VACUUM FULL to actually reclaim disk space. One-time cleanup for the Supabase free-tier quota this caused."
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -121,11 +125,56 @@ jobs:
               print(f'Render health check FAILED: {type(exc).__name__}: {exc}')
           "
 
+      - name: Cleanup — delete superseded bulk-backfill NAV rows and reclaim disk space
+        if: ${{ inputs.run_cleanup_bulk_backfill == true }}
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, os.path.join(os.getcwd(), 'backend'))
+          from sqlalchemy import text
+          from app.core.database import engine
+
+          SOURCE_NAME = 'AMFI Historical NAV Report (backfill)'
+
+          with engine.connect() as conn:
+              before = conn.execute(text('SELECT pg_size_pretty(pg_database_size(current_database()))')).scalar()
+              print(f'database size before: {before}')
+
+              source_id = conn.execute(
+                  text('SELECT id FROM data_sources WHERE name = :name'), {'name': SOURCE_NAME}
+              ).scalar()
+              if source_id is None:
+                  print(f'No data_sources row named {SOURCE_NAME!r} — nothing to delete.')
+              else:
+                  result = conn.execute(
+                      text('DELETE FROM nav_history WHERE source_id = :sid'), {'sid': source_id}
+                  )
+                  conn.commit()
+                  print(f'Deleted {result.rowcount} nav_history rows from source_id={source_id} ({SOURCE_NAME!r})')
+
+              print('Running VACUUM FULL nav_history to actually shrink the table on disk (a bare DELETE only marks space reusable, it does not release it back to the OS — Supabase reports physical size)...')
+
+          # VACUUM cannot run inside a multi-statement transaction block —
+          # needs its own autocommit connection.
+          with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
+              conn.execute(text('VACUUM FULL nav_history'))
+
+          with engine.connect() as conn:
+              after = conn.execute(text('SELECT pg_size_pretty(pg_database_size(current_database()))')).scalar()
+              nav_size = conn.execute(
+                  text(\"SELECT pg_size_pretty(pg_total_relation_size('nav_history'))\")
+              ).scalar()
+              remaining = conn.execute(text('SELECT count(*) FROM nav_history')).scalar()
+              print(f'database size after: {after}')
+              print(f'nav_history table size after: {nav_size}')
+              print(f'nav_history rows remaining: {remaining}')
+          "
+
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline
