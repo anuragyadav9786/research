@@ -103,19 +103,28 @@ export default async function FundDetailPage({
         <nav className="flex gap-6 text-sm text-neutral-400">
           <Link href="/" className="hover:text-neutral-100">Dashboard</Link>
           <Link href="/research" className="hover:text-neutral-100">Research</Link>
+          <Link href="/research/compare" className="hover:text-neutral-100">Compare</Link>
         </nav>
       </header>
 
       <main className="px-8 py-10 max-w-5xl mx-auto space-y-8">
-        <div>
-          <Link href="/research" className="text-sm text-neutral-500 hover:text-neutral-300">
-            ← Back to Research
+        <div className="flex items-start justify-between">
+          <div>
+            <Link href="/research" className="text-sm text-neutral-500 hover:text-neutral-300">
+              ← Back to Research
+            </Link>
+            <h1 className="text-2xl font-semibold mt-2">{fund.scheme_name}</h1>
+            <p className="text-neutral-400 text-sm mt-1">
+              {fund.amc_name} · {fund.category}
+              {fund.benchmark_name && <> · Benchmark: {fund.benchmark_name}</>}
+            </p>
+          </div>
+          <Link
+            href={`/research/compare?a=${fundId}`}
+            className="text-sm rounded-md border border-neutral-800 px-3 py-1.5 text-neutral-400 hover:text-neutral-100 hover:border-neutral-700 whitespace-nowrap"
+          >
+            Compare with…
           </Link>
-          <h1 className="text-2xl font-semibold mt-2">{fund.scheme_name}</h1>
-          <p className="text-neutral-400 text-sm mt-1">
-            {fund.amc_name} · {fund.category}
-            {fund.benchmark_name && <> · Benchmark: {fund.benchmark_name}</>}
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">

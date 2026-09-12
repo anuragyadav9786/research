@@ -21,6 +21,7 @@ export default async function ResearchPage({
         <nav className="flex gap-6 text-sm text-neutral-400">
           <Link href="/" className="hover:text-neutral-100">Dashboard</Link>
           <Link href="/research" className="text-neutral-100">Research</Link>
+          <Link href="/research/compare" className="hover:text-neutral-100">Compare</Link>
         </nav>
       </header>
 
