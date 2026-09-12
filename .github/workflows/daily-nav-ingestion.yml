@@ -24,6 +24,10 @@ on:
         description: "Print a raw sample of the fetched AMFI file and exit, without touching the database"
         type: boolean
         default: false
+      debug_historical_sample:
+        description: "Fetch a small date range from AMFI's historical NAV endpoint and print a raw sample, without touching the database"
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -68,11 +72,24 @@ jobs:
               print(repr(line))
           "
 
+      - name: Debug — print raw AMFI historical NAV sample (no DB writes)
+        if: ${{ inputs.debug_historical_sample == true }}
+        run: |
+          python -c "
+          from data_pipeline.sources.amfi.client import fetch_navall
+          url = 'https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx?tp=1&frmdt=01-Sep-2026&todt=05-Sep-2026'
+          text = fetch_navall(url)
+          lines = text.splitlines()
+          print(f'total lines: {len(lines)}')
+          for line in lines[:60]:
+              print(repr(line))
+          "
+
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_historical_sample != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_historical_sample != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline
