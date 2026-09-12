@@ -24,10 +24,6 @@ on:
         description: "Print a raw sample of the fetched AMFI file and exit, without touching the database"
         type: boolean
         default: false
-      debug_historical_sample:
-        description: "Fetch a small date range from AMFI's historical NAV endpoint and print a raw sample, without touching the database"
-        type: boolean
-        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -72,45 +68,11 @@ jobs:
               print(repr(line))
           "
 
-      - name: Debug — print raw AMFI historical NAV sample (no DB writes)
-        if: ${{ inputs.debug_historical_sample == true }}
-        timeout-minutes: 8
-        run: |
-          python -c "
-          import time
-          import httpx
-          from data_pipeline.sources.amfi.client import fetch_navall
-          # A plain float timeout to httpx only bounds the gap BETWEEN chunks,
-          # not total request duration — a slow-but-steady trickle on a large
-          # multi-year request can run far longer than expected (this is what
-          # made the previous probe run 9+ minutes before being cancelled).
-          # An explicit httpx.Timeout with a firm read cap fixes that, plus a
-          # job-level timeout-minutes as a hard backstop.
-          timeout = httpx.Timeout(connect=10.0, read=45.0, write=10.0, pool=10.0)
-          ranges = [
-              ('01-Aug-2026', '31-Aug-2026'),  # 1 month
-              ('01-Jun-2026', '31-Aug-2026'),  # 3 months
-              ('01-Jan-2026', '31-Aug-2026'),  # 8 months
-          ]
-          for frmdt, todt in ranges:
-              url = f'https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx?tp=1&frmdt={frmdt}&todt={todt}'
-              start = time.time()
-              try:
-                  text = fetch_navall(url, timeout=timeout)
-                  elapsed = time.time() - start
-                  lines = text.splitlines()
-                  dates_seen = sorted({l.split(';')[-1] for l in lines if ';' in l and not l.lower().startswith('scheme code')})
-                  print(f'{frmdt} to {todt}: elapsed={elapsed:.1f}s bytes={len(text)} lines={len(lines)} distinct_dates={len(dates_seen)} first_date={dates_seen[0] if dates_seen else None} last_date={dates_seen[-1] if dates_seen else None}')
-              except Exception as exc:
-                  elapsed = time.time() - start
-                  print(f'{frmdt} to {todt}: FAILED after {elapsed:.1f}s: {type(exc).__name__}: {exc}')
-          "
-
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_historical_sample != true }}
+        if: ${{ inputs.debug_sample != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_historical_sample != true }}
+        if: ${{ inputs.debug_sample != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline

@@ -97,6 +97,78 @@ diagnostics). As a result:
   fully done — e.g. `python -m data_pipeline.orchestration.daily_pipeline`
   from a normal developer machine or a CI runner with unrestricted egress.
 
+## 2b. AMFI historical NAV report (real source — backfill for returns analysis)
+
+**Source**: Association of Mutual Funds in India,
+`https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx`
+**Source type**: `amfi` (see `data_sources` table, row name `"AMFI Historical
+NAV Report (backfill)"` — distinct from the live feed's `"AMFI
+NAVAll.txt"` row, so `nav_history.source_id` always shows which endpoint a
+given row came from)
+**Update cadence**: run manually/occasionally (`historical-nav-backfill.yml`,
+`workflow_dispatch` only — not scheduled), unlike the daily live feed
+**License / access**: publicly accessible, same as the live feed, no API
+key or registration
+
+**Why this exists**: the live NAVAll.txt feed only ever carries *today's*
+NAV — daily ingestion accumulates history one day at a time going forward,
+which isn't enough for annualized-return calculations (1Y/3Y/5Y) until
+that much time has actually passed. This endpoint accepts a `frmdt`/`todt`
+date range and returns every NAV published in it, letting existing history
+be backfilled instead of waited for.
+
+**Format**: semicolon-delimited, same alternating category/AMC-name
+section-header structure as the live feed, but a DIFFERENT column
+order — `Scheme Code;NAV Name;Plan;Option;ISIN Div Payout/ISIN
+Growth;ISIN Div Reinvestment;Net Asset Value;Date` — confirmed via a
+GitHub Actions debug run on 2026-09-12 (this sandbox cannot reach
+amfiindia.com directly; see `data_pipeline/sources/amfi/historical_parser.py`'s
+module docstring). "NAV Name" is a compound field (scheme name plus
+plan/option suffix folded in), unlike the live feed's clean "Scheme Name"
+column, and this file's own scheme_code repeats once per date in the
+requested range rather than once per file.
+
+**What this pipeline does with it** (see
+`data_pipeline/orchestration/historical_backfill.py`):
+1. The requested `[start, end]` range is split into whole-calendar-month
+   chunks. Sizing is based on real, measured AMFI response times: a
+   1-month request took ~14s/24MB, a 3-month request ~41s/74MB, and an
+   8-month single request reproducibly timed out server-side around 45s —
+   monthly chunks stay comfortably inside that envelope.
+2. Each chunk is fetched with an explicit `httpx.Timeout` (a plain float
+   passed to `httpx` only bounds the gap *between* received chunks, not
+   total request duration — this was discovered the hard way when an
+   early wide-range probe ran 9+ minutes before being cancelled) and a
+   courteous delay before the next chunk.
+3. `historical_parser.py` parses it into the same `RawNavRecord` shape the
+   live parser uses, leaving `category`/`amc_name` unset (not needed here).
+4. `validate_historical_records` (in `nav_validation.py`) applies the same
+   field/NAV/date checks as the live feed, but dedupes on
+   `(scheme_code, date)` rather than `scheme_code` alone, since a
+   multi-day range legitimately repeats the same scheme once per date.
+5. `scheme_mapping.py`'s existing `map_to_scheme_variants` matches each
+   accepted row by AMFI code, falling back to ISIN — **this backfill never
+   onboards new schemes** (unlike the live feed's daily pipeline), since
+   this endpoint's compound "NAV Name" is less precise identity than the
+   live feed's dedicated Plan/Option columns. A row here can only match a
+   scheme_variant already onboarded from a previous live-feed run.
+6. `database_writer.py`'s existing `write_nav_records` upserts into
+   `nav_history` exactly as the live feed does (`ON CONFLICT DO NOTHING`
+   on `(scheme_variant_id, date)`), so re-running an overlapping or
+   identical range is a safe no-op.
+7. Each month-chunk's outcome (downloaded/accepted/rejected/inserted, or
+   an error) is tracked independently, so one chunk failing doesn't lose
+   chunks already committed — a re-run of the same `--start`/`--end`
+   retries only what's actually missing.
+
+**How to run it**: manually via the "Historical NAV Backfill" GitHub
+Actions workflow (`workflow_dispatch`, optional `start_date`/`end_date`
+inputs, `DD-Mon-YYYY`; defaults to the last 3 years through today), or
+locally with `python -m data_pipeline.orchestration.run_historical_backfill
+--start 01-Jan-2023 --end 12-Sep-2026`. Run the live daily-ingestion
+workflow at least once first — this backfill has no schemes to match
+against otherwise.
+
 ## 3. Planned sources (not yet built)
 
 | Source | Purpose | Status |

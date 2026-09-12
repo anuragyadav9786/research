@@ -1,5 +1,5 @@
 from data_pipeline.sources.amfi.parser import RawNavRecord
-from data_pipeline.validation.nav_validation import validate_navall_records
+from data_pipeline.validation.nav_validation import validate_historical_records, validate_navall_records
 
 
 def _raw(**overrides) -> RawNavRecord:
@@ -72,3 +72,28 @@ def test_mixed_batch_counts_reconcile():
     assert len(result.accepted) == 1
     assert len(result.rejected) == 3
     assert len(result.accepted) + len(result.rejected) == len(records)
+
+
+def test_historical_allows_same_scheme_code_across_different_dates():
+    records = [
+        _raw(scheme_code="900001", date_raw="10-Sep-2026"),
+        _raw(scheme_code="900001", date_raw="11-Sep-2026"),
+    ]
+    result = validate_historical_records(records)
+    assert len(result.accepted) == 2
+    assert result.rejected == []
+
+
+def test_historical_rejects_same_scheme_and_date_repeated():
+    records = [
+        _raw(scheme_code="900001", date_raw="10-Sep-2026"),
+        _raw(scheme_code="900001", date_raw="10-Sep-2026"),
+    ]
+    result = validate_historical_records(records)
+    assert len(result.accepted) == 1
+    assert result.rejected[0].reason == "duplicate_in_batch"
+
+
+def test_historical_still_rejects_na_and_bad_dates():
+    result = validate_historical_records([_raw(nav_raw="N.A.")])
+    assert result.rejected[0].reason == "nav_not_available"
