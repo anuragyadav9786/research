@@ -18,7 +18,12 @@ name: Daily NAV Ingestion
 # schemes are loaded into this database.
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      debug_sample:
+        description: "Print a raw sample of the fetched AMFI file and exit, without touching the database"
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -51,9 +56,23 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r backend/requirements.txt
 
+      - name: Debug — print raw AMFI file sample (no DB writes)
+        if: ${{ inputs.debug_sample == true }}
+        run: |
+          python -c "
+          from data_pipeline.sources.amfi.client import fetch_navall
+          text = fetch_navall()
+          lines = text.splitlines()
+          print(f'total lines: {len(lines)}')
+          for line in lines[:40]:
+              print(repr(line))
+          "
+
       - name: Run database migrations
+        if: ${{ inputs.debug_sample != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
+        if: ${{ inputs.debug_sample != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline
