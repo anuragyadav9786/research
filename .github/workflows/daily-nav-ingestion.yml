@@ -88,6 +88,32 @@ jobs:
               cols = [c['name'] for c in inspect(engine).get_columns('scheme_variants')]
               print(f'nav_history_backfilled_at column present: {\"nav_history_backfilled_at\" in cols}')
 
+              print()
+              print('-- database size --')
+              size = conn.execute(text('SELECT pg_size_pretty(pg_database_size(current_database()))')).scalar()
+              print(f'total database size: {size}')
+
+              print()
+              print('-- table sizes (top 10) --')
+              rows = conn.execute(text('''
+                  SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) AS total_size,
+                         pg_total_relation_size(relid) AS bytes
+                  FROM pg_catalog.pg_statio_user_tables
+                  ORDER BY bytes DESC LIMIT 10
+              ''')).all()
+              for r in rows:
+                  print(f'  {r.relname}: {r.total_size}')
+
+              print()
+              print('-- nav_history row counts by source --')
+              rows = conn.execute(text('''
+                  SELECT ds.name, ds.source_type, count(*) AS rows
+                  FROM nav_history nh JOIN data_sources ds ON ds.id = nh.source_id
+                  GROUP BY ds.name, ds.source_type ORDER BY rows DESC
+              ''')).all()
+              for r in rows:
+                  print(f'  {r.name!r} ({r.source_type}): {r.rows} rows')
+
           try:
               resp = httpx.get('https://thinkfin-backend.onrender.com/api/health', timeout=15.0)
               print(f'Render health: HTTP {resp.status_code} body={resp.text}')
