@@ -133,14 +133,27 @@ pytest tests/unit/test_amfi_parser.py tests/unit/test_nav_validation.py \
 python -m data_pipeline.orchestration.daily_pipeline
 ```
 
+### 7. Fund Intelligence API (Phase 5)
+
+`GET /api/funds`, `/api/funds/{id}`, `/api/funds/{id}/{returns,risk,
+rolling-returns,drawdown,intelligence}` — structured, validated JSON built
+on the Phase 4 analytics engine. Full documentation, including the fund/
+variant identity model and design decisions, is in `docs/api.md`. Try it
+live at `http://localhost:8000/docs` once the backend is running.
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/api/test_funds.py -q
+```
+
 ## Status
 
-**Phase 0, 1, 2 and 4** complete. **Phase 3** (NAV ingestion) is
+**Phase 0, 1, 2, 4 and 5** complete. **Phase 3** (NAV ingestion) is
 architecturally complete and tested down to the network boundary — see
 Known limitations for exactly what remains to verify.
 
-Next: **Phase 5** — Fund Intelligence API, to expose the analytics
-engine's output as structured, validated JSON.
+Next: **Phase 6** — Fund Intelligence UI, to render this API's output as
+the actual fund research page.
 
 ### Known limitations
 

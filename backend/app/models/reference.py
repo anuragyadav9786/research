@@ -51,6 +51,7 @@ class Scheme(Base):
 
     fund_family: Mapped["FundFamily"] = relationship(back_populates="schemes")
     variants: Mapped[list["SchemeVariant"]] = relationship(back_populates="scheme")
+    benchmark: Mapped["Benchmark | None"] = relationship()
 
 
 class SchemeVariant(Base):
