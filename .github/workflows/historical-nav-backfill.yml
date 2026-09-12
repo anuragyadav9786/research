@@ -1,0 +1,76 @@
+name: Historical NAV Backfill
+
+# Manual, occasional job — NOT scheduled. Backfills nav_history from AMFI's
+# historical NAV report endpoint (portal.amfiindia.com), chunked by
+# calendar month (see data_pipeline/orchestration/historical_backfill.py
+# for why: a live debug run measured a 1-month request at ~14s/24MB, a
+# 3-month one at ~41s/74MB, and an 8-month single request reproducibly
+# timing out server-side — monthly chunks stay well inside that envelope).
+#
+# Only ever MATCHES rows to scheme_variants already onboarded from the
+# live NAVAll.txt feed (daily-nav-ingestion.yml) — never creates new
+# scheme identity from this endpoint, since its "NAV Name" field is a
+# compound string unlike the live feed's clean Scheme Name column (see
+# data_pipeline/sources/amfi/historical_parser.py). Run the daily
+# ingestion workflow at least once first if the database has no schemes
+# yet.
+#
+# Safe to re-run for an overlapping or identical date range: NAV rows are
+# upserted with ON CONFLICT DO NOTHING on (scheme_variant_id, date).
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Backfill start date, DD-Mon-YYYY (e.g. 01-Jan-2023). Leave blank for 3 years before end_date."
+        type: string
+        default: ""
+      end_date:
+        description: "Backfill end date, DD-Mon-YYYY (e.g. 12-Sep-2026). Leave blank for today."
+        type: string
+        default: ""
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    # `secrets` is not a recognized named-value inside `if:` conditions —
+    # see daily-nav-ingestion.yml for why this is routed through job env.
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    # A multi-year backfill is many sequential monthly requests (roughly
+    # 0.45s of AMFI response time per calendar day requested, plus a
+    # courteous delay between chunks) — this can legitimately run for a
+    # while; this bound is a backstop against a genuinely stuck run, not
+    # the expected duration.
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check DATABASE_URL is configured
+        if: ${{ env.DATABASE_URL == '' }}
+        run: |
+          echo "::error::DATABASE_URL repository secret is not set. See docs/deployment.md."
+          exit 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Run database migrations
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Run historical NAV backfill
+        env:
+          START_DATE: ${{ inputs.start_date }}
+          END_DATE: ${{ inputs.end_date }}
+        run: |
+          args=()
+          if [ -n "$START_DATE" ]; then args+=(--start "$START_DATE"); fi
+          if [ -n "$END_DATE" ]; then args+=(--end "$END_DATE"); fi
+          python -m data_pipeline.orchestration.run_historical_backfill "${args[@]}"
