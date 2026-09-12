@@ -76,13 +76,24 @@ jobs:
         if: ${{ inputs.debug_historical_sample == true }}
         run: |
           python -c "
+          import time
           from data_pipeline.sources.amfi.client import fetch_navall
-          url = 'https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx?tp=1&frmdt=01-Sep-2026&todt=05-Sep-2026'
-          text = fetch_navall(url)
-          lines = text.splitlines()
-          print(f'total lines: {len(lines)}')
-          for line in lines[:60]:
-              print(repr(line))
+          ranges = [
+              ('01-Sep-2025', '31-Aug-2026'),  # ~1 year
+              ('01-Sep-2020', '31-Aug-2026'),  # ~6 years
+          ]
+          for frmdt, todt in ranges:
+              url = f'https://portal.amfiindia.com/DownloadNAVHistoryReport_Po.aspx?tp=1&frmdt={frmdt}&todt={todt}'
+              start = time.time()
+              try:
+                  text = fetch_navall(url, timeout=120.0)
+                  elapsed = time.time() - start
+                  lines = text.splitlines()
+                  dates_seen = sorted({l.split(';')[-1] for l in lines if ';' in l and not l.lower().startswith('scheme code')})
+                  print(f'{frmdt} to {todt}: elapsed={elapsed:.1f}s bytes={len(text)} lines={len(lines)} distinct_dates={len(dates_seen)} first_date={dates_seen[0] if dates_seen else None} last_date={dates_seen[-1] if dates_seen else None}')
+              except Exception as exc:
+                  elapsed = time.time() - start
+                  print(f'{frmdt} to {todt}: FAILED after {elapsed:.1f}s: {exc}')
           "
 
       - name: Run database migrations
