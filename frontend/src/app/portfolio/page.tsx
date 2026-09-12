@@ -4,6 +4,7 @@ import { listAllFunds } from "@/lib/api";
 import { PortfolioAnalysisForm } from "@/components/portfolio/PortfolioAnalysisForm";
 
 export const metadata = { title: "Portfolio Analysis — ThinkFin" };
+export const dynamic = "force-dynamic";
 
 export default async function PortfolioAnalysisPage() {
   const funds = await listAllFunds();
