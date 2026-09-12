@@ -52,6 +52,8 @@ def main() -> None:
     if start > end:
         parser.error(f"--start ({start}) must not be after --end ({end})")
 
+    print(f"Historical NAV backfill {start} to {end} — starting, one line per month-chunk as it completes:")
+
     db = SessionLocal()
     try:
         result = run_historical_backfill(db, start, end)
@@ -64,19 +66,10 @@ def main() -> None:
     total_inserted = sum(c.inserted for c in result.chunks)
     failed_chunks = [c for c in result.chunks if c.error]
 
-    print(f"Historical NAV backfill {start} to {end}: {len(result.chunks)} month-chunk(s)")
     print(
-        f"  downloaded={total_downloaded} accepted={total_accepted} "
-        f"rejected={total_rejected} inserted={total_inserted}"
+        f"\nHistorical NAV backfill {start} to {end}: {len(result.chunks)} month-chunk(s) — "
+        f"downloaded={total_downloaded} accepted={total_accepted} rejected={total_rejected} inserted={total_inserted}"
     )
-    for c in result.chunks:
-        if c.error:
-            print(f"  {c.frmdt} to {c.todt}: FAILED: {c.error}")
-        else:
-            print(
-                f"  {c.frmdt} to {c.todt}: downloaded={c.downloaded} accepted={c.accepted} "
-                f"rejected={c.rejected} inserted={c.inserted}"
-            )
 
     if failed_chunks:
         print(f"\n{len(failed_chunks)} chunk(s) failed — re-run with the same --start/--end to retry "

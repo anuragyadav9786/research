@@ -155,7 +155,12 @@ requested range rather than once per file.
 6. `database_writer.py`'s existing `write_nav_records` upserts into
    `nav_history` exactly as the live feed does (`ON CONFLICT DO NOTHING`
    on `(scheme_variant_id, date)`), so re-running an overlapping or
-   identical range is a safe no-op.
+   identical range is a safe no-op. This function batches its INSERT
+   statements at 5,000 rows each — a first real run against the live
+   Supabase database crashed mid-transfer ("SSL connection has been closed
+   unexpectedly") on a single month-chunk's ~45,000-row, 180,000+-parameter
+   INSERT covering the whole fund universe; the daily feed's one-row-per-
+   scheme volume never approached that, so the issue only surfaced here.
 7. Each month-chunk's outcome (downloaded/accepted/rejected/inserted, or
    an error) is tracked independently, so one chunk failing doesn't lose
    chunks already committed — a re-run of the same `--start`/`--end`

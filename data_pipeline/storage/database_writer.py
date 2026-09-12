@@ -19,6 +19,20 @@ def get_or_create_data_source(db: Session, name: str, url: str, source_type: str
     return source
 
 
+# Postgres hard-caps a single statement at 65535 bind parameters; this
+# table's INSERT uses 4 columns/row, so 65535/4 ≈ 16383 rows is the actual
+# ceiling. A one-off daily ingestion run (one row per scheme) never gets
+# close to that, but a historical-backfill month-chunk (every trading day
+# in the month, for the whole fund universe, all matched and written in
+# one call) can be an order of magnitude larger — a real run hit this: one
+# ~45,000-row `.values(rows)` call compiled a single INSERT with 180,000+
+# parameters, which Supabase's pooled connection dropped mid-transfer
+# ("SSL connection has been closed unexpectedly") rather than rejecting
+# outright. Batching keeps every individual statement small regardless of
+# how many rows the caller passes in one call.
+_INSERT_BATCH_SIZE = 5000
+
+
 def write_nav_records(db: Session, source: DataSource, mapped: list[MappedNavRecord]) -> int:
     """Upsert NAV rows, keyed on (scheme_variant_id, date).
 
@@ -41,7 +55,12 @@ def write_nav_records(db: Session, source: DataSource, mapped: list[MappedNavRec
         }
         for m in mapped
     ]
-    stmt = pg_insert(NavHistory).values(rows)
-    stmt = stmt.on_conflict_do_nothing(constraint="uq_nav_variant_date")
-    result = db.execute(stmt)
-    return result.rowcount or 0
+
+    inserted = 0
+    for i in range(0, len(rows), _INSERT_BATCH_SIZE):
+        batch = rows[i : i + _INSERT_BATCH_SIZE]
+        stmt = pg_insert(NavHistory).values(batch)
+        stmt = stmt.on_conflict_do_nothing(constraint="uq_nav_variant_date")
+        result = db.execute(stmt)
+        inserted += result.rowcount or 0
+    return inserted
