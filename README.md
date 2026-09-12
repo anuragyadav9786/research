@@ -232,16 +232,44 @@ cd backend && source .venv/bin/activate
 pytest tests/analytics/test_portfolio.py tests/api/test_portfolio_analysis.py -q
 ```
 
+### 12. Market-Cycle Engine (Phase 10)
+
+`GET /api/funds/{id}/market-regimes` — fund vs. benchmark return,
+volatility and max drawdown within each defined market regime, plus a
+deterministic (templated, not LLM-written) outperform/underperform
+summary per regime and an overall "beat benchmark in N of M periods"
+rollup. `GET /api/market/regimes` lists the regimes themselves. Built on
+`analytics/market_regime.py`, which reuses the existing returns/risk/
+drawdown functions restricted to each regime's date window — simple
+(non-annualized) return rather than CAGR, since regimes are often
+sub-annual.
+
+**Data provenance, stated plainly**: the sample dataset's regimes are
+illustrative windows shaped to match the *synthetic* seed's own
+trajectory, not verified real market classifications — every response
+carries this as `methodology_note`, and it's documented in
+`docs/data-sources.md`.
+
+Wired into the fund detail page as a "Market-Cycle Behaviour" section,
+and into a new `/market` page (finally a real destination for the
+previously-placeholder "Market Intelligence" nav item — sector trends and
+a broader risk-environment view remain unbuilt).
+
+```bash
+cd backend && source .venv/bin/activate
+pytest tests/analytics/test_market_regime.py tests/api/test_market_regime.py -q
+```
+
 ## Status
 
-**Phase 0, 1, 2, 4, 5, 6, 7, 8 and 9** complete. **Phase 3** (NAV
+**Phase 0, 1, 2, 4, 5, 6, 7, 8, 9 and 10** complete. **Phase 3** (NAV
 ingestion) is architecturally complete and tested down to the network
 boundary — see Known limitations for exactly what remains to verify.
 
-Next: **Phase 10** — Market-Cycle Engine (classifying historical market
-regimes and showing fund behaviour — return, volatility, drawdown — within
-each one; the `market_regimes` table already exists but nothing populates
-or exposes it beyond the Phase 2 sample seed).
+Next: **Phase 11** — Stress-Test Engine (configurable hypothetical
+scenarios — e.g. "Nifty falls 25%", "midcaps fall 40%" — estimating
+fund/portfolio impact from historical relationships and exposure,
+explicitly labelled as hypothetical, never predictive).
 
 ### Known limitations
 

@@ -9,6 +9,7 @@ import type {
   RiskResponse,
   RollingReturnsResponse,
 } from "@/types/fund";
+import type { MarketRegimeBehaviorResponse, MarketRegimeSummary } from "@/types/marketRegime";
 import type { OverlapResponse } from "@/types/overlap";
 import type { PortfolioResponse } from "@/types/portfolio";
 import type { PortfolioAnalysisResponse, PortfolioHoldingInput } from "@/types/portfolioAnalysis";
@@ -116,4 +117,15 @@ export function getFundNavHistory(fundId: number, params: VariantParams = {}): P
 
 export function analysePortfolio(holdings: PortfolioHoldingInput[]): Promise<PortfolioAnalysisResponse> {
   return apiPost<PortfolioAnalysisResponse>("/api/portfolio/analyse", { holdings });
+}
+
+export function getFundMarketRegimes(
+  fundId: number,
+  params: VariantParams = {},
+): Promise<MarketRegimeBehaviorResponse> {
+  return apiGet<MarketRegimeBehaviorResponse>(`/api/funds/${fundId}/market-regimes`, params);
+}
+
+export function listMarketRegimes(): Promise<MarketRegimeSummary[]> {
+  return apiGet<MarketRegimeSummary[]>("/api/market/regimes");
 }

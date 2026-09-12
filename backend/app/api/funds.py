@@ -24,7 +24,7 @@ from analytics.returns import returns_series
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.reference import Scheme, SchemeVariant
-from app.repositories import fund_repository, portfolio_repository
+from app.repositories import fund_repository, market_regime_repository, portfolio_repository
 from app.schemas.funds import (
     DrawdownResponse,
     FundDetail,
@@ -36,9 +36,10 @@ from app.schemas.funds import (
     RollingReturnsResponse,
     VariantSummary,
 )
+from app.schemas.market_regime import MarketRegimeBehaviorResponse
 from app.schemas.overlap import OverlapResponse
 from app.schemas.portfolio import PortfolioResponse
-from app.services import fund_analytics_service, overlap_service, portfolio_intelligence_service
+from app.services import fund_analytics_service, market_regime_service, overlap_service, portfolio_intelligence_service
 
 router = APIRouter(prefix="/api/funds", tags=["funds"])
 
@@ -187,6 +188,25 @@ def get_fund_drawdown(
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
     return fund_analytics_service.compute_drawdown(nav)
+
+
+@router.get("/{fund_id}/market-regimes", response_model=MarketRegimeBehaviorResponse)
+def get_fund_market_regimes(
+    fund_id: int,
+    plan: Literal["direct", "regular"] = "direct",
+    option: Literal["growth", "idcw"] = "growth",
+    db: Session = Depends(get_db),
+) -> dict:
+    """Fund behaviour across defined market regimes (Phase 10). See
+    MarketRegimeBehaviorResponse.methodology_note: the sample dataset's
+    regimes are illustrative windows over synthetic data, not verified
+    historical market classifications."""
+    scheme = _resolve_scheme(db, fund_id)
+    variant = _resolve_variant(db, scheme, plan, option)
+    nav = fund_repository.get_nav_series(db, variant.id)
+    benchmark = _benchmark_series(db, scheme)
+    regimes = market_regime_repository.list_regimes(db)
+    return market_regime_service.compute_regime_behavior(nav, benchmark, regimes)
 
 
 @router.get("/{fund_id}/portfolio", response_model=PortfolioResponse)

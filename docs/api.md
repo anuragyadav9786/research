@@ -30,6 +30,8 @@ doesn't have returns `404`, not a fabricated/substituted result.
 | `GET /api/funds/{fund_id}/overlap?compare_to={other_id}` | Pairwise fund overlap (Phase 8): common holdings, weighted/sector overlap, HHI-style overlap label, return correlation. Also scheme-level. Rejects comparing a fund to itself (`400`). |
 | `GET /api/funds/{fund_id}/intelligence` | Bundles the variant-specific analytics (except `nav-history`, `portfolio` and `overlap`) plus fund/variant metadata into one response. |
 | `POST /api/portfolio/analyse` | Multi-fund Portfolio Analysis (Phase 9): combine 2-10 funds by weight into look-through holdings, sector/market-cap allocation, concentration, pairwise overlap, and portfolio-level risk/drawdown. **Stateless** — see below. |
+| `GET /api/funds/{fund_id}/market-regimes` | Market-Cycle Behaviour (Phase 10): fund vs. benchmark return, volatility and max drawdown within each defined market regime, plus a deterministic outperform/underperform summary per regime. |
+| `GET /api/market/regimes` | Plain reference list of all defined market regimes (name, type, date range) — no fund attached. |
 
 Interactive docs: `http://localhost:8000/docs` (Swagger UI, auto-generated
 from the same Pydantic schemas).
@@ -85,16 +87,24 @@ formulas — no new ad hoc "portfolio risk" calculation exists.
   `common_securities_count` are the same whichever fund is `{fund_id}`
   and whichever is `compare_to` — verified in
   `test_overlap_is_symmetric_in_weighted_pct`.
+- **`/market-regimes` never hides where its regime data comes from.**
+  Every response carries a `methodology_note` stating plainly that the
+  current sample dataset's regimes are illustrative windows over
+  synthetic data, not verified real-world market classifications — see
+  `docs/data-sources.md`. Regime summaries are deterministic string
+  templates built from the computed return numbers, never an LLM call.
 
 ## Testing
 
-`backend/tests/api/test_funds.py`, `test_portfolio.py`, `test_overlap.py`
-and `test_portfolio_analysis.py` run all of the above against the real
-Phase 2 seed data (no mocking) via FastAPI's `TestClient`: fund listing/
-search, full-detail variant listings, each analytics endpoint's happy
-path, the explicit insufficient-history path (10-year window against ~4
-years of seed history), top-holdings/HHI/allocation correctness
-(including the bonds' "unclassified" case), pairwise overlap correctness
-and symmetry, multi-fund combination correctness (hand-verified effective
-weights for a 3-fund mix, allocation reconciliation), and
-404/422/400 error handling.
+`backend/tests/api/test_funds.py`, `test_portfolio.py`, `test_overlap.py`,
+`test_portfolio_analysis.py` and `test_market_regime.py` run all of the
+above against the real Phase 2 seed data (no mocking) via FastAPI's
+`TestClient`: fund listing/search, full-detail variant listings, each
+analytics endpoint's happy path, the explicit insufficient-history path
+(10-year window against ~4 years of seed history), top-holdings/HHI/
+allocation correctness (including the bonds' "unclassified" case),
+pairwise overlap correctness and symmetry, multi-fund combination
+correctness (hand-verified effective weights for a 3-fund mix, allocation
+reconciliation), per-regime behaviour correctness (excess return
+reconciliation, summary text matching the sign of over/underperformance),
+and 404/422/400 error handling.

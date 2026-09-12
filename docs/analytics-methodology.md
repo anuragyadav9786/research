@@ -174,6 +174,36 @@ Portfolio-level volatility/Sharpe/Sortino reuse `analytics/risk.py`
 directly on the combined return series — no separate portfolio-risk
 formulas exist, by design (Rule 5: don't duplicate).
 
+## Market-cycle behaviour (`analytics/market_regime.py`)
+
+**Regime metrics**: return, volatility and max drawdown for a NAV series
+restricted to a regime's `[start_date, end_date]` window — the same
+questions `analytics.returns`, `analytics.risk` and `analytics.drawdown`
+already answer for any date range, just applied to a market-regime window
+specifically. Uses **simple, non-annualized return** rather than CAGR:
+regimes are often shorter than a year (e.g. a 6-month correction), where
+annualizing would misleadingly inflate or deflate the figure — the same
+limitation `analytics.returns.cagr` documents for itself. Volatility is
+still annualized (it's a rate, not a total).
+
+Reports `available: false` (never a fabricated 0%) when the NAV series has
+fewer than 2 observations inside the window — e.g. a fund whose history
+starts after a regime already began.
+
+**Regime summaries** are deterministic string templates built directly
+from the computed fund/benchmark return numbers (outperform/underperform/
+match, by how many percentage points) — never an LLM call, per Rule 4.
+
+**IMPORTANT — regime data provenance**: the `market_regimes` table's rows
+for the current sample dataset are illustrative date windows whose shape
+was picked to match the *synthetic* seed data's own trajectory (see
+`database/seeds/seed_sample_data.py`) — they are explicitly **not**
+verified real-world market-regime classifications (e.g. "Correction:
+Feb-Jul 2022" does not assert anything about what actually happened in
+real markets then). Every regime-behaviour API response repeats this as
+`methodology_note`. Real regime classification, against real index data,
+is unbuilt — see `docs/data-sources.md`.
+
 ## Testing approach
 
 Each module has a corresponding `backend/tests/analytics/test_*.py` file.
