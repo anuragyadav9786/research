@@ -1,28 +1,26 @@
 name: Daily NAV Ingestion
 
-# NOT yet scheduled — see docs/deployment.md. This workflow needs a real,
-# persistent, CI-reachable Postgres instance (e.g. Supabase), unlike
-# ci.yml's throwaway per-run service container: ingested NAV data has to
-# land somewhere that still exists tomorrow. Until DATABASE_URL is added
-# as a repository secret (Settings → Secrets and variables → Actions),
-# the schedule trigger below stays commented out — a cron job with no
-# working credential would just fail silently, red, every single day.
+# Scheduled and live: DATABASE_URL (a Supabase Session Pooler connection
+# string — the direct-connection host is IPv6-only and unreachable from
+# GitHub-hosted runners) is set as a repository secret, and a manual
+# workflow_dispatch run has been verified end-to-end against real
+# infrastructure: migrations applied against the live Supabase database,
+# and the NAV ingestion step successfully fetched and parsed real AMFI
+# data (downloaded=14361). AMFI IS reachable from GitHub-hosted runners —
+# this dev sandbox's own inability to reach amfiindia.com (see
+# docs/data-sources.md) does not apply there.
 #
-# Once the secret exists:
-#   1. Uncomment the `schedule:` block below.
-#   2. Trigger once by hand (Actions tab → this workflow → Run workflow)
-#      to confirm it can actually reach both the database and AMFI.
-#
-# AMFI's own network reachability is a separate, still-open question —
-# see docs/data-sources.md: this platform's dev sandbox could not reach
-# amfiindia.com (blocked outbound), so the live fetch itself has never
-# been exercised end-to-end. A GitHub-hosted runner has ordinary internet
-# access and may fare differently, but that has not been confirmed here.
+# That run's records_accepted was 0 (all 14361 rejected) — expected, not
+# a bug: this database only holds the fictional Phase 2 sample funds (see
+# database/seeds/seed_sample_data.py), whose scheme codes don't match any
+# real AMFI scheme, so every real record is correctly rejected as
+# unmatched. Real, matching data will start flowing once real fund
+# schemes are loaded into this database.
 
 on:
   workflow_dispatch: {}
-  # schedule:
-  #   - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
+  schedule:
+    - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
 jobs:
   ingest:
