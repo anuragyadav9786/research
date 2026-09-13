@@ -17,7 +17,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping backend health endpoint
+        # A Render free-tier cold start can take well over 30s from a full
+        # stop (confirmed live: 3 consecutive runs each timed out at exactly
+        # 30s with 0 bytes back, while a manual check moments later got a
+        # normal, healthy response) — 30s was simply too short a leash for
+        # the one case this ping exists to handle. This still comfortably
+        # fits inside the 10-minute schedule interval.
         run: |
           curl -sS -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" \
-            --max-time 30 \
+            --max-time 90 \
             "https://thinkfin-backend.onrender.com/api/health"

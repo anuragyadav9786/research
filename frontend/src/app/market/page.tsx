@@ -24,6 +24,8 @@ const REGIME_TYPE_COLORS: Record<string, string> = {
 
 export const metadata = { title: "Market Intelligence — ThinkFin" };
 
+export const dynamic = "force-dynamic";
+
 export default async function MarketIntelligencePage() {
   const regimes = await listMarketRegimes();
 
