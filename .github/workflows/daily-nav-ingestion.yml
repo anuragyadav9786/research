@@ -40,6 +40,10 @@ on:
         description: "DESTRUCTIVE: delete all IDCW-option scheme_variants (and their nav_history), plus any scheme left with zero variants as a result. Growth-only going forward per user request."
         type: boolean
         default: false
+      debug_portfolio_disclosure:
+        description: "Read-only: fetch AMFI's monthly portfolio-disclosure page and print what's actually there (file links, API hints, raw HTML sample) — no DB writes, no files saved. Scoping a future on-demand (not stored) holdings lookup."
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -258,11 +262,90 @@ jobs:
               print(f'schemes remaining: {remaining_schemes}')
           "
 
+      - name: Debug — inspect AMFI's monthly portfolio-disclosure page (no DB writes, no files saved)
+        if: ${{ inputs.debug_portfolio_disclosure == true }}
+        run: |
+          python3 << 'PYEOF'
+          import re
+          import httpx
+
+          # Distinct from download-factsheets (the one-page performance/AUM
+          # summary) — this is AMFI's page for the complete, security-level
+          # monthly holdings disclosure (see docs/data-sources.md once this
+          # investigation lands there). Read-only: prints what's actually
+          # on the page so a real pipeline can be built against confirmed
+          # structure, not a guess — same reasoning as debug_sample earlier
+          # in this file for the AMFI NAV feed. Uses a heredoc (not
+          # python -c "...") specifically so this script's own quote marks
+          # never have to be escaped for the surrounding shell.
+          PAGE_URL = "https://www.amfiindia.com/online-center/portfolio-disclosure"
+
+          try:
+              resp = httpx.get(PAGE_URL, timeout=30.0, follow_redirects=True)
+          except Exception as exc:
+              print(f"page fetch FAILED: {type(exc).__name__}: {exc}")
+              raise SystemExit(1)
+          print(f"status: {resp.status_code}")
+          text = resp.text
+          print(f"page length: {len(text)} chars")
+          print()
+
+          file_links = sorted(set(re.findall(
+              r"""href=["']([^"']+\.(?:xlsx|xls|csv|zip))["']""", text, re.IGNORECASE
+          )))
+          print(f"-- direct file links found: {len(file_links)} --")
+          for link in file_links[:25]:
+              print(f"  {link}")
+          print()
+
+          api_hints = sorted(set(re.findall(
+              r"""["']([^"']*(?:api|ajax|getportfolio|handler|\.aspx)[^"']*)["']""", text, re.IGNORECASE
+          )))
+          print(f"-- possible API/AJAX/handler hints found: {len(api_hints)} --")
+          for hint in api_hints[:25]:
+              print(f"  {hint}")
+          print()
+
+          print("-- raw HTML sample (first 3000 chars) --")
+          print(text[:3000])
+
+          if file_links:
+              first = file_links[0]
+              if first.startswith("http"):
+                  file_url = first
+              elif first.startswith("/"):
+                  file_url = f"https://www.amfiindia.com{first}"
+              else:
+                  file_url = f"https://www.amfiindia.com/{first}"
+              print()
+              print(f"-- attempting to fetch first discovered file: {file_url} --")
+              try:
+                  file_resp = httpx.get(file_url, timeout=30.0, follow_redirects=True)
+                  content_type = file_resp.headers.get("content-type", "unknown")
+                  print(f"status: {file_resp.status_code}, content-type: {content_type}, bytes: {len(file_resp.content)}")
+                  if file_url.lower().endswith((".xlsx", ".xls")):
+                      try:
+                          import io
+                          import pandas as pd
+                          sheets = pd.read_excel(io.BytesIO(file_resp.content), sheet_name=None, nrows=5)
+                          print(f"sheet names: {list(sheets.keys())[:10]}")
+                          first_sheet_name = next(iter(sheets))
+                          print(f"first sheet ({first_sheet_name!r}) columns: {list(sheets[first_sheet_name].columns)}")
+                          print(sheets[first_sheet_name].head())
+                      except ImportError as exc:
+                          print(f"pandas Excel engine not available in this env ({exc}) — file fetched fine, structure unread this run")
+              except Exception as exc:
+                  print(f"file fetch FAILED: {type(exc).__name__}: {exc}")
+          else:
+              print()
+              print("No direct file links found in the raw HTML — the AMC/file picker is likely JS-rendered client-side rather than server-rendered. The API/handler hints above are the next thing to check by hand.")
+          PYEOF
+
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline
