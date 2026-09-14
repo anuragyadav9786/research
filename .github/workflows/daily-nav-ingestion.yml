@@ -344,6 +344,36 @@ jobs:
               print()
               print("No direct file links found in the raw HTML — the AMC/file picker is likely JS-rendered client-side rather than server-rendered. The API/handler hints above are the next thing to check by hand.")
 
+          # The page-specific JS chunk (fetched below) revealed the real
+          # mechanism: a React component that receives a `members` prop —
+          # a list of per-AMC objects with mf_id, mf_name, icons, and
+          # per-frequency disclosure fields (e.g.
+          # amc_monthly_portfolio_disclosure) whose value is a URL opened
+          # directly (window.open). So this isn't one central API —
+          # AMFI just links out to each AMC's own site. In Next.js App
+          # Router that `members` data is server-fetched and embedded in
+          # the page's own HTML as RSC flight data, not a separate
+          # AJAX call — so it should already be inside `text` above.
+          # Search for it directly, and specifically for the 3 real AMCs
+          # this platform already has featured funds from, to get their
+          # real disclosure links without guessing.
+          print()
+          print("-- searching the already-fetched page HTML for embedded member/AMC data --")
+          mf_name_hits = [m.start() for m in re.finditer(r"mf_name", text)]
+          print(f"'mf_name' occurrences in page HTML: {len(mf_name_hits)}")
+          for pos in mf_name_hits[:5]:
+              print(f"  ...{text[max(0, pos - 80):pos + 200]}...")
+
+          print()
+          TARGET_AMC_HINTS = ["PPFAS", "Parag Parikh", "Mirae Asset", "quant Money", "Quant Mutual", "quant Mutual"]
+          for hint in TARGET_AMC_HINTS:
+              idx = text.lower().find(hint.lower())
+              if idx == -1:
+                  print(f"'{hint}': not found in page HTML")
+              else:
+                  print(f"'{hint}': found at offset {idx}")
+                  print(f"  ...{text[max(0, idx - 150):idx + 500]}...")
+
           # Resuming the parked investigation: the file picker is client-
           # rendered, so the real download/API endpoint is only visible
           # inside the page's own JS bundles, not the server-rendered
