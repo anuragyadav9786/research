@@ -1,9 +1,11 @@
 import Link from "next/link";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
+import { AnimatedHeroHeadline } from "@/components/hero/AnimatedHeroHeadline";
 import { RealityCheckWidget, type RealityCheckFund } from "@/components/fund/RealityCheckWidget";
+import { BenchmarkDeltaBadge, type BenchmarkMetrics, deltaVsBenchmark, safetyMarginVsBenchmark } from "@/components/fund/BenchmarkDeltaBadge";
 import { countFunds, getFund, getFundDrawdown, getFundReturns, getFundRollingReturns, listFunds } from "@/lib/api";
-import { formatDate, formatNav } from "@/lib/format";
+import { formatNav } from "@/lib/format";
 import type { FundDetail, VariantSummary } from "@/types/fund";
 
 // A small, fixed-size sample rather than any kind of "top performers"
@@ -15,6 +17,13 @@ import type { FundDetail, VariantSummary } from "@/types/fund";
 // AMFI ingestion for this platform only started a couple of days ago.
 const FEATURED_FUND_IDS = [1833, 2236, 2140] as const; // Parag Parikh Flexi Cap, Mirae Asset Large Cap, Quant Small Cap
 const REALITY_CHECK_PAIR = [1833, 2236] as const; // Parag Parikh Flexi Cap vs Mirae Asset Large Cap
+
+// A real, currently-onboarded passive index fund, standing in for a
+// "vs Benchmark" comparison — see BenchmarkDeltaBadge.tsx for why an
+// index fund (not a raw price index, which this platform has no real
+// history for at all) is the honest choice here.
+const BENCHMARK_FUND_ID = 2893; // Axis Nifty 50 Index Fund
+const BENCHMARK_LABEL = "Nifty 50 Index";
 
 const EXPLORE_COUNT = 6;
 
@@ -45,19 +54,26 @@ const FEATURES = [
   },
 ];
 
-async function getBackendHealth() {
-  const url = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-  try {
-    const res = await fetch(`${url}/api/health`, { cache: "no-store" });
-    if (!res.ok) return { status: "unreachable" };
-    return res.json();
-  } catch {
-    return { status: "unreachable" };
-  }
-}
-
 function directGrowthVariant(fund: FundDetail): VariantSummary | undefined {
   return fund.variants.find((v) => v.plan === "direct" && v.option === "growth") ?? fund.variants[0];
+}
+
+async function loadBenchmarkMetrics(): Promise<BenchmarkMetrics | null> {
+  try {
+    const [returns, rolling, drawdown] = await Promise.all([
+      getFundReturns(BENCHMARK_FUND_ID),
+      getFundRollingReturns(BENCHMARK_FUND_ID, { window_years: 3 }),
+      getFundDrawdown(BENCHMARK_FUND_ID),
+    ]);
+    return {
+      name: BENCHMARK_LABEL,
+      cagr3y: returns.windows["3y"]?.available ? returns.windows["3y"].cagr_pct : null,
+      medianRolling3y: rolling.available ? rolling.distribution.median : null,
+      maxDrawdown: drawdown.available ? drawdown.max_drawdown_pct : null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function loadRealityCheckFund(fundId: number): Promise<RealityCheckFund | null> {
@@ -90,97 +106,71 @@ export default async function Home({
   const { tab } = await searchParams;
   const activeTab = tab === "all" ? "all" : "complete";
 
-  const [health, fundCount, realityA, realityB, exploreList] = await Promise.all([
-    getBackendHealth(),
+  const [fundCount, realityA, realityB, benchmark, exploreList] = await Promise.all([
     countFunds().catch(() => ({ count: 0 })),
     loadRealityCheckFund(REALITY_CHECK_PAIR[0]),
     loadRealityCheckFund(REALITY_CHECK_PAIR[1]),
+    loadBenchmarkMetrics(),
     activeTab === "all" ? listFunds({ limit: EXPLORE_COUNT }).catch(() => ({ items: [], has_more: false })) : null,
   ]);
 
+  // Fetched unconditionally (unlike featuredFunds below) so the hero's fund
+  // cards stay populated regardless of which Explore Funds tab is active.
+  const heroFunds = (await Promise.all(FEATURED_FUND_IDS.map((id) => getFund(id).catch(() => null)))).filter(
+    (f): f is FundDetail => f !== null,
+  );
+
   const featuredFunds =
     activeTab === "complete"
-      ? (await Promise.all(FEATURED_FUND_IDS.map((id) => getFund(id).catch(() => null)))).filter(
-          (f): f is FundDetail => f !== null,
-        )
+      ? heroFunds
       : (await Promise.all((exploreList?.items ?? []).map((f) => getFund(f.id).catch(() => null)))).filter(
           (f): f is FundDetail => f !== null,
         );
-
-  const isHealthy = health.status === "ok";
-  const dataAsOf = featuredFunds
-    .map((f) => directGrowthVariant(f)?.latest_nav_date)
-    .filter((d): d is string => Boolean(d))
-    .sort()
-    .at(-1);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <SiteHeader active="dashboard" />
 
       <main className="px-8 py-12 max-w-5xl mx-auto space-y-16">
-        <section className="space-y-6">
-          <div className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-400">
-            <span className="flex items-center gap-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full ${isHealthy ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}`} />
-              {isHealthy ? "Live AMFI NAV Sync" : "Backend unreachable"}
-            </span>
-            <span className="text-slate-700">|</span>
-            <span>Zero Sponsor Bias</span>
-            <span className="text-slate-700">|</span>
-            <span>100% Independent Analytics</span>
+        <section className="relative isolate flex flex-col items-center text-center py-6 sm:py-10">
+          {/* Soft radial glow — purely decorative, sits behind the search bar like a focal spotlight. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 -z-10 flex items-start justify-center"
+          >
+            <div className="mt-8 h-64 w-64 sm:h-80 sm:w-80 rounded-full bg-indigo-600/20 blur-3xl" />
           </div>
 
-          <div className="space-y-3 max-w-2xl">
-            <h1 className="text-3xl sm:text-5xl font-semibold tracking-tight text-slate-100 text-balance">
-              Know how your fund actually behaves when the market drops.
-            </h1>
-            <p className="text-base text-slate-400 leading-relaxed">
-              Institutional-grade rolling returns, maximum drawdown, and stress testing for{" "}
-              {fundCount.count.toLocaleString("en-IN")} Indian mutual funds — calculated directly from daily NAV
-              history.
-            </p>
+          <div className="max-w-2xl">
+            <AnimatedHeroHeadline centered />
           </div>
 
-          <form action="/research" className="flex flex-col sm:flex-row gap-3 max-w-xl">
-            <div className="relative flex-1">
+          <form action="/research" className="mt-8 w-full max-w-xl">
+            <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900 pl-5 pr-1.5 py-1.5 shadow-lg shadow-indigo-950/40 focus-within:border-indigo-600 transition-colors">
               <input
                 type="text"
                 name="search"
-                placeholder="Search by fund name, AMC, or category (e.g., Parag Parikh Flexi Cap)…"
-                className="w-full rounded-md border border-slate-800 bg-slate-900 pl-4 pr-16 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-600"
+                placeholder="Search by fund, AMC, or category…"
+                className="min-w-0 flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none"
               />
-              <kbd className="hidden sm:inline-flex absolute right-3 top-1/2 -translate-y-1/2 items-center rounded border border-slate-700 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
+              <kbd className="hidden sm:inline-flex items-center rounded border border-slate-700 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
                 Enter ↵
               </kbd>
+              <button
+                type="submit"
+                className="shrink-0 rounded-full bg-indigo-500 text-white font-medium text-sm px-4 py-2 hover:bg-indigo-400 transition-colors"
+              >
+                Search
+              </button>
             </div>
-            <button
-              type="submit"
-              className="rounded-md bg-indigo-500 text-white font-medium text-sm px-5 py-2.5 hover:bg-indigo-400 transition-colors"
-            >
-              Search Funds
-            </button>
           </form>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-500 mr-1">Quick probe:</span>
-            {featuredFunds
-              .filter((f) => (FEATURED_FUND_IDS as readonly number[]).includes(f.id))
-              .map((fund) => (
-                <Link
-                  key={fund.id}
-                  href={`/research/${fund.id}`}
-                  className="rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300 hover:border-indigo-700 hover:text-indigo-300 transition-colors"
-                >
-                  {fund.scheme_name}
-                </Link>
-              ))}
+          <div className="mt-8 w-full max-w-4xl text-left">
+            <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={heroFunds} benchmark={benchmark} />
           </div>
-
-          {dataAsOf && <p className="text-xs text-slate-600">NAV data updated as of {formatDate(dataAsOf)}</p>}
         </section>
 
-        {realityA && realityB && <RealityCheckWidget fundA={realityA} fundB={realityB} />}
+        {realityA && realityB && <RealityCheckWidget fundA={realityA} fundB={realityB} benchmark={benchmark} />}
 
         <section className="space-y-4">
           <div className="flex items-baseline justify-between flex-wrap gap-3">
@@ -206,7 +196,7 @@ export default async function Home({
           </div>
 
           {activeTab === "complete" ? (
-            <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={featuredFunds} />
+            <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={featuredFunds} benchmark={benchmark} />
           ) : (
             <AllFundsGrid funds={featuredFunds} />
           )}
@@ -239,7 +229,15 @@ export default async function Home({
   );
 }
 
-async function CompleteDataGrid({ fundIds, funds }: { fundIds: readonly number[]; funds: FundDetail[] }) {
+async function CompleteDataGrid({
+  fundIds,
+  funds,
+  benchmark,
+}: {
+  fundIds: readonly number[];
+  funds: FundDetail[];
+  benchmark?: BenchmarkMetrics | null;
+}) {
   const metrics = await Promise.all(
     fundIds.map(async (id) => {
       const [returns, drawdown] = await Promise.all([
@@ -278,12 +276,28 @@ async function CompleteDataGrid({ fundIds, funds }: { fundIds: readonly number[]
                 <div className="font-mono tabular-nums text-slate-100 mt-0.5">
                   {m?.cagr3y != null ? `${m.cagr3y.toFixed(1)}%` : "—"}
                 </div>
+                {benchmark && (
+                  <BenchmarkDeltaBadge
+                    className="mt-1"
+                    delta={deltaVsBenchmark(m?.cagr3y ?? null, benchmark.cagr3y)}
+                    kind="return"
+                    benchmarkName={benchmark.name}
+                  />
+                )}
               </div>
               <div className="text-right">
                 <div className="text-slate-500">Max Drawdown</div>
                 <div className="font-mono tabular-nums text-rose-400 mt-0.5">
                   {m?.maxDrawdown != null ? `${m.maxDrawdown.toFixed(1)}%` : "—"}
                 </div>
+                {benchmark && (
+                  <BenchmarkDeltaBadge
+                    className="mt-1 justify-end"
+                    delta={safetyMarginVsBenchmark(m?.maxDrawdown ?? null, benchmark.maxDrawdown)}
+                    kind="drawdown"
+                    benchmarkName={benchmark.name}
+                  />
+                )}
               </div>
             </div>
           </Link>
