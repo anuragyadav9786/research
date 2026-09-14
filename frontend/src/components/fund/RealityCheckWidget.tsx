@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { formatPct } from "@/lib/format";
 import { DistributionBar } from "@/components/fund/DistributionBar";
+import { BenchmarkDeltaBadge, type BenchmarkMetrics, deltaVsBenchmark, safetyMarginVsBenchmark } from "@/components/fund/BenchmarkDeltaBadge";
 import type { RollingReturnDistribution } from "@/types/fund";
 
 export interface RealityCheckFund {
@@ -16,14 +17,41 @@ export interface RealityCheckFund {
 
 /** Real numbers only — every figure here comes from this platform's own
  * computed returns/rolling-returns/drawdown for two real, currently
- * onboarded funds, not placeholder data. Compares fund-to-fund rather
- * than fund-to-benchmark since no real benchmark (index) history exists
- * in this platform yet — see docs/analytics-methodology.md. */
-export function RealityCheckWidget({ fundA, fundB }: { fundA: RealityCheckFund; fundB: RealityCheckFund }) {
-  const rows: { label: string; a: number | null; b: number | null; digits?: number }[] = [
-    { label: "3Y Point-to-Point CAGR", a: fundA.cagr3y, b: fundB.cagr3y },
-    { label: "3Y Rolling CAGR (Median)", a: fundA.medianRolling3y, b: fundB.medianRolling3y },
-    { label: "Max Drawdown (Since Inception)", a: fundA.maxDrawdown, b: fundB.maxDrawdown },
+ * onboarded funds, not placeholder data. Compares fund-to-fund directly,
+ * plus (when `benchmark` is supplied) against a real passive index fund —
+ * see BenchmarkDeltaBadge.tsx for why an index fund stands in for a raw
+ * benchmark index. */
+export function RealityCheckWidget({
+  fundA,
+  fundB,
+  benchmark,
+}: {
+  fundA: RealityCheckFund;
+  fundB: RealityCheckFund;
+  benchmark?: BenchmarkMetrics | null;
+}) {
+  const rows: {
+    label: string;
+    a: number | null;
+    b: number | null;
+    kind: "return" | "drawdown";
+    benchmarkValue: number | null;
+  }[] = [
+    { label: "3Y Point-to-Point CAGR", a: fundA.cagr3y, b: fundB.cagr3y, kind: "return", benchmarkValue: benchmark?.cagr3y ?? null },
+    {
+      label: "3Y Rolling CAGR (Median)",
+      a: fundA.medianRolling3y,
+      b: fundB.medianRolling3y,
+      kind: "return",
+      benchmarkValue: benchmark?.medianRolling3y ?? null,
+    },
+    {
+      label: "Max Drawdown (Since Inception)",
+      a: fundA.maxDrawdown,
+      b: fundB.maxDrawdown,
+      kind: "drawdown",
+      benchmarkValue: benchmark?.maxDrawdown ?? null,
+    },
   ];
 
   return (
@@ -49,8 +77,36 @@ export function RealityCheckWidget({ fundA, fundB }: { fundA: RealityCheckFund; 
             {rows.map((row) => (
               <tr key={row.label}>
                 <td className="py-2.5 text-slate-400">{row.label}</td>
-                <td className="py-2.5 text-right font-mono tabular-nums text-slate-100">{formatPct(row.a)}</td>
-                <td className="py-2.5 text-right font-mono tabular-nums text-slate-100">{formatPct(row.b)}</td>
+                <td className="py-2.5 text-right">
+                  <div className="font-mono tabular-nums text-slate-100">{formatPct(row.a)}</div>
+                  {benchmark && (
+                    <BenchmarkDeltaBadge
+                      className="mt-1 justify-end"
+                      delta={
+                        row.kind === "drawdown"
+                          ? safetyMarginVsBenchmark(row.a, row.benchmarkValue)
+                          : deltaVsBenchmark(row.a, row.benchmarkValue)
+                      }
+                      kind={row.kind}
+                      benchmarkName={benchmark.name}
+                    />
+                  )}
+                </td>
+                <td className="py-2.5 text-right">
+                  <div className="font-mono tabular-nums text-slate-100">{formatPct(row.b)}</div>
+                  {benchmark && (
+                    <BenchmarkDeltaBadge
+                      className="mt-1 justify-end"
+                      delta={
+                        row.kind === "drawdown"
+                          ? safetyMarginVsBenchmark(row.b, row.benchmarkValue)
+                          : deltaVsBenchmark(row.b, row.benchmarkValue)
+                      }
+                      kind={row.kind}
+                      benchmarkName={benchmark.name}
+                    />
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
