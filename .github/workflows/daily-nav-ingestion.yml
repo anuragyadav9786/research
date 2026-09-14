@@ -415,6 +415,23 @@ jobs:
           if not_found:
               print()
               print(f"-- not found in database, needs a name adjustment: {not_found} --")
+
+          print()
+          print("-- real computed returns / rolling returns / drawdown for the Reality Check widget --")
+          for name, row in matches.items():
+              print(f"\n{name} (scheme_id={row.scheme_id}):")
+              for path, params in [
+                  ("returns", {}),
+                  ("rolling-returns", {"window_years": 3}),
+                  ("drawdown", {}),
+              ]:
+                  url = f"{BACKEND_URL}/api/funds/{row.scheme_id}/{path}"
+                  try:
+                      resp = httpx.get(url, params={"plan": "direct", "option": "growth", **params}, timeout=60.0)
+                      print(f"  /{path}: HTTP {resp.status_code}")
+                      print(f"    {resp.json()}")
+                  except Exception as exc:
+                      print(f"  /{path}: FAILED {type(exc).__name__}: {exc}")
           PYEOF
 
       - name: Run database migrations
