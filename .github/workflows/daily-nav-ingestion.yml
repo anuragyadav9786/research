@@ -374,7 +374,11 @@ jobs:
           print()
           print(f"-- page-specific chunk(s) prioritized: {priority_files} --")
 
-          MAX_JS_FETCHES = 15
+          # The priority chunk's full content already printed everything
+          # needed once found — limit this run to just that, to keep the
+          # log focused instead of re-printing the ~15 generic chunks
+          # already confirmed empty of endpoint hints in the prior run.
+          MAX_JS_FETCHES = len(priority_files) if priority_files else 15
           for js in ordered_files[:MAX_JS_FETCHES]:
               if js.startswith("http"):
                   js_url = js
@@ -399,8 +403,8 @@ jobs:
                   # matched keyword) — for the page-specific chunk, also
                   # dump a raw sample so it can be read by eye.
                   if js in priority_files:
-                      print(f"  -- raw content sample of this page-specific chunk (first 6000 chars) --")
-                      print(f"    {js_text[:6000]}")
+                      print(f"  -- FULL raw content of this page-specific chunk ({len(js_text)} chars) --")
+                      print(f"    {js_text}")
               except Exception as exc:
                   print(f"  fetch FAILED: {type(exc).__name__}: {exc}")
 
