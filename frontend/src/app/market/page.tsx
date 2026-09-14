@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { SiteHeader } from "@/components/layout/SiteHeader";
 import { listMarketRegimes } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 
@@ -31,17 +32,7 @@ export default async function MarketIntelligencePage() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <header className="border-b border-neutral-800 px-8 py-4 flex items-center justify-between">
-        <Link href="/" className="text-lg font-semibold tracking-tight">
-          ThinkFin
-        </Link>
-        <nav className="flex gap-6 text-sm text-neutral-400">
-          <Link href="/" className="hover:text-neutral-100">Dashboard</Link>
-          <Link href="/research" className="hover:text-neutral-100">Research</Link>
-          <Link href="/portfolio" className="hover:text-neutral-100">Portfolio</Link>
-          <Link href="/market" className="text-neutral-100">Market Intelligence</Link>
-        </nav>
-      </header>
+      <SiteHeader active="market" />
 
       <main className="px-8 py-10 max-w-4xl mx-auto space-y-6">
         <div>

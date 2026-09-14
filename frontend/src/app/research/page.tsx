@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { SiteHeader } from "@/components/layout/SiteHeader";
 import { listFunds } from "@/lib/api";
 
 export const metadata = { title: "Research — ThinkFin" };
@@ -33,18 +34,7 @@ export default async function ResearchPage({
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <header className="border-b border-neutral-800 px-8 py-4 flex items-center justify-between">
-        <Link href="/" className="text-lg font-semibold tracking-tight">
-          ThinkFin
-        </Link>
-        <nav className="flex gap-6 text-sm text-neutral-400">
-          <Link href="/" className="hover:text-neutral-100">Dashboard</Link>
-          <Link href="/research" className="text-neutral-100">Research</Link>
-          <Link href="/research/compare" className="hover:text-neutral-100">Compare</Link>
-          <Link href="/portfolio" className="hover:text-neutral-100">Portfolio</Link>
-          <Link href="/market" className="hover:text-neutral-100">Market Intelligence</Link>
-        </nav>
-      </header>
+      <SiteHeader active="research" />
 
       <main className="px-8 py-10 max-w-5xl mx-auto space-y-6">
         <div>
