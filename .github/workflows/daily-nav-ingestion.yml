@@ -366,6 +366,19 @@ jobs:
               "Mirae Asset Large Cap Fund",
               "HDFC Mid-Cap Opportunities Fund",
               "Quant Small Cap Fund",
+              # Broad-market passive index funds — used as the homepage's
+              # real "vs Benchmark" comparison. An index fund's growth-plan
+              # NAV reflects dividends reinvested (unlike a raw price
+              # index), and — critically — it's just another real mutual
+              # fund scheme in this same AMFI feed, so no new data pipeline
+              # is needed to get a genuine benchmark comparison. Substring
+              # patterns (not full names) since the exact AMC/naming isn't
+              # known ahead of time; matches print below so the real one
+              # actually onboarded here can be picked by hand.
+              "Nifty 50 Index Fund",
+              "Nifty50 Index Fund",
+              "Nifty 500 Index Fund",
+              "Nifty500 Index Fund",
           ]
           BACKEND_URL = "https://thinkfin-backend.onrender.com"
 
