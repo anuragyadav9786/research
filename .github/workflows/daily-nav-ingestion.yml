@@ -343,6 +343,53 @@ jobs:
           else:
               print()
               print("No direct file links found in the raw HTML — the AMC/file picker is likely JS-rendered client-side rather than server-rendered. The API/handler hints above are the next thing to check by hand.")
+
+          # Resuming the parked investigation: the file picker is client-
+          # rendered, so the real download/API endpoint is only visible
+          # inside the page's own JS bundles, not the server-rendered
+          # HTML above. Find every JS file the page references, fetch a
+          # bounded number of them, and grep each for endpoint-shaped
+          # string literals (a path or URL containing a word like "api",
+          # "ajax", "handler", or "portfolio").
+          js_files = sorted(set(re.findall(
+              r"""src=["']([^"']+\.js)["']""", text, re.IGNORECASE
+          )))
+          print()
+          print(f"-- JS bundle files referenced in the page: {len(js_files)} --")
+          for js in js_files[:40]:
+              print(f"  {js}")
+
+          endpoint_pattern = re.compile(
+              r"""["'`]((?:https?:)?//[^"'`]{0,200}(?:api|ajax|handler|getportfolio|portfolio|holdings)[^"'`]{0,200}|/[A-Za-z0-9_.\/-]{0,200}(?:api|ajax|handler|getportfolio|portfolio|holdings)[A-Za-z0-9_.\/-]{0,200})["'`]""",
+              re.IGNORECASE,
+          )
+
+          MAX_JS_FETCHES = 15
+          for js in js_files[:MAX_JS_FETCHES]:
+              if js.startswith("http"):
+                  js_url = js
+              elif js.startswith("//"):
+                  js_url = f"https:{js}"
+              elif js.startswith("/"):
+                  js_url = f"https://www.amfiindia.com{js}"
+              else:
+                  js_url = f"https://www.amfiindia.com/{js}"
+              print()
+              print(f"-- fetching JS bundle: {js_url} --")
+              try:
+                  js_resp = httpx.get(js_url, timeout=30.0, follow_redirects=True)
+                  js_text = js_resp.text
+                  print(f"status: {js_resp.status_code}, bytes: {len(js_resp.content)}")
+                  matches = sorted(set(endpoint_pattern.findall(js_text)))
+                  print(f"  endpoint-like strings found: {len(matches)}")
+                  for m in matches[:20]:
+                      print(f"    {m}")
+              except Exception as exc:
+                  print(f"  fetch FAILED: {type(exc).__name__}: {exc}")
+
+          if len(js_files) > MAX_JS_FETCHES:
+              print()
+              print(f"-- {len(js_files) - MAX_JS_FETCHES} additional JS file(s) not fetched this run (capped at {MAX_JS_FETCHES}) --")
           PYEOF
 
       - name: Backfill real NAV history for a curated set of featured funds
