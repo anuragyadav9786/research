@@ -360,12 +360,22 @@ jobs:
               print(f"  {js}")
 
           endpoint_pattern = re.compile(
-              r"""["'`]((?:https?:)?//[^"'`]{0,200}(?:api|ajax|handler|getportfolio|portfolio|holdings)[^"'`]{0,200}|/[A-Za-z0-9_.\/-]{0,200}(?:api|ajax|handler|getportfolio|portfolio|holdings)[A-Za-z0-9_.\/-]{0,200})["'`]""",
+              r"""["'`]((?:https?:)?//[^"'`]{0,200}(?:api|ajax|handler|getportfolio|portfolio|holdings|scheme|amc|disclosure|download|export)[^"'`]{0,200}|/[A-Za-z0-9_.\/-]{0,200}(?:api|ajax|handler|getportfolio|portfolio|holdings|scheme|amc|disclosure|download|export)[A-Za-z0-9_.\/-]{0,200})["'`]""",
               re.IGNORECASE,
           )
 
+          # The page's own chunk (path contains "portfolio-disclosure") is
+          # where its actual fetch/download logic lives — everything else
+          # is shared framework/vendor code. Fetch that one first so it's
+          # never pushed out by the fetch cap below.
+          priority_files = [f for f in js_files if "portfolio-disclosure" in f.lower()]
+          other_files = [f for f in js_files if f not in priority_files]
+          ordered_files = priority_files + other_files
+          print()
+          print(f"-- page-specific chunk(s) prioritized: {priority_files} --")
+
           MAX_JS_FETCHES = 15
-          for js in js_files[:MAX_JS_FETCHES]:
+          for js in ordered_files[:MAX_JS_FETCHES]:
               if js.startswith("http"):
                   js_url = js
               elif js.startswith("//"):
@@ -384,6 +394,13 @@ jobs:
                   print(f"  endpoint-like strings found: {len(matches)}")
                   for m in matches[:20]:
                       print(f"    {m}")
+                  # Regex can miss a dynamically-built endpoint (string
+                  # concatenation, a template literal, a bare path with no
+                  # matched keyword) — for the page-specific chunk, also
+                  # dump a raw sample so it can be read by eye.
+                  if js in priority_files:
+                      print(f"  -- raw content sample of this page-specific chunk (first 6000 chars) --")
+                      print(f"    {js_text[:6000]}")
               except Exception as exc:
                   print(f"  fetch FAILED: {type(exc).__name__}: {exc}")
 
