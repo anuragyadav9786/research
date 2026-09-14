@@ -44,6 +44,10 @@ on:
         description: "Read-only: fetch AMFI's monthly portfolio-disclosure page and print what's actually there (file links, API hints, raw HTML sample) — no DB writes, no files saved. Scoping a future on-demand (not stored) holdings lookup."
         type: boolean
         default: false
+      backfill_featured_funds:
+        description: "Writes real data: resolves a curated list of well-known funds to real scheme_variant ids, then calls the live backend's nav-history endpoint for each — triggering the existing Phase 15 mfapi.in lazy backfill deliberately, instead of waiting for organic traffic. Safe to re-run (the backfill it triggers is itself idempotent)."
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -341,11 +345,100 @@ jobs:
               print("No direct file links found in the raw HTML — the AMC/file picker is likely JS-rendered client-side rather than server-rendered. The API/handler hints above are the next thing to check by hand.")
           PYEOF
 
+      - name: Backfill real NAV history for a curated set of featured funds
+        if: ${{ inputs.backfill_featured_funds == true }}
+        run: |
+          python3 << 'PYEOF'
+          import sys, os
+          sys.path.insert(0, os.path.join(os.getcwd(), "backend"))
+          import httpx
+          from sqlalchemy import text
+          from app.core.database import engine
+
+          # Real, well-known funds spanning the market-cap spectrum, chosen
+          # for the homepage's featured/quick-probe funds and Reality Check
+          # widget — not the whole 1,830-fund universe. Deliberately
+          # triggering Phase 15's mfapi.in lazy backfill for exactly these
+          # now, rather than waiting for organic traffic to open each page
+          # first (see ensure_nav_history / _resolve_variant).
+          CANDIDATE_NAMES = [
+              "Parag Parikh Flexi Cap Fund",
+              "Mirae Asset Large Cap Fund",
+              "HDFC Mid-Cap Opportunities Fund",
+              "Quant Small Cap Fund",
+          ]
+          BACKEND_URL = "https://thinkfin-backend.onrender.com"
+
+          matches = {}
+          with engine.connect() as conn:
+              for name in CANDIDATE_NAMES:
+                  rows = conn.execute(
+                      text("""
+                          SELECT s.id AS scheme_id, s.name, sv.id AS variant_id
+                          FROM schemes s
+                          JOIN scheme_variants sv ON sv.scheme_id = s.id
+                          WHERE s.name ILIKE :pattern AND sv.plan = 'direct' AND sv.option = 'growth'
+                          LIMIT 3
+                      """),
+                      {"pattern": f"%{name}%"},
+                  ).all()
+                  print(f"search {name!r}: {len(rows)} match(es)")
+                  for r in rows:
+                      print(f"  scheme_id={r.scheme_id} name={r.name!r} variant_id={r.variant_id}")
+                  if rows:
+                      matches[name] = rows[0]
+
+          print()
+          print("-- triggering live backfill via the production API (calls ensure_nav_history) --")
+          for name, row in matches.items():
+              url = f"{BACKEND_URL}/api/funds/{row.scheme_id}/nav-history"
+              try:
+                  resp = httpx.get(url, params={"plan": "direct", "option": "growth"}, timeout=90.0)
+                  print(f"{name}: HTTP {resp.status_code} ({url})")
+              except Exception as exc:
+                  print(f"{name}: FAILED {type(exc).__name__}: {exc}")
+
+          print()
+          print("-- resulting real NAV history depth --")
+          with engine.connect() as conn:
+              for name, row in matches.items():
+                  depth = conn.execute(
+                      text("""
+                          SELECT count(*) AS rows, min(date) AS earliest, max(date) AS latest
+                          FROM nav_history WHERE scheme_variant_id = :vid
+                      """),
+                      {"vid": row.variant_id},
+                  ).first()
+                  print(f"{name}: rows={depth.rows} earliest={depth.earliest} latest={depth.latest}")
+
+          not_found = [n for n in CANDIDATE_NAMES if n not in matches]
+          if not_found:
+              print()
+              print(f"-- not found in database, needs a name adjustment: {not_found} --")
+
+          print()
+          print("-- real computed returns / rolling returns / drawdown for the Reality Check widget --")
+          for name, row in matches.items():
+              print(f"\n{name} (scheme_id={row.scheme_id}):")
+              for path, params in [
+                  ("returns", {}),
+                  ("rolling-returns", {"window_years": 3}),
+                  ("drawdown", {}),
+              ]:
+                  url = f"{BACKEND_URL}/api/funds/{row.scheme_id}/{path}"
+                  try:
+                      resp = httpx.get(url, params={"plan": "direct", "option": "growth", **params}, timeout=60.0)
+                      print(f"  /{path}: HTTP {resp.status_code}")
+                      print(f"    {resp.json()}")
+                  except Exception as exc:
+                      print(f"  /{path}: FAILED {type(exc).__name__}: {exc}")
+          PYEOF
+
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline
