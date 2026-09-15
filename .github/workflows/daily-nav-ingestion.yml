@@ -56,6 +56,10 @@ on:
         description: "Read-only: runs portfolio-fetcher's fetch_ppfas() directly (no Google credentials, no Drive/Sheets calls) to confirm the AMC-fetch logic still finds a real file for the current target month — no DB writes."
         type: boolean
         default: false
+      debug_amc_disclosure_url:
+        description: "Read-only: fetch this URL (an AMC's portfolio-disclosure page) and print what's actually there (file links, JS bundles, raw HTML sample) — no DB writes, no files saved. Generalizes debug_ppfas_disclosure to any AMC, for onboarding new fetch_<amc> adapters one at a time."
+        type: string
+        default: ""
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -569,6 +573,59 @@ jobs:
           fetch_and_inspect(KNOWN_CURRENT_URL, "known current consolidated report (found via browser, not scraping)")
           PYEOF
 
+      - name: Debug — inspect an arbitrary AMC's portfolio-disclosure page (no DB writes, no files saved)
+        if: ${{ inputs.debug_amc_disclosure_url != '' }}
+        run: |
+          python3 << 'PYEOF'
+          import re
+          import os
+          import httpx
+          from urllib.parse import urljoin
+
+          # Generalized version of the PPFAS-specific debug step above —
+          # same investigation each new AMC needs before a real
+          # fetch_<amc> adapter can be written for it, since every AMC's
+          # disclosure page has its own bespoke layout with no shared
+          # format (unlike AMFI's centralized NAVAll.txt for NAV data).
+          PAGE_URL = os.environ["DEBUG_AMC_URL"]
+
+          try:
+              resp = httpx.get(PAGE_URL, timeout=30.0, follow_redirects=True)
+          except Exception as exc:
+              print(f"page fetch FAILED: {type(exc).__name__}: {exc}")
+              raise SystemExit(1)
+          print(f"url: {PAGE_URL}")
+          print(f"status: {resp.status_code}")
+          text = resp.text
+          print(f"page length: {len(text)} chars")
+          print()
+
+          file_links = sorted(set(re.findall(
+              r"""href=["']([^"']+\.(?:xlsx|xls|csv|zip|pdf))["']""", text, re.IGNORECASE
+          )))
+          print(f"-- direct file links found: {len(file_links)} --")
+          for link in file_links[:40]:
+              print(f"  {urljoin(PAGE_URL, link)}")
+          print()
+
+          js_files = sorted(set(re.findall(
+              r"""src=["']([^"']+\.js)["']""", text, re.IGNORECASE
+          )))
+          print(f"-- JS bundle files referenced in the page: {len(js_files)} --")
+          for js in js_files[:25]:
+              print(f"  {urljoin(PAGE_URL, js)}")
+          print()
+
+          print("-- raw HTML sample (first 3000 chars) --")
+          print(text[:3000])
+
+          if not file_links:
+              print()
+              print("No direct file links found in the raw HTML — likely JS-rendered client-side (same pattern AMFI and PPFAS both turned out to have). The JS bundle list above is the next thing to check by hand, or find the real current-month link by viewing the page in a real browser.")
+          PYEOF
+        env:
+          DEBUG_AMC_URL: ${{ inputs.debug_amc_disclosure_url }}
+
       - name: Debug — smoke-test portfolio-fetcher's fetch_ppfas() directly (no DB writes, no Drive/Sheets calls)
         if: ${{ inputs.debug_portfolio_fetcher_smoke_test == true }}
         run: |
@@ -705,10 +762,10 @@ jobs:
           PYEOF
 
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true && inputs.debug_amc_disclosure_url == '' }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true && inputs.debug_amc_disclosure_url == '' }}
         run: python -m data_pipeline.orchestration.daily_pipeline
