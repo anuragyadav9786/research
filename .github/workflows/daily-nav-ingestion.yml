@@ -521,6 +521,24 @@ jobs:
           print("-- raw HTML sample (first 3000 chars) --")
           print(text[:3000])
 
+          def fetch_and_inspect(file_url, label):
+              print()
+              print(f"-- attempting to fetch {label}: {file_url} --")
+              try:
+                  file_resp = httpx.get(file_url, timeout=30.0, follow_redirects=True)
+                  content_type = file_resp.headers.get("content-type", "unknown")
+                  print(f"status: {file_resp.status_code}, content-type: {content_type}, bytes: {len(file_resp.content)}")
+                  if file_resp.status_code == 200 and ".xls" in file_url.lower():
+                      import io
+                      import pandas as pd
+                      sheets = pd.read_excel(io.BytesIO(file_resp.content), sheet_name=None, nrows=15)
+                      print(f"sheet names: {list(sheets.keys())}")
+                      for sheet_name, df in list(sheets.items())[:3]:
+                          print(f"  sheet {sheet_name!r} columns: {list(df.columns)}")
+                          print(df.head(10).to_string())
+              except Exception as exc:
+                  print(f"FAILED: {type(exc).__name__}: {exc}")
+
           target = dated_links[0][2] if dated_links else (file_links[0] if file_links else None)
           if target:
               if target.startswith("http"):
@@ -529,28 +547,22 @@ jobs:
                   file_url = f"https://amc.ppfas.com{target}"
               else:
                   file_url = f"https://amc.ppfas.com/{target}"
-              print()
-              print(f"-- attempting to fetch most recent monthly-portfolio file: {file_url} --")
-              try:
-                  file_resp = httpx.get(file_url, timeout=30.0, follow_redirects=True)
-                  content_type = file_resp.headers.get("content-type", "unknown")
-                  print(f"status: {file_resp.status_code}, content-type: {content_type}, bytes: {len(file_resp.content)}")
-                  if file_url.lower().endswith((".xlsx", ".xls")):
-                      try:
-                          import io
-                          import pandas as pd
-                          sheets = pd.read_excel(io.BytesIO(file_resp.content), sheet_name=None, nrows=10)
-                          print(f"sheet names: {list(sheets.keys())[:10]}")
-                          first_sheet_name = next(iter(sheets))
-                          print(f"first sheet ({first_sheet_name!r}) columns: {list(sheets[first_sheet_name].columns)}")
-                          print(sheets[first_sheet_name].head(10))
-                      except ImportError as exc:
-                          print(f"pandas Excel engine not available in this env ({exc}) — file fetched fine, structure unread this run")
-              except Exception as exc:
-                  print(f"file fetch FAILED: {type(exc).__name__}: {exc}")
+              fetch_and_inspect(file_url, "most recent scraped monthly-portfolio file")
           else:
               print()
               print("No direct file links found in the raw HTML — likely JS-rendered client-side, same pattern as AMFI's own page. The JS bundle list above is the next thing to check.")
+
+          # The scraped page's static HTML tops out around 2020 — this
+          # exact current-month link (found by directly viewing the live
+          # page in a real browser, since our automated fetch above is
+          # very likely served a reduced page by the Cloudflare
+          # bot-challenge scripts referenced in its JS bundle list) is
+          # ground truth for what the real, current mechanism looks like.
+          KNOWN_CURRENT_URL = (
+              "https://amc.ppfas.com/downloads/portfolio-disclosure/2026/"
+              "PPFAS_Monthly_Portfolio_Report_August_31_2026.xls?10092026"
+          )
+          fetch_and_inspect(KNOWN_CURRENT_URL, "known current consolidated report (found via browser, not scraping)")
           PYEOF
 
       - name: Backfill real NAV history for a curated set of featured funds
