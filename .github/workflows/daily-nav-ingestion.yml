@@ -48,6 +48,10 @@ on:
         description: "Writes real data: resolves a curated list of well-known funds to real scheme_variant ids, then calls the live backend's nav-history endpoint for each — triggering the existing Phase 15 mfapi.in lazy backfill deliberately, instead of waiting for organic traffic. Safe to re-run (the backfill it triggers is itself idempotent)."
         type: boolean
         default: false
+      debug_ppfas_disclosure:
+        description: "Read-only: fetch PPFAS's own portfolio-disclosure page (AMFI links out to it, not a central API) and print what's actually there — no DB writes, no files saved. Feasibility pilot for real per-AMC holdings ingestion."
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -443,6 +447,86 @@ jobs:
               print(f"-- {len(js_files) - MAX_JS_FETCHES} additional JS file(s) not fetched this run (capped at {MAX_JS_FETCHES}) --")
           PYEOF
 
+      - name: Debug — inspect PPFAS's own portfolio-disclosure page (no DB writes, no files saved)
+        if: ${{ inputs.debug_ppfas_disclosure == true }}
+        run: |
+          python3 << 'PYEOF'
+          import re
+          import httpx
+
+          # Feasibility pilot for real per-AMC holdings ingestion. AMFI's
+          # own portfolio-disclosure page turned out to be a directory
+          # that links out to each AMC's own site (confirmed via its own
+          # embedded data — see the debug_portfolio_disclosure step run
+          # history), not a central API. PPFAS is the AMC for Parag
+          # Parikh Flexi Cap, one of this platform's 3 real featured
+          # funds, and its real disclosure link (found in that same run)
+          # is this one. Read-only: prints what's actually there so a
+          # real ingestion pipeline can be built against confirmed
+          # structure, not a guess.
+          PAGE_URL = "https://amc.ppfas.com/downloads/portfolio-disclosure/"
+
+          try:
+              resp = httpx.get(PAGE_URL, timeout=30.0, follow_redirects=True)
+          except Exception as exc:
+              print(f"page fetch FAILED: {type(exc).__name__}: {exc}")
+              raise SystemExit(1)
+          print(f"status: {resp.status_code}")
+          text = resp.text
+          print(f"page length: {len(text)} chars")
+          print()
+
+          file_links = sorted(set(re.findall(
+              r"""href=["']([^"']+\.(?:xlsx|xls|csv|zip|pdf))["']""", text, re.IGNORECASE
+          )))
+          print(f"-- direct file links found: {len(file_links)} --")
+          for link in file_links[:25]:
+              print(f"  {link}")
+          print()
+
+          js_files = sorted(set(re.findall(
+              r"""src=["']([^"']+\.js)["']""", text, re.IGNORECASE
+          )))
+          print(f"-- JS bundle files referenced in the page: {len(js_files)} --")
+          for js in js_files[:25]:
+              print(f"  {js}")
+          print()
+
+          print("-- raw HTML sample (first 3000 chars) --")
+          print(text[:3000])
+
+          if file_links:
+              first = file_links[0]
+              if first.startswith("http"):
+                  file_url = first
+              elif first.startswith("/"):
+                  file_url = f"https://amc.ppfas.com{first}"
+              else:
+                  file_url = f"https://amc.ppfas.com/{first}"
+              print()
+              print(f"-- attempting to fetch first discovered file: {file_url} --")
+              try:
+                  file_resp = httpx.get(file_url, timeout=30.0, follow_redirects=True)
+                  content_type = file_resp.headers.get("content-type", "unknown")
+                  print(f"status: {file_resp.status_code}, content-type: {content_type}, bytes: {len(file_resp.content)}")
+                  if file_url.lower().endswith((".xlsx", ".xls")):
+                      try:
+                          import io
+                          import pandas as pd
+                          sheets = pd.read_excel(io.BytesIO(file_resp.content), sheet_name=None, nrows=10)
+                          print(f"sheet names: {list(sheets.keys())[:10]}")
+                          first_sheet_name = next(iter(sheets))
+                          print(f"first sheet ({first_sheet_name!r}) columns: {list(sheets[first_sheet_name].columns)}")
+                          print(sheets[first_sheet_name].head(10))
+                      except ImportError as exc:
+                          print(f"pandas Excel engine not available in this env ({exc}) — file fetched fine, structure unread this run")
+              except Exception as exc:
+                  print(f"file fetch FAILED: {type(exc).__name__}: {exc}")
+          else:
+              print()
+              print("No direct file links found in the raw HTML — likely JS-rendered client-side, same pattern as AMFI's own page. The JS bundle list above is the next thing to check.")
+          PYEOF
+
       - name: Backfill real NAV history for a curated set of featured funds
         if: ${{ inputs.backfill_featured_funds == true }}
         run: |
@@ -545,10 +629,10 @@ jobs:
           PYEOF
 
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline
