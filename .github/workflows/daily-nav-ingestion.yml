@@ -48,6 +48,10 @@ on:
         description: "Writes real data: resolves a curated list of well-known funds to real scheme_variant ids, then calls the live backend's nav-history endpoint for each — triggering the existing Phase 15 mfapi.in lazy backfill deliberately, instead of waiting for organic traffic. Safe to re-run (the backfill it triggers is itself idempotent)."
         type: boolean
         default: false
+      debug_ppfas_disclosure:
+        description: "Read-only: fetch PPFAS's own portfolio-disclosure page (AMFI links out to it, not a central API) and print what's actually there — no DB writes, no files saved. Feasibility pilot for real per-AMC holdings ingestion."
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -343,6 +347,222 @@ jobs:
           else:
               print()
               print("No direct file links found in the raw HTML — the AMC/file picker is likely JS-rendered client-side rather than server-rendered. The API/handler hints above are the next thing to check by hand.")
+
+          # The page-specific JS chunk (fetched below) revealed the real
+          # mechanism: a React component that receives a `members` prop —
+          # a list of per-AMC objects with mf_id, mf_name, icons, and
+          # per-frequency disclosure fields (e.g.
+          # amc_monthly_portfolio_disclosure) whose value is a URL opened
+          # directly (window.open). So this isn't one central API —
+          # AMFI just links out to each AMC's own site. In Next.js App
+          # Router that `members` data is server-fetched and embedded in
+          # the page's own HTML as RSC flight data, not a separate
+          # AJAX call — so it should already be inside `text` above.
+          # Search for it directly, and specifically for the 3 real AMCs
+          # this platform already has featured funds from, to get their
+          # real disclosure links without guessing.
+          print()
+          print("-- searching the already-fetched page HTML for embedded member/AMC data --")
+          mf_name_hits = [m.start() for m in re.finditer(r"mf_name", text)]
+          print(f"'mf_name' occurrences in page HTML: {len(mf_name_hits)}")
+          for pos in mf_name_hits[:5]:
+              print(f"  ...{text[max(0, pos - 80):pos + 200]}...")
+
+          print()
+          TARGET_AMC_HINTS = ["PPFAS", "Parag Parikh", "Mirae Asset", "quant Money", "Quant Mutual", "quant Mutual"]
+          for hint in TARGET_AMC_HINTS:
+              idx = text.lower().find(hint.lower())
+              if idx == -1:
+                  print(f"'{hint}': not found in page HTML")
+              else:
+                  print(f"'{hint}': found at offset {idx}")
+                  print(f"  ...{text[max(0, idx - 150):idx + 500]}...")
+
+          # Resuming the parked investigation: the file picker is client-
+          # rendered, so the real download/API endpoint is only visible
+          # inside the page's own JS bundles, not the server-rendered
+          # HTML above. Find every JS file the page references, fetch a
+          # bounded number of them, and grep each for endpoint-shaped
+          # string literals (a path or URL containing a word like "api",
+          # "ajax", "handler", or "portfolio").
+          js_files = sorted(set(re.findall(
+              r"""src=["']([^"']+\.js)["']""", text, re.IGNORECASE
+          )))
+          print()
+          print(f"-- JS bundle files referenced in the page: {len(js_files)} --")
+          for js in js_files[:40]:
+              print(f"  {js}")
+
+          endpoint_pattern = re.compile(
+              r"""["'`]((?:https?:)?//[^"'`]{0,200}(?:api|ajax|handler|getportfolio|portfolio|holdings|scheme|amc|disclosure|download|export)[^"'`]{0,200}|/[A-Za-z0-9_.\/-]{0,200}(?:api|ajax|handler|getportfolio|portfolio|holdings|scheme|amc|disclosure|download|export)[A-Za-z0-9_.\/-]{0,200})["'`]""",
+              re.IGNORECASE,
+          )
+
+          # The page's own chunk (path contains "portfolio-disclosure") is
+          # where its actual fetch/download logic lives — everything else
+          # is shared framework/vendor code. Fetch that one first so it's
+          # never pushed out by the fetch cap below.
+          priority_files = [f for f in js_files if "portfolio-disclosure" in f.lower()]
+          other_files = [f for f in js_files if f not in priority_files]
+          ordered_files = priority_files + other_files
+          print()
+          print(f"-- page-specific chunk(s) prioritized: {priority_files} --")
+
+          # The priority chunk's full content already printed everything
+          # needed once found — limit this run to just that, to keep the
+          # log focused instead of re-printing the ~15 generic chunks
+          # already confirmed empty of endpoint hints in the prior run.
+          MAX_JS_FETCHES = len(priority_files) if priority_files else 15
+          for js in ordered_files[:MAX_JS_FETCHES]:
+              if js.startswith("http"):
+                  js_url = js
+              elif js.startswith("//"):
+                  js_url = f"https:{js}"
+              elif js.startswith("/"):
+                  js_url = f"https://www.amfiindia.com{js}"
+              else:
+                  js_url = f"https://www.amfiindia.com/{js}"
+              print()
+              print(f"-- fetching JS bundle: {js_url} --")
+              try:
+                  js_resp = httpx.get(js_url, timeout=30.0, follow_redirects=True)
+                  js_text = js_resp.text
+                  print(f"status: {js_resp.status_code}, bytes: {len(js_resp.content)}")
+                  matches = sorted(set(endpoint_pattern.findall(js_text)))
+                  print(f"  endpoint-like strings found: {len(matches)}")
+                  for m in matches[:20]:
+                      print(f"    {m}")
+                  # Regex can miss a dynamically-built endpoint (string
+                  # concatenation, a template literal, a bare path with no
+                  # matched keyword) — for the page-specific chunk, also
+                  # dump a raw sample so it can be read by eye.
+                  if js in priority_files:
+                      print(f"  -- FULL raw content of this page-specific chunk ({len(js_text)} chars) --")
+                      print(f"    {js_text}")
+              except Exception as exc:
+                  print(f"  fetch FAILED: {type(exc).__name__}: {exc}")
+
+          if len(js_files) > MAX_JS_FETCHES:
+              print()
+              print(f"-- {len(js_files) - MAX_JS_FETCHES} additional JS file(s) not fetched this run (capped at {MAX_JS_FETCHES}) --")
+          PYEOF
+
+      - name: Debug — inspect PPFAS's own portfolio-disclosure page (no DB writes, no files saved)
+        if: ${{ inputs.debug_ppfas_disclosure == true }}
+        run: |
+          python3 << 'PYEOF'
+          import re
+          import httpx
+
+          # Feasibility pilot for real per-AMC holdings ingestion. AMFI's
+          # own portfolio-disclosure page turned out to be a directory
+          # that links out to each AMC's own site (confirmed via its own
+          # embedded data — see the debug_portfolio_disclosure step run
+          # history), not a central API. PPFAS is the AMC for Parag
+          # Parikh Flexi Cap, one of this platform's 3 real featured
+          # funds, and its real disclosure link (found in that same run)
+          # is this one. Read-only: prints what's actually there so a
+          # real ingestion pipeline can be built against confirmed
+          # structure, not a guess.
+          PAGE_URL = "https://amc.ppfas.com/downloads/portfolio-disclosure/"
+
+          try:
+              resp = httpx.get(PAGE_URL, timeout=30.0, follow_redirects=True)
+          except Exception as exc:
+              print(f"page fetch FAILED: {type(exc).__name__}: {exc}")
+              raise SystemExit(1)
+          print(f"status: {resp.status_code}")
+          text = resp.text
+          print(f"page length: {len(text)} chars")
+          print()
+
+          file_links = sorted(set(re.findall(
+              r"""href=["']([^"']+\.(?:xlsx|xls|csv|zip|pdf))["']""", text, re.IGNORECASE
+          )))
+          print(f"-- direct file links found: {len(file_links)} --")
+          for link in file_links:
+              print(f"  {link}")
+          print()
+
+          # Rank monthly-portfolio links by actual recency (year + month
+          # name), not alphabetically — "2020/..." sorts before
+          # "April-2014..." as plain strings, and the highest year isn't
+          # necessarily the file we actually want to test-parse.
+          MONTH_NUM = {
+              "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+              "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+          }
+          dated_links = []
+          for link in file_links:
+              if "portfolio" not in link.lower():
+                  continue
+              year_match = re.search(r"(20\d\d)", link)
+              month_match = re.search(
+                  r"(january|february|march|april|may|june|july|august|september|october|november|december)",
+                  link, re.IGNORECASE,
+              )
+              if year_match and month_match:
+                  dated_links.append((int(year_match.group(1)), MONTH_NUM[month_match.group(1).lower()], link))
+          dated_links.sort(reverse=True)
+          print(f"-- monthly-portfolio links parsed with a (year, month): {len(dated_links)} --")
+          print("-- most recent 5: --")
+          for year, month, link in dated_links[:5]:
+              print(f"  {year}-{month:02d}: {link}")
+          print()
+
+          js_files = sorted(set(re.findall(
+              r"""src=["']([^"']+\.js)["']""", text, re.IGNORECASE
+          )))
+          print(f"-- JS bundle files referenced in the page: {len(js_files)} --")
+          for js in js_files[:25]:
+              print(f"  {js}")
+          print()
+
+          print("-- raw HTML sample (first 3000 chars) --")
+          print(text[:3000])
+
+          def fetch_and_inspect(file_url, label):
+              print()
+              print(f"-- attempting to fetch {label}: {file_url} --")
+              try:
+                  file_resp = httpx.get(file_url, timeout=30.0, follow_redirects=True)
+                  content_type = file_resp.headers.get("content-type", "unknown")
+                  print(f"status: {file_resp.status_code}, content-type: {content_type}, bytes: {len(file_resp.content)}")
+                  if file_resp.status_code == 200 and ".xls" in file_url.lower():
+                      import io
+                      import pandas as pd
+                      sheets = pd.read_excel(io.BytesIO(file_resp.content), sheet_name=None, nrows=15)
+                      print(f"sheet names: {list(sheets.keys())}")
+                      for sheet_name, df in list(sheets.items())[:3]:
+                          print(f"  sheet {sheet_name!r} columns: {list(df.columns)}")
+                          print(df.head(10).to_string())
+              except Exception as exc:
+                  print(f"FAILED: {type(exc).__name__}: {exc}")
+
+          target = dated_links[0][2] if dated_links else (file_links[0] if file_links else None)
+          if target:
+              if target.startswith("http"):
+                  file_url = target
+              elif target.startswith("/"):
+                  file_url = f"https://amc.ppfas.com{target}"
+              else:
+                  file_url = f"https://amc.ppfas.com/{target}"
+              fetch_and_inspect(file_url, "most recent scraped monthly-portfolio file")
+          else:
+              print()
+              print("No direct file links found in the raw HTML — likely JS-rendered client-side, same pattern as AMFI's own page. The JS bundle list above is the next thing to check.")
+
+          # The scraped page's static HTML tops out around 2020 — this
+          # exact current-month link (found by directly viewing the live
+          # page in a real browser, since our automated fetch above is
+          # very likely served a reduced page by the Cloudflare
+          # bot-challenge scripts referenced in its JS bundle list) is
+          # ground truth for what the real, current mechanism looks like.
+          KNOWN_CURRENT_URL = (
+              "https://amc.ppfas.com/downloads/portfolio-disclosure/2026/"
+              "PPFAS_Monthly_Portfolio_Report_August_31_2026.xls?10092026"
+          )
+          fetch_and_inspect(KNOWN_CURRENT_URL, "known current consolidated report (found via browser, not scraping)")
           PYEOF
 
       - name: Backfill real NAV history for a curated set of featured funds
@@ -447,10 +667,10 @@ jobs:
           PYEOF
 
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline
