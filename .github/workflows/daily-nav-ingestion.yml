@@ -480,8 +480,34 @@ jobs:
               r"""href=["']([^"']+\.(?:xlsx|xls|csv|zip|pdf))["']""", text, re.IGNORECASE
           )))
           print(f"-- direct file links found: {len(file_links)} --")
-          for link in file_links[:25]:
+          for link in file_links:
               print(f"  {link}")
+          print()
+
+          # Rank monthly-portfolio links by actual recency (year + month
+          # name), not alphabetically — "2020/..." sorts before
+          # "April-2014..." as plain strings, and the highest year isn't
+          # necessarily the file we actually want to test-parse.
+          MONTH_NUM = {
+              "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+              "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+          }
+          dated_links = []
+          for link in file_links:
+              if "portfolio" not in link.lower():
+                  continue
+              year_match = re.search(r"(20\d\d)", link)
+              month_match = re.search(
+                  r"(january|february|march|april|may|june|july|august|september|october|november|december)",
+                  link, re.IGNORECASE,
+              )
+              if year_match and month_match:
+                  dated_links.append((int(year_match.group(1)), MONTH_NUM[month_match.group(1).lower()], link))
+          dated_links.sort(reverse=True)
+          print(f"-- monthly-portfolio links parsed with a (year, month): {len(dated_links)} --")
+          print("-- most recent 5: --")
+          for year, month, link in dated_links[:5]:
+              print(f"  {year}-{month:02d}: {link}")
           print()
 
           js_files = sorted(set(re.findall(
@@ -495,16 +521,16 @@ jobs:
           print("-- raw HTML sample (first 3000 chars) --")
           print(text[:3000])
 
-          if file_links:
-              first = file_links[0]
-              if first.startswith("http"):
-                  file_url = first
-              elif first.startswith("/"):
-                  file_url = f"https://amc.ppfas.com{first}"
+          target = dated_links[0][2] if dated_links else (file_links[0] if file_links else None)
+          if target:
+              if target.startswith("http"):
+                  file_url = target
+              elif target.startswith("/"):
+                  file_url = f"https://amc.ppfas.com{target}"
               else:
-                  file_url = f"https://amc.ppfas.com/{first}"
+                  file_url = f"https://amc.ppfas.com/{target}"
               print()
-              print(f"-- attempting to fetch first discovered file: {file_url} --")
+              print(f"-- attempting to fetch most recent monthly-portfolio file: {file_url} --")
               try:
                   file_resp = httpx.get(file_url, timeout=30.0, follow_redirects=True)
                   content_type = file_resp.headers.get("content-type", "unknown")
