@@ -12,6 +12,14 @@ writing a new `fetch_<amc>(month_str)` function in `main.py` and
 registering it in `AMC_ADAPTERS` — see the docstring on `fetch_ppfas`
 for the shape each adapter returns.
 
+This runs as a Render Cron Job, not a Vercel deployment — `vercel.json`
+here (`{"builds": []}`) is a deliberate no-op so that if Vercel's
+monorepo auto-detection ever creates a project for this folder again
+(it did once — a bare `main.py` with no `app`/`application`/`handler`
+fails Vercel's Python function requirement, since this is a batch
+script, not a web endpoint), it has nothing to build instead of
+failing on every push.
+
 **Known limitation:** PPFAS's disclosure page only reveals the current
 month's real download link via client-side JavaScript, which a plain
 HTTP GET (what this worker does) can't see. `fetch_ppfas` guesses the
@@ -34,7 +42,30 @@ browser instead of a plain GET.
    - Open the Drive Master Folder (`1hSNV629OnGOchyP0coX72lVA7-Eg1kAx`) — sharing it covers the Monthly Portfolios subfolder too, since Drive permissions are inherited by nested folders/files it creates — and share it with the service account's email as **Editor**.
    - Open the Master Catalog Sheet (`1sSIAhoPCMHYQH6K5kF9oOZwAp7Llbyrr8d9Db0-YCFU`) and share it with the same email as **Editor**.
 
-## 2. Add the credentials to Render
+## 2. Move the Drive folder into a Shared Drive (required)
+
+Service accounts have **zero storage quota** of their own. Sharing the
+Drive folder/Sheet with the service account as Editor (step 5 above) is
+enough for it to *read* and for Sheets writes to work, but any file it
+tries to *create* directly in someone's personal "My Drive" fails with
+`HttpError 403: Service Accounts do not have storage quota` — Google
+makes the service account the owner of any file it creates, and it has
+no quota to own anything with.
+
+A **Shared Drive** (Workspace-only — this account has it) sidesteps this
+entirely: storage there belongs to the Shared Drive itself, not any
+individual member, so the service account can create files in it with no
+quota problem. This is simpler than the personal-Gmail workaround (OAuth
+as a real user account) since it needs no browser consent flow and no
+extra credentials.
+
+1. In Google Drive, click **Shared drives** in the left sidebar → **+ New** → give it a name (e.g. `ThinkFin Portfolios`).
+2. Click into it → top-left dropdown/**Manage members** → add the service account's email (`thinkfin-portfolio-fetcher@<project>.iam.gserviceaccount.com`) as **Content Manager**.
+3. Move the existing Drive Master Folder (`1hSNV629OnGOchyP0coX72lVA7-Eg1kAx`, which contains the Monthly Portfolios subfolder) into this Shared Drive: right-click the folder in "My Drive" → **Move to** → pick the new Shared Drive. Folder/file IDs stay the same after a move, so `DRIVE_MONTHLY_FOLDER_ID` below doesn't need to change.
+   - If "Move to" isn't available (e.g. cross-account restrictions), create a fresh Master Folder + Monthly Portfolios subfolder directly inside the Shared Drive instead, and use its new folder ID for `DRIVE_MONTHLY_FOLDER_ID` below.
+4. The Master Catalog Sheet does **not** need to move — appending rows to an existing file isn't affected by the storage-quota restriction, only *creating new files* is.
+
+## 3. Add the credentials to Render
 
 This runs as a Render **Cron Job** — note that Cron Jobs need a paid
 Render plan; they're not available on the free tier, unlike the main
@@ -48,7 +79,7 @@ backend web service. Render's Blueprint (`render.yaml`) auto-provisions
 5. **Schedule**: `30 18 10 * *` (this is UTC — 18:30 UTC = 23:30 IST, i.e. 11:30 PM IST on the 10th of every month)
 6. Under **Environment**, add:
    - `GOOGLE_SERVICE_ACCOUNT_JSON` — paste the *entire* downloaded JSON key file content as one value (Render's env var editor handles multi-line values fine).
-   - `DRIVE_MONTHLY_FOLDER_ID` = `1acNwjxV2mJnEZ9BDAlKoDZpZTVav9h_5`
+   - `DRIVE_MONTHLY_FOLDER_ID` = `1acNwjxV2mJnEZ9BDAlKoDZpZTVav9h_5` (or the new folder's ID, if you created a fresh one directly inside the Shared Drive in step 2 above)
    - `MASTER_CATALOG_SHEET_ID` = `1sSIAhoPCMHYQH6K5kF9oOZwAp7Llbyrr8d9Db0-YCFU`
 
 `render.yaml` at the repo root documents this same configuration for
@@ -57,7 +88,7 @@ as the backend's `DATABASE_URL`), but since Blueprints don't provision
 Cron Jobs, use the dashboard steps above rather than expecting the
 Blueprint to pick this up automatically.
 
-## 3. Run it locally to test
+## 4. Run it locally to test
 
 ```bash
 cd portfolio-fetcher

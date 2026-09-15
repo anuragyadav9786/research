@@ -52,6 +52,10 @@ on:
         description: "Read-only: fetch PPFAS's own portfolio-disclosure page (AMFI links out to it, not a central API) and print what's actually there — no DB writes, no files saved. Feasibility pilot for real per-AMC holdings ingestion."
         type: boolean
         default: false
+      debug_portfolio_fetcher_smoke_test:
+        description: "Read-only: runs portfolio-fetcher's fetch_ppfas() directly (no Google credentials, no Drive/Sheets calls) to confirm the AMC-fetch logic still finds a real file for the current target month — no DB writes."
+        type: boolean
+        default: false
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -565,6 +569,40 @@ jobs:
           fetch_and_inspect(KNOWN_CURRENT_URL, "known current consolidated report (found via browser, not scraping)")
           PYEOF
 
+      - name: Debug — smoke-test portfolio-fetcher's fetch_ppfas() directly (no DB writes, no Drive/Sheets calls)
+        if: ${{ inputs.debug_portfolio_fetcher_smoke_test == true }}
+        run: |
+          # main.py imports gspread/google-api-python-client at module
+          # level for its Drive/Sheets code paths, even though
+          # fetch_ppfas itself only needs httpx — so those still have to
+          # be installed for the import alone to succeed.
+          pip install -r portfolio-fetcher/requirements.txt
+          python3 << 'PYEOF'
+          import datetime
+          import sys
+
+          sys.path.insert(0, "portfolio-fetcher")
+          from main import fetch_ppfas  # noqa: E402
+
+          # Runs the exact function portfolio-fetcher's scheduled Render
+          # Cron Job will call — no Google credentials involved, since
+          # fetch_ppfas is pure httpx logic. Confirms the AMC-fetch side
+          # still works today without needing the Drive/Sheets setup to
+          # be live first.
+          first_of_this_month = datetime.date.today().replace(day=1)
+          prev_month_date = first_of_this_month - datetime.timedelta(days=1)
+          target_month = prev_month_date.strftime("%Y-%m")
+
+          print(f"Target month (same logic main.py uses by default): {target_month}")
+          results = fetch_ppfas(target_month)
+
+          if results:
+              for file_bytes, file_name, mimetype, scheme_hint in results:
+                  print(f"SUCCESS: {file_name} ({scheme_hint}) — {len(file_bytes)} bytes, {mimetype}")
+          else:
+              print("NO FILE FOUND — fetch_ppfas's date-guessing missed this month's real URL (see its docstring for why this can happen; not necessarily a bug).")
+          PYEOF
+
       - name: Backfill real NAV history for a curated set of featured funds
         if: ${{ inputs.backfill_featured_funds == true }}
         run: |
@@ -667,10 +705,10 @@ jobs:
           PYEOF
 
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true }}
         run: python -m data_pipeline.orchestration.daily_pipeline

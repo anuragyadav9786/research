@@ -48,7 +48,9 @@ def get_or_create_month_folder(drive_service, month_str: str) -> str:
         f"'{DRIVE_MONTHLY_FOLDER_ID}' in parents and name = '{folder_name}' "
         "and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
     )
-    results = drive_service.files().list(q=query, fields="files(id, name)").execute()
+    results = drive_service.files().list(
+        q=query, fields="files(id, name)", supportsAllDrives=True, includeItemsFromAllDrives=True
+    ).execute()
     files = results.get("files", [])
     if files:
         return files[0]["id"]
@@ -58,7 +60,7 @@ def get_or_create_month_folder(drive_service, month_str: str) -> str:
         "mimeType": "application/vnd.google-apps.folder",
         "parents": [DRIVE_MONTHLY_FOLDER_ID],
     }
-    folder = drive_service.files().create(body=metadata, fields="id").execute()
+    folder = drive_service.files().create(body=metadata, fields="id", supportsAllDrives=True).execute()
     return folder["id"]
 
 
@@ -78,7 +80,7 @@ def upload_file_to_drive(drive_service, file_bytes: bytes, file_name: str, folde
         media = MediaFileUpload(tmp_path, mimetype=mimetype)
         file_metadata = {"name": file_name, "parents": [folder_id]}
         uploaded = drive_service.files().create(
-            body=file_metadata, media_body=media, fields="id, webViewLink"
+            body=file_metadata, media_body=media, fields="id, webViewLink", supportsAllDrives=True
         ).execute()
         return uploaded["id"], uploaded.get("webViewLink")
     finally:
