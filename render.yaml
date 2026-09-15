@@ -26,3 +26,27 @@ services:
         value: ThinkFin Research Engine
       - key: ENVIRONMENT
         value: production
+
+  # Monthly worker: fetches AMC portfolio-disclosure Excel files and
+  # stores them in Google Drive (see portfolio-fetcher/README.md).
+  # Render's Cron Job type requires a paid plan — free-tier web services
+  # can't run on a schedule — so this is provisioned separately in the
+  # dashboard (New -> Cron Job) rather than picked up by the Blueprint,
+  # which only auto-provisions `type: web`/`worker` services. Kept here
+  # for reference and so `render.yaml` documents the real schedule/env
+  # vars a manually-created Cron Job should match.
+  - type: cron
+    name: thinkfin-portfolio-fetcher
+    runtime: python
+    plan: starter
+    rootDir: portfolio-fetcher
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    schedule: "30 18 10 * *" # 23:30 IST (UTC+5:30) on the 10th of every month
+    envVars:
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: DRIVE_MONTHLY_FOLDER_ID
+        value: "1acNwjxV2mJnEZ9BDAlKoDZpZTVav9h_5"
+      - key: MASTER_CATALOG_SHEET_ID
+        value: "1sSIAhoPCMHYQH6K5kF9oOZwAp7Llbyrr8d9Db0-YCFU"
