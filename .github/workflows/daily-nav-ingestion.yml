@@ -616,6 +616,22 @@ jobs:
               print(f"  {urljoin(PAGE_URL, js)}")
           print()
 
+          # Full-text keyword search, not just the head sample below — a
+          # sitemap.xml can be tens of thousands of chars, so the real
+          # disclosure-page URL is very likely past the first 3000 chars
+          # printed as a raw sample. Matches any <loc>/href pointing at a
+          # URL that mentions "disclosure" or "portfolio", which is how
+          # the real Mirae Asset disclosure page URL was actually found
+          # (a sitemap.xml entry far past the raw-sample cutoff).
+          keyword_urls = sorted(set(re.findall(
+              r"""<loc>([^<]+)</loc>|href=["']([^"']+)["']""", text, re.IGNORECASE
+          )))
+          keyword_urls = sorted({(a or b) for a, b in keyword_urls if re.search(r"disclosure|portfolio", (a or b), re.IGNORECASE)})
+          print(f"-- URLs mentioning 'disclosure' or 'portfolio' anywhere in the page: {len(keyword_urls)} --")
+          for url in keyword_urls[:60]:
+              print(f"  {urljoin(PAGE_URL, url)}")
+          print()
+
           print("-- raw HTML sample (first 3000 chars) --")
           print(text[:3000])
 
