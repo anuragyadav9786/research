@@ -42,40 +42,28 @@ browser instead of a plain GET.
    - Open the Drive Master Folder (`1hSNV629OnGOchyP0coX72lVA7-Eg1kAx`) — sharing it covers the Monthly Portfolios subfolder too, since Drive permissions are inherited by nested folders/files it creates — and share it with the service account's email as **Editor**.
    - Open the Master Catalog Sheet (`1sSIAhoPCMHYQH6K5kF9oOZwAp7Llbyrr8d9Db0-YCFU`) and share it with the same email as **Editor**.
 
-## 2. OAuth setup for Drive uploads (required)
+## 2. Move the Drive folder into a Shared Drive (required)
 
-Service accounts have **zero storage quota** on a personal (non-Workspace)
-Google account. Sharing the Drive folder/Sheet with the service account as
-Editor (step 5 above) is enough for it to *read* and for Sheets writes to
-work, but any file it tries to *create* in Drive fails immediately with
-`HttpError 403: Service Accounts do not have storage quota`, regardless of
-sharing — Google makes the service account the owner of any file it
-creates, and it has no quota to own anything with. Google's suggested
-workarounds (Shared Drives, domain-wide delegation) are both
-Workspace-only features, unavailable on a plain Gmail account.
+Service accounts have **zero storage quota** of their own. Sharing the
+Drive folder/Sheet with the service account as Editor (step 5 above) is
+enough for it to *read* and for Sheets writes to work, but any file it
+tries to *create* directly in someone's personal "My Drive" fails with
+`HttpError 403: Service Accounts do not have storage quota` — Google
+makes the service account the owner of any file it creates, and it has
+no quota to own anything with.
 
-The fix: Drive uploads run as OAuth credentials for a real Google account
-(the same one that owns the Drive Master Folder) instead of the service
-account, so uploaded files count against that account's own quota like
-any normal upload. The service account is still used for the Sheets
-catalog write, which isn't affected by this quota restriction.
+A **Shared Drive** (Workspace-only — this account has it) sidesteps this
+entirely: storage there belongs to the Shared Drive itself, not any
+individual member, so the service account can create files in it with no
+quota problem. This is simpler than the personal-Gmail workaround (OAuth
+as a real user account) since it needs no browser consent flow and no
+extra credentials.
 
-1. In the same Google Cloud project, go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**. Application type: **Desktop app**. Note the generated **Client ID** and **Client Secret**.
-   - If prompted to configure an OAuth consent screen first, choose **External**, fill in the required app name/support email, and add your own Google account as a **test user** (test-mode apps don't need Google's review).
-2. Run the one-time helper script locally (not on Render):
-   ```bash
-   cd portfolio-fetcher
-   pip install google-auth-oauthlib
-   python get_oauth_refresh_token.py
-   ```
-   Paste in the Client ID and Client Secret from step 1 when prompted. A browser window opens — sign in as the Google account that owns the Drive Master Folder (e.g. `anuragyadav9786@gmail.com`) and approve access. The script then prints three values.
-3. Add those three values as env vars in Render (see step 3 below): `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`.
-
-If these three env vars aren't set, `main.py` falls back to using the
-service account for Drive too — which will hit the storage-quota error
-above on a personal account, but is the correct behavior if Drive is ever
-migrated to a Workspace Shared Drive, where service accounts work fine
-and this whole OAuth step becomes unnecessary.
+1. In Google Drive, click **Shared drives** in the left sidebar → **+ New** → give it a name (e.g. `ThinkFin Portfolios`).
+2. Click into it → top-left dropdown/**Manage members** → add the service account's email (`thinkfin-portfolio-fetcher@<project>.iam.gserviceaccount.com`) as **Content Manager**.
+3. Move the existing Drive Master Folder (`1hSNV629OnGOchyP0coX72lVA7-Eg1kAx`, which contains the Monthly Portfolios subfolder) into this Shared Drive: right-click the folder in "My Drive" → **Move to** → pick the new Shared Drive. Folder/file IDs stay the same after a move, so `DRIVE_MONTHLY_FOLDER_ID` below doesn't need to change.
+   - If "Move to" isn't available (e.g. cross-account restrictions), create a fresh Master Folder + Monthly Portfolios subfolder directly inside the Shared Drive instead, and use its new folder ID for `DRIVE_MONTHLY_FOLDER_ID` below.
+4. The Master Catalog Sheet does **not** need to move — appending rows to an existing file isn't affected by the storage-quota restriction, only *creating new files* is.
 
 ## 3. Add the credentials to Render
 
@@ -91,9 +79,8 @@ backend web service. Render's Blueprint (`render.yaml`) auto-provisions
 5. **Schedule**: `30 18 10 * *` (this is UTC — 18:30 UTC = 23:30 IST, i.e. 11:30 PM IST on the 10th of every month)
 6. Under **Environment**, add:
    - `GOOGLE_SERVICE_ACCOUNT_JSON` — paste the *entire* downloaded JSON key file content as one value (Render's env var editor handles multi-line values fine).
-   - `DRIVE_MONTHLY_FOLDER_ID` = `1acNwjxV2mJnEZ9BDAlKoDZpZTVav9h_5`
+   - `DRIVE_MONTHLY_FOLDER_ID` = `1acNwjxV2mJnEZ9BDAlKoDZpZTVav9h_5` (or the new folder's ID, if you created a fresh one directly inside the Shared Drive in step 2 above)
    - `MASTER_CATALOG_SHEET_ID` = `1sSIAhoPCMHYQH6K5kF9oOZwAp7Llbyrr8d9Db0-YCFU`
-   - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN` — the three values printed by `get_oauth_refresh_token.py` in step 2 above. Required for Drive uploads to work on a personal Google account (see step 2).
 
 `render.yaml` at the repo root documents this same configuration for
 reference (marked `sync: false` for the JSON secret, same convention
@@ -107,9 +94,6 @@ Blueprint to pick this up automatically.
 cd portfolio-fetcher
 pip install -r requirements.txt
 export GOOGLE_SERVICE_ACCOUNT_JSON='<paste the full JSON key content>'
-export GOOGLE_OAUTH_CLIENT_ID='<from step 2>'
-export GOOGLE_OAUTH_CLIENT_SECRET='<from step 2>'
-export GOOGLE_OAUTH_REFRESH_TOKEN='<from step 2>'
 python main.py --month 2026-08
 ```
 
