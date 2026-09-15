@@ -12,6 +12,14 @@ writing a new `fetch_<amc>(month_str)` function in `main.py` and
 registering it in `AMC_ADAPTERS` — see the docstring on `fetch_ppfas`
 for the shape each adapter returns.
 
+This runs as a Render Cron Job, not a Vercel deployment — `vercel.json`
+here (`{"builds": []}`) is a deliberate no-op so that if Vercel's
+monorepo auto-detection ever creates a project for this folder again
+(it did once — a bare `main.py` with no `app`/`application`/`handler`
+fails Vercel's Python function requirement, since this is a batch
+script, not a web endpoint), it has nothing to build instead of
+failing on every push.
+
 **Known limitation:** PPFAS's disclosure page only reveals the current
 month's real download link via client-side JavaScript, which a plain
 HTTP GET (what this worker does) can't see. `fetch_ppfas` guesses the
