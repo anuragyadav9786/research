@@ -42,7 +42,42 @@ browser instead of a plain GET.
    - Open the Drive Master Folder (`1hSNV629OnGOchyP0coX72lVA7-Eg1kAx`) — sharing it covers the Monthly Portfolios subfolder too, since Drive permissions are inherited by nested folders/files it creates — and share it with the service account's email as **Editor**.
    - Open the Master Catalog Sheet (`1sSIAhoPCMHYQH6K5kF9oOZwAp7Llbyrr8d9Db0-YCFU`) and share it with the same email as **Editor**.
 
-## 2. Add the credentials to Render
+## 2. OAuth setup for Drive uploads (required)
+
+Service accounts have **zero storage quota** on a personal (non-Workspace)
+Google account. Sharing the Drive folder/Sheet with the service account as
+Editor (step 5 above) is enough for it to *read* and for Sheets writes to
+work, but any file it tries to *create* in Drive fails immediately with
+`HttpError 403: Service Accounts do not have storage quota`, regardless of
+sharing — Google makes the service account the owner of any file it
+creates, and it has no quota to own anything with. Google's suggested
+workarounds (Shared Drives, domain-wide delegation) are both
+Workspace-only features, unavailable on a plain Gmail account.
+
+The fix: Drive uploads run as OAuth credentials for a real Google account
+(the same one that owns the Drive Master Folder) instead of the service
+account, so uploaded files count against that account's own quota like
+any normal upload. The service account is still used for the Sheets
+catalog write, which isn't affected by this quota restriction.
+
+1. In the same Google Cloud project, go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**. Application type: **Desktop app**. Note the generated **Client ID** and **Client Secret**.
+   - If prompted to configure an OAuth consent screen first, choose **External**, fill in the required app name/support email, and add your own Google account as a **test user** (test-mode apps don't need Google's review).
+2. Run the one-time helper script locally (not on Render):
+   ```bash
+   cd portfolio-fetcher
+   pip install google-auth-oauthlib
+   python get_oauth_refresh_token.py
+   ```
+   Paste in the Client ID and Client Secret from step 1 when prompted. A browser window opens — sign in as the Google account that owns the Drive Master Folder (e.g. `anuragyadav9786@gmail.com`) and approve access. The script then prints three values.
+3. Add those three values as env vars in Render (see step 3 below): `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN`.
+
+If these three env vars aren't set, `main.py` falls back to using the
+service account for Drive too — which will hit the storage-quota error
+above on a personal account, but is the correct behavior if Drive is ever
+migrated to a Workspace Shared Drive, where service accounts work fine
+and this whole OAuth step becomes unnecessary.
+
+## 3. Add the credentials to Render
 
 This runs as a Render **Cron Job** — note that Cron Jobs need a paid
 Render plan; they're not available on the free tier, unlike the main
@@ -58,6 +93,7 @@ backend web service. Render's Blueprint (`render.yaml`) auto-provisions
    - `GOOGLE_SERVICE_ACCOUNT_JSON` — paste the *entire* downloaded JSON key file content as one value (Render's env var editor handles multi-line values fine).
    - `DRIVE_MONTHLY_FOLDER_ID` = `1acNwjxV2mJnEZ9BDAlKoDZpZTVav9h_5`
    - `MASTER_CATALOG_SHEET_ID` = `1sSIAhoPCMHYQH6K5kF9oOZwAp7Llbyrr8d9Db0-YCFU`
+   - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REFRESH_TOKEN` — the three values printed by `get_oauth_refresh_token.py` in step 2 above. Required for Drive uploads to work on a personal Google account (see step 2).
 
 `render.yaml` at the repo root documents this same configuration for
 reference (marked `sync: false` for the JSON secret, same convention
@@ -65,12 +101,15 @@ as the backend's `DATABASE_URL`), but since Blueprints don't provision
 Cron Jobs, use the dashboard steps above rather than expecting the
 Blueprint to pick this up automatically.
 
-## 3. Run it locally to test
+## 4. Run it locally to test
 
 ```bash
 cd portfolio-fetcher
 pip install -r requirements.txt
 export GOOGLE_SERVICE_ACCOUNT_JSON='<paste the full JSON key content>'
+export GOOGLE_OAUTH_CLIENT_ID='<from step 2>'
+export GOOGLE_OAUTH_CLIENT_SECRET='<from step 2>'
+export GOOGLE_OAUTH_REFRESH_TOKEN='<from step 2>'
 python main.py --month 2026-08
 ```
 

@@ -14,6 +14,7 @@ import tempfile
 import httpx
 import gspread
 from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials as UserCredentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
@@ -32,9 +33,36 @@ XLS_MIMETYPE = "application/vnd.ms-excel"
 def get_credentials():
     """Loads the service account from the GOOGLE_SERVICE_ACCOUNT_JSON env
     var — the full JSON key content, not a file path (see README.md for
-    how to set this in Render)."""
+    how to set this in Render). Used for the Sheets catalog write."""
     service_account_info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
     return service_account.Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+
+
+def get_drive_credentials():
+    """Loads OAuth user credentials (refresh-token flow) for Drive
+    uploads. Service accounts have zero storage quota on a personal
+    (non-Workspace) Google account, so any file they create fails with
+    HttpError 403 storageQuotaExceeded regardless of folder sharing —
+    see README "OAuth setup for Drive uploads". Files created under
+    these credentials are owned by the real Google account instead, so
+    they count against its quota like any normal upload.
+
+    Falls back to the service account if the OAuth env vars aren't set
+    (e.g. if Drive is ever migrated to a Workspace Shared Drive, where
+    service accounts work fine and this OAuth step is unnecessary)."""
+    client_id = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
+    client_secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
+    refresh_token = os.environ.get("GOOGLE_OAUTH_REFRESH_TOKEN")
+    if client_id and client_secret and refresh_token:
+        return UserCredentials(
+            token=None,
+            refresh_token=refresh_token,
+            client_id=client_id,
+            client_secret=client_secret,
+            token_uri="https://oauth2.googleapis.com/token",
+            scopes=SCOPES,
+        )
+    return get_credentials()
 
 
 def get_or_create_month_folder(drive_service, month_str: str) -> str:
@@ -155,7 +183,7 @@ def run(month_str: str):
     print(f"Starting portfolio fetch for cycle: {month_str}")
 
     credentials = get_credentials()
-    drive_service = build("drive", "v3", credentials=credentials)
+    drive_service = build("drive", "v3", credentials=get_drive_credentials())
     month_folder_id = get_or_create_month_folder(drive_service, month_str)
     print(f"Target Drive folder: {month_folder_id}")
 
