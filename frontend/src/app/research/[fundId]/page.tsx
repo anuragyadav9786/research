@@ -35,6 +35,9 @@ const HHI_LABELS: Record<string, string> = {
 const RETURN_WINDOW_LABELS: Record<string, string> = { "1y": "1Y", "3y": "3Y", "5y": "5Y", "7y": "7Y", "10y": "10Y" };
 const ROLLING_WINDOW_OPTIONS = [1, 3, 5];
 
+const FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950";
+
 export default async function FundDetailPage({
   params,
   searchParams,
@@ -128,7 +131,10 @@ export default async function FundDetailPage({
       <main className="px-8 py-10 max-w-5xl mx-auto space-y-8">
         <div className="flex items-start justify-between">
           <div>
-            <Link href="/research" className="text-sm text-neutral-500 hover:text-neutral-300">
+            <Link
+              href="/research"
+              className={`text-sm text-neutral-500 hover:text-neutral-300 rounded-sm ${FOCUS_RING}`}
+            >
               ← Back to Research
             </Link>
             <h1 className="text-2xl font-semibold mt-2">{fund.scheme_name}</h1>
@@ -139,7 +145,7 @@ export default async function FundDetailPage({
           </div>
           <Link
             href={`/research/compare?a=${fundId}`}
-            className="text-sm rounded-md border border-neutral-800 px-3 py-1.5 text-neutral-400 hover:text-neutral-100 hover:border-neutral-700 whitespace-nowrap"
+            className={`text-sm rounded-md border border-neutral-800 px-3 py-1.5 text-neutral-400 hover:text-neutral-100 hover:border-neutral-700 whitespace-nowrap ${FOCUS_RING}`}
           >
             Compare with…
           </Link>
@@ -152,7 +158,7 @@ export default async function FundDetailPage({
                 key={p}
                 href={urlFor({ plan: p })}
                 aria-disabled={!availablePlans.has(p)}
-                className={`px-3 py-1.5 capitalize ${
+                className={`px-3 py-1.5 capitalize ${FOCUS_RING} ${
                   p === plan
                     ? "bg-cyan-900/60 text-cyan-100"
                     : availablePlans.has(p)
@@ -169,7 +175,7 @@ export default async function FundDetailPage({
               <Link
                 key={o}
                 href={urlFor({ option: o })}
-                className={`px-3 py-1.5 uppercase ${
+                className={`px-3 py-1.5 uppercase ${FOCUS_RING} ${
                   o === option
                     ? "bg-cyan-900/60 text-cyan-100"
                     : availableOptions.has(o)
@@ -192,7 +198,7 @@ export default async function FundDetailPage({
         {variantError ? (
           <div className="rounded-lg border border-amber-900 bg-amber-950/40 p-6 text-sm text-amber-200">
             {variantError} Try{" "}
-            <Link href={`/research/${fundId}`} className="underline">
+            <Link href={`/research/${fundId}`} className={`underline rounded-sm ${FOCUS_RING}`}>
               the direct/growth variant
             </Link>
             .
@@ -275,7 +281,7 @@ export default async function FundDetailPage({
                     <Link
                       key={w}
                       href={urlFor({ window: w })}
-                      className={`px-3 py-1 ${
+                      className={`px-3 py-1 ${FOCUS_RING} ${
                         w === windowYears ? "bg-cyan-900/60 text-cyan-100" : "hover:bg-neutral-900 text-neutral-400"
                       }`}
                     >
