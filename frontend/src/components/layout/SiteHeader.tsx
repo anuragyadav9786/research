@@ -26,7 +26,7 @@ export function SiteHeader({ active }: { active?: SiteHeaderActive }) {
       <Link href="/" className={`text-lg font-semibold tracking-tight text-slate-100 rounded-sm ${FOCUS_RING}`}>
         ThinkFin
       </Link>
-      <nav className="hidden sm:flex flex-wrap gap-x-6 gap-y-1 text-sm">
+      <nav className="hidden lg:flex flex-wrap gap-x-6 gap-y-1 text-sm">
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.key}

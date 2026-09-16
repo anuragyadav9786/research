@@ -8,11 +8,12 @@ import type { SiteHeaderActive } from "./SiteHeader";
 const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
 
-/** Hamburger + slide-down panel for the nav links, shown only below `sm:` —
- * the header's own nav switches to `hidden sm:flex` at that same breakpoint,
- * so exactly one of the two is ever visible. Without this, five nav links
- * wrapped onto a second line on a phone-width screen, eating vertical space
- * before any page content appeared. */
+/** Hamburger + slide-down panel for the nav links, shown only below `lg:` —
+ * the header's own nav switches to `hidden lg:flex` at that same breakpoint,
+ * so exactly one of the two is ever visible. `lg:` (1024px), not `sm:`
+ * (640px), because five nav links plus the logo and search box measurably
+ * still wrap onto a second line at 640-768px — 1024px is the first width
+ * that reliably fits everything on one line. */
 export function MobileNav({
   items,
   active,
@@ -23,7 +24,7 @@ export function MobileNav({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="sm:hidden">
+    <div className="lg:hidden">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
