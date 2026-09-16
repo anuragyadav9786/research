@@ -35,6 +35,9 @@ const HHI_LABELS: Record<string, string> = {
 const RETURN_WINDOW_LABELS: Record<string, string> = { "1y": "1Y", "3y": "3Y", "5y": "5Y", "7y": "7Y", "10y": "10Y" };
 const ROLLING_WINDOW_OPTIONS = [1, 3, 5];
 
+const FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+
 export default async function FundDetailPage({
   params,
   searchParams,
@@ -122,59 +125,62 @@ export default async function FundDetailPage({
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
       <SiteHeader active="research" />
 
       <main className="px-8 py-10 max-w-5xl mx-auto space-y-8">
         <div className="flex items-start justify-between">
           <div>
-            <Link href="/research" className="text-sm text-neutral-500 hover:text-neutral-300">
+            <Link
+              href="/research"
+              className={`text-sm text-slate-500 hover:text-slate-300 rounded-sm ${FOCUS_RING}`}
+            >
               ← Back to Research
             </Link>
             <h1 className="text-2xl font-semibold mt-2">{fund.scheme_name}</h1>
-            <p className="text-neutral-400 text-sm mt-1">
+            <p className="text-slate-400 text-sm mt-1">
               {fund.amc_name} · {fund.category}
               {fund.benchmark_name && <> · Benchmark: {fund.benchmark_name}</>}
             </p>
           </div>
           <Link
             href={`/research/compare?a=${fundId}`}
-            className="text-sm rounded-md border border-neutral-800 px-3 py-1.5 text-neutral-400 hover:text-neutral-100 hover:border-neutral-700 whitespace-nowrap"
+            className={`text-sm rounded-md border border-slate-800 px-3 py-1.5 text-slate-400 hover:text-slate-100 hover:border-slate-700 whitespace-nowrap ${FOCUS_RING}`}
           >
             Compare with…
           </Link>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          <div className="flex rounded-md border border-neutral-800 overflow-hidden text-sm">
+          <div className="flex rounded-md border border-slate-800 overflow-hidden text-sm">
             {(["direct", "regular"] as Plan[]).map((p) => (
               <Link
                 key={p}
                 href={urlFor({ plan: p })}
                 aria-disabled={!availablePlans.has(p)}
-                className={`px-3 py-1.5 capitalize ${
+                className={`px-3 py-1.5 capitalize ${FOCUS_RING} ${
                   p === plan
-                    ? "bg-cyan-900/60 text-cyan-100"
+                    ? "bg-indigo-900/60 text-indigo-100"
                     : availablePlans.has(p)
-                      ? "hover:bg-neutral-900 text-neutral-300"
-                      : "text-neutral-700 pointer-events-none"
+                      ? "hover:bg-slate-900 text-slate-300"
+                      : "text-slate-700 pointer-events-none"
                 }`}
               >
                 {p}
               </Link>
             ))}
           </div>
-          <div className="flex rounded-md border border-neutral-800 overflow-hidden text-sm">
+          <div className="flex rounded-md border border-slate-800 overflow-hidden text-sm">
             {(["growth", "idcw"] as Option[]).map((o) => (
               <Link
                 key={o}
                 href={urlFor({ option: o })}
-                className={`px-3 py-1.5 uppercase ${
+                className={`px-3 py-1.5 uppercase ${FOCUS_RING} ${
                   o === option
-                    ? "bg-cyan-900/60 text-cyan-100"
+                    ? "bg-indigo-900/60 text-indigo-100"
                     : availableOptions.has(o)
-                      ? "hover:bg-neutral-900 text-neutral-300"
-                      : "text-neutral-700 pointer-events-none"
+                      ? "hover:bg-slate-900 text-slate-300"
+                      : "text-slate-700 pointer-events-none"
                 }`}
               >
                 {o}
@@ -182,8 +188,8 @@ export default async function FundDetailPage({
             ))}
           </div>
           {currentVariant?.latest_nav != null && (
-            <div className="text-sm text-neutral-400">
-              Latest NAV: <span className="text-neutral-100 font-medium">{formatNav(currentVariant.latest_nav)}</span>{" "}
+            <div className="text-sm text-slate-400">
+              Latest NAV: <span className="text-slate-100 font-medium">{formatNav(currentVariant.latest_nav)}</span>{" "}
               as of {formatDate(currentVariant.latest_nav_date)}
             </div>
           )}
@@ -192,7 +198,7 @@ export default async function FundDetailPage({
         {variantError ? (
           <div className="rounded-lg border border-amber-900 bg-amber-950/40 p-6 text-sm text-amber-200">
             {variantError} Try{" "}
-            <Link href={`/research/${fundId}`} className="underline">
+            <Link href={`/research/${fundId}`} className={`underline rounded-sm ${FOCUS_RING}`}>
               the direct/growth variant
             </Link>
             .
@@ -200,14 +206,14 @@ export default async function FundDetailPage({
         ) : (
           <>
             <section>
-              <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-3">Returns (Annualized)</h2>
+              <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Returns (Annualized)</h2>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 {Object.entries(returns!.windows).map(([key, w]) => (
                   <StatCard
                     key={key}
                     label={RETURN_WINDOW_LABELS[key] ?? key}
                     value={w.available ? formatPct(w.cagr_pct) : "N/A"}
-                    valueClassName={w.available ? signColorClass(w.cagr_pct) : "text-neutral-600"}
+                    valueClassName={w.available ? signColorClass(w.cagr_pct) : "text-slate-600"}
                     hint={w.available ? undefined : "Not enough NAV history yet"}
                   />
                 ))}
@@ -215,8 +221,8 @@ export default async function FundDetailPage({
             </section>
 
             <section>
-              <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-3">Performance vs Benchmark</h2>
-              <div className="rounded-lg border border-neutral-800 p-4">
+              <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Performance vs Benchmark</h2>
+              <div className="rounded-lg border border-slate-800 p-4">
                 <NavChart
                   fundPoints={navHistory!.fund_points}
                   benchmarkPoints={navHistory!.benchmark_points}
@@ -227,9 +233,9 @@ export default async function FundDetailPage({
             </section>
 
             <section>
-              <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-3">
+              <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">
                 Risk &amp; Survival
-                <span className="text-neutral-600 normal-case tracking-normal ml-2">
+                <span className="text-slate-600 normal-case tracking-normal ml-2">
                   (assumes {formatNumber(risk!.risk_free_rate_pct)}% annual risk-free rate)
                 </span>
               </h2>
@@ -263,20 +269,20 @@ export default async function FundDetailPage({
                   />
                 </div>
               ) : (
-                <p className="text-sm text-neutral-500">Not enough NAV history to compute risk metrics yet.</p>
+                <p className="text-sm text-slate-500">Not enough NAV history to compute risk metrics yet.</p>
               )}
             </section>
 
             <section>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm uppercase tracking-wide text-neutral-500">Rolling Returns</h2>
-                <div className="flex rounded-md border border-neutral-800 overflow-hidden text-xs">
+                <h2 className="text-sm uppercase tracking-wide text-slate-500">Rolling Returns</h2>
+                <div className="flex rounded-md border border-slate-800 overflow-hidden text-xs">
                   {ROLLING_WINDOW_OPTIONS.map((w) => (
                     <Link
                       key={w}
                       href={urlFor({ window: w })}
-                      className={`px-3 py-1 ${
-                        w === windowYears ? "bg-cyan-900/60 text-cyan-100" : "hover:bg-neutral-900 text-neutral-400"
+                      className={`px-3 py-1 ${FOCUS_RING} ${
+                        w === windowYears ? "bg-indigo-900/60 text-indigo-100" : "hover:bg-slate-900 text-slate-400"
                       }`}
                     >
                       {w}Y
@@ -284,12 +290,12 @@ export default async function FundDetailPage({
                   ))}
                 </div>
               </div>
-              <div className="rounded-lg border border-neutral-800 p-4 space-y-4">
+              <div className="rounded-lg border border-slate-800 p-4 space-y-4">
                 {rolling!.available ? (
                   <>
                     <DistributionBar distribution={rolling!.distribution} />
                     {rolling!.benchmark_consistency && (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-neutral-900">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-900">
                         <StatCard
                           label="Beat Benchmark"
                           value={formatNumber(rolling!.benchmark_consistency.beat_rate_pct, 1) + "%"}
@@ -314,20 +320,20 @@ export default async function FundDetailPage({
                     )}
                   </>
                 ) : (
-                  <p className="text-sm text-neutral-500">
+                  <p className="text-sm text-slate-500">
                     Not enough NAV history for a {windowYears}-year rolling window yet.
                   </p>
                 )}
-                <div className="pt-4 border-t border-neutral-900">
+                <div className="pt-4 border-t border-slate-900">
                   <RollingReturnBarChart fundId={fundId} plan={plan} option={option} />
                 </div>
               </div>
             </section>
 
             <section>
-              <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-3">Drawdown</h2>
+              <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Drawdown</h2>
               {drawdown!.available ? (
-                <div className="rounded-lg border border-neutral-800 p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-lg border border-slate-800 p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <StatCard
                     label="Max Drawdown"
                     value={formatPct(drawdown!.max_drawdown_pct)}
@@ -351,44 +357,44 @@ export default async function FundDetailPage({
                   />
                 </div>
               ) : (
-                <p className="text-sm text-neutral-500">Not enough NAV history to compute drawdown yet.</p>
+                <p className="text-sm text-slate-500">Not enough NAV history to compute drawdown yet.</p>
               )}
             </section>
 
             <section>
-              <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-1">Market-Cycle Behaviour</h2>
-              <p className="text-xs text-neutral-600 mb-3">{marketRegimes!.methodology_note}</p>
+              <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-1">Market-Cycle Behaviour</h2>
+              <p className="text-xs text-slate-600 mb-3">{marketRegimes!.methodology_note}</p>
               {marketRegimes!.regimes.length > 0 ? (
                 <>
-                  <p className="text-sm text-neutral-400 mb-3">
+                  <p className="text-sm text-slate-400 mb-3">
                     Beat its benchmark in {marketRegimes!.regimes_outperformed} of{" "}
                     {marketRegimes!.regimes_with_comparison} comparable periods.
                   </p>
                   <MarketRegimeTable regimes={marketRegimes!.regimes} />
                 </>
               ) : (
-                <p className="text-sm text-neutral-500">No market regimes defined yet.</p>
+                <p className="text-sm text-slate-500">No market regimes defined yet.</p>
               )}
             </section>
 
             <section>
-              <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-1">Stress Test</h2>
-              <p className="text-xs text-neutral-600 mb-3">{stressTest!.hypothetical_notice}</p>
+              <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-1">Stress Test</h2>
+              <p className="text-xs text-slate-600 mb-3">{stressTest!.hypothetical_notice}</p>
               <StressTestPanel scenarios={stressTest!.scenarios} />
             </section>
 
             <section>
-              <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-3">ThinkFin AI Summary</h2>
+              <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">ThinkFin AI Summary</h2>
               <AiSummaryPanel fundId={fundId} plan={plan} option={option} />
             </section>
           </>
         )}
 
         <section>
-          <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-3">Portfolio DNA &amp; Concentration</h2>
+          <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Portfolio DNA &amp; Concentration</h2>
           {portfolio.available ? (
             <div className="space-y-4">
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-slate-500">
                 Holdings as of {formatDate(portfolio.as_of_date)} · Source: {portfolio.source_name ?? "unknown"}
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -416,31 +422,31 @@ export default async function FundDetailPage({
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4">
-                <div className="rounded-lg border border-neutral-800 p-4">
-                  <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-3">Sector Allocation</h3>
+                <div className="rounded-lg border border-slate-800 p-4">
+                  <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">Sector Allocation</h3>
                   <AllocationBar slices={portfolio.sector_allocation} />
                 </div>
-                <div className="rounded-lg border border-neutral-800 p-4">
-                  <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-3">Market-Cap Allocation</h3>
+                <div className="rounded-lg border border-slate-800 p-4">
+                  <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">Market-Cap Allocation</h3>
                   <AllocationBar slices={portfolio.market_cap_allocation} />
                 </div>
               </div>
 
               <div>
-                <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-3">Top Holdings</h3>
+                <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">Top Holdings</h3>
                 <HoldingsTable holdings={portfolio.top_holdings} />
               </div>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-slate-500">
                 Weights shown are of disclosed holdings only ({formatNumber(portfolio.total_disclosed_weight_pct, 1)}%
                 of the portfolio) — remaining exposure (cash, undisclosed holdings) is not shown.
               </p>
             </div>
           ) : (
-            <p className="text-sm text-neutral-500">No portfolio holdings data available for this fund yet.</p>
+            <p className="text-sm text-slate-500">No portfolio holdings data available for this fund yet.</p>
           )}
         </section>
 
-        <p className="text-xs text-neutral-600 border-t border-neutral-900 pt-4">
+        <p className="text-xs text-slate-600 border-t border-slate-900 pt-4">
           {(returns ?? risk ?? rolling ?? drawdown ?? portfolio)?.disclaimer ??
             "Historical performance does not guarantee future results."}
         </p>

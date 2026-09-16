@@ -56,6 +56,22 @@ on:
         description: "Read-only: runs portfolio-fetcher's fetch_ppfas() directly (no Google credentials, no Drive/Sheets calls) to confirm the AMC-fetch logic still finds a real file for the current target month — no DB writes."
         type: boolean
         default: false
+      debug_amc_disclosure_url:
+        description: "Read-only: fetch this URL (an AMC's portfolio-disclosure page) and print what's actually there (file links, JS bundles, raw HTML sample) — no DB writes, no files saved. Generalizes debug_ppfas_disclosure to any AMC, for onboarding new fetch_<amc> adapters one at a time."
+        type: string
+        default: ""
+      debug_amc_browser_url:
+        description: "Read-only: load this URL in a real headless browser (Playwright/Chromium) and report every network request the page makes while rendering — for AMC pages where debug_amc_disclosure_url found nothing because the real file link is drawn by JavaScript after load (e.g. a PDF-viewer widget) or only appears after a form postback. No DB writes, no files saved."
+        type: string
+        default: ""
+      debug_amc_browser_select:
+        description: "Optional, only used with debug_amc_browser_url: comma-separated selector=value pairs to set on <select> dropdowns before capturing requests (e.g. an ASP.NET postback form's scheme/month pickers)."
+        type: string
+        default: ""
+      debug_amc_browser_click:
+        description: "Optional, only used with debug_amc_browser_url: comma-separated CSS selectors to click in order after any debug_amc_browser_select values are set (e.g. a portfolio tab, or a form's submit button) — each click waits for the page to go network-idle again before the next one."
+        type: string
+        default: ""
   schedule:
     - cron: "30 0 * * *"  # ~06:00 IST daily; AMFI publishes NAV once per business day
 
@@ -569,38 +585,245 @@ jobs:
           fetch_and_inspect(KNOWN_CURRENT_URL, "known current consolidated report (found via browser, not scraping)")
           PYEOF
 
-      - name: Debug — smoke-test portfolio-fetcher's fetch_ppfas() directly (no DB writes, no Drive/Sheets calls)
+      - name: Debug — inspect an arbitrary AMC's portfolio-disclosure page (no DB writes, no files saved)
+        if: ${{ inputs.debug_amc_disclosure_url != '' }}
+        run: |
+          python3 << 'PYEOF'
+          import re
+          import os
+          import httpx
+          from urllib.parse import urljoin
+
+          # Generalized version of the PPFAS-specific debug step above —
+          # same investigation each new AMC needs before a real
+          # fetch_<amc> adapter can be written for it, since every AMC's
+          # disclosure page has its own bespoke layout with no shared
+          # format (unlike AMFI's centralized NAVAll.txt for NAV data).
+          PAGE_URL = os.environ["DEBUG_AMC_URL"]
+
+          try:
+              resp = httpx.get(PAGE_URL, timeout=30.0, follow_redirects=True)
+          except Exception as exc:
+              print(f"page fetch FAILED: {type(exc).__name__}: {exc}")
+              raise SystemExit(1)
+          print(f"url: {PAGE_URL}")
+          print(f"status: {resp.status_code}")
+          text = resp.text
+          print(f"page length: {len(text)} chars")
+          print()
+
+          file_links = sorted(set(re.findall(
+              r"""href=["']([^"']+\.(?:xlsx|xls|csv|zip|pdf))["']""", text, re.IGNORECASE
+          )))
+          print(f"-- direct file links found: {len(file_links)} --")
+          for link in file_links[:40]:
+              print(f"  {urljoin(PAGE_URL, link)}")
+          print()
+
+          js_files = sorted(set(re.findall(
+              r"""src=["']([^"']+\.js)["']""", text, re.IGNORECASE
+          )))
+          print(f"-- JS bundle files referenced in the page: {len(js_files)} --")
+          for js in js_files[:25]:
+              print(f"  {urljoin(PAGE_URL, js)}")
+          print()
+
+          # Full-text keyword search, not just the head sample below — a
+          # sitemap.xml can be tens of thousands of chars, so the real
+          # disclosure-page URL is very likely past the first 3000 chars
+          # printed as a raw sample. Matches any <loc>/href pointing at a
+          # URL that mentions "disclosure" or "portfolio", which is how
+          # the real Mirae Asset disclosure page URL was actually found
+          # (a sitemap.xml entry far past the raw-sample cutoff).
+          keyword_urls = sorted(set(re.findall(
+              r"""<loc>([^<]+)</loc>|href=["']([^"']+)["']""", text, re.IGNORECASE
+          )))
+          keyword_urls = sorted({(a or b) for a, b in keyword_urls if re.search(r"disclosure|portfolio", (a or b), re.IGNORECASE)})
+          print(f"-- URLs mentioning 'disclosure' or 'portfolio' anywhere in the page: {len(keyword_urls)} --")
+          for url in keyword_urls[:60]:
+              print(f"  {urljoin(PAGE_URL, url)}")
+          print()
+
+          print("-- raw HTML sample (first 3000 chars) --")
+          print(text[:3000])
+
+          if not file_links:
+              print()
+              print("No direct file links found in the raw HTML — likely JS-rendered client-side (same pattern AMFI and PPFAS both turned out to have). The JS bundle list above is the next thing to check by hand, or find the real current-month link by viewing the page in a real browser.")
+          PYEOF
+        env:
+          DEBUG_AMC_URL: ${{ inputs.debug_amc_disclosure_url }}
+
+      - name: Debug — install Playwright/Chromium for the browser-based AMC debug step
+        if: ${{ inputs.debug_amc_browser_url != '' }}
+        run: |
+          pip install playwright==1.55.0
+          playwright install --with-deps chromium
+
+      - name: Debug — load an AMC page in a real browser and report network requests (no DB writes, no files saved)
+        if: ${{ inputs.debug_amc_browser_url != '' }}
+        run: |
+          python3 << 'PYEOF'
+          import asyncio
+          import os
+          import re
+
+          from playwright.async_api import async_playwright
+
+          # For AMC pages where a plain httpx.get (debug_amc_disclosure_url
+          # above) found nothing, because the real file link is drawn by
+          # JavaScript after the page loads (a PDF-viewer widget, as found
+          # on Mirae Asset's /downloads/portfolio) or only appears after an
+          # ASP.NET postback form is submitted (as found on Quant Mutual
+          # Fund's Statement-of-Scheme-Portfolios.aspx). Loads the page in
+          # a real headless Chromium, optionally sets <select> dropdowns
+          # and clicks elements the same way a person would, and reports
+          # every network request the page makes — the real file (or the
+          # underlying data API a fetch_<amc> adapter could call directly
+          # instead of driving a browser every month) shows up there even
+          # when it never appears in the static HTML.
+          URL = os.environ["DEBUG_BROWSER_URL"]
+          SELECT_PAIRS = [s.strip() for s in os.environ.get("DEBUG_BROWSER_SELECT", "").split(",") if s.strip()]
+          CLICK_SELECTORS = [s.strip() for s in os.environ.get("DEBUG_BROWSER_CLICK", "").split(",") if s.strip()]
+
+          FILE_OR_KEYWORD_RE = re.compile(r"\.(pdf|xlsx|xls|csv|zip)(\?|$)|disclosure|portfolio", re.IGNORECASE)
+
+
+          async def main():
+              requests_log = []
+              responses = []
+
+              async with async_playwright() as p:
+                  browser = await p.chromium.launch()
+                  page = await browser.new_page()
+                  page.on("request", lambda req: requests_log.append(
+                      {"method": req.method, "url": req.url, "resource_type": req.resource_type, "post_data": req.post_data}
+                  ))
+                  # Kept as full Response objects (not just url/status) so
+                  # their body can be read after the page interaction is
+                  # done — this is what actually revealed the real payload
+                  # on Mirae Asset's AjaxService/GetDownloadsData XHR call,
+                  # which the URL-keyword filter alone would have missed
+                  # (its own URL contains neither "disclosure" nor
+                  # "portfolio").
+                  page.on("response", lambda res: responses.append(res))
+
+                  print(f"Navigating to {URL}")
+                  try:
+                      await page.goto(URL, wait_until="networkidle", timeout=30000)
+                  except Exception as exc:
+                      print(f"navigation FAILED (continuing anyway, page may have partially loaded): {type(exc).__name__}: {exc}")
+
+                  for pair in SELECT_PAIRS:
+                      if "=" not in pair:
+                          print(f"skipping malformed select pair (expected selector=value): {pair!r}")
+                          continue
+                      selector, value = pair.split("=", 1)
+                      print(f"Selecting {value!r} in {selector!r}")
+                      try:
+                          await page.select_option(selector, value)
+                      except Exception as exc:
+                          print(f"  select FAILED: {type(exc).__name__}: {exc}")
+
+                  for selector in CLICK_SELECTORS:
+                      print(f"Clicking {selector!r}")
+                      try:
+                          await page.click(selector, timeout=10000)
+                          await page.wait_for_load_state("networkidle", timeout=15000)
+                      except Exception as exc:
+                          print(f"  click FAILED: {type(exc).__name__}: {exc}")
+
+                  # A request is "interesting" if its URL matches the file/
+                  # keyword regex, OR it's an xhr/fetch call at all — most
+                  # AMC sites drive their real download link through a
+                  # background data request whose URL itself gives no hint
+                  # (e.g. "AjaxService/GetDownloadsData"), so resource type
+                  # alone has to catch what the keyword regex would miss.
+                  interesting = [
+                      r for r in requests_log
+                      if FILE_OR_KEYWORD_RE.search(r["url"]) or r["resource_type"] in ("xhr", "fetch")
+                  ]
+                  print(f"\n-- {len(requests_log)} network requests captured during render/interaction --")
+                  print(f"-- {len(interesting)} of those are xhr/fetch calls or match a file extension/'disclosure'/'portfolio' --")
+                  for r in interesting[:60]:
+                      post_suffix = f"\n      POST body: {r['post_data']}" if r["post_data"] else ""
+                      print(f"  [{r['resource_type']}] {r['method']} {r['url']}{post_suffix}")
+
+                  print(f"\n-- all {min(len(requests_log), 150)} captured request URLs (capped at 150) --")
+                  for r in requests_log[:150]:
+                      print(f"  [{r['resource_type']}] {r['method']} {r['url']}")
+
+                  # Response bodies only for the interesting xhr/fetch
+                  # calls above — this is what a fast fetch_<amc> adapter
+                  # would need to see to replicate the call directly with
+                  # plain httpx, skipping the browser at runtime entirely.
+                  interesting_urls = {r["url"] for r in interesting if r["resource_type"] in ("xhr", "fetch")}
+                  print(f"\n-- response bodies for {len(interesting_urls)} matching xhr/fetch request(s) --")
+                  seen = set()
+                  for res in responses:
+                      if res.url not in interesting_urls or res.url in seen:
+                          continue
+                      seen.add(res.url)
+                      try:
+                          body = await res.text()
+                      except Exception as exc:
+                          body = f"<could not read body: {type(exc).__name__}: {exc}>"
+                      print(f"  URL: {res.url}")
+                      print(f"  status: {res.status}")
+                      print(f"  body (first 3000 chars): {body[:3000]}")
+                      print()
+
+                  print(f"\n-- final page title: {await page.title()!r} --")
+                  print(f"-- final page URL (after any redirects/navigation): {page.url} --")
+
+                  content = await page.content()
+                  print(f"\n-- final rendered HTML length: {len(content)} chars --")
+                  print("-- final rendered HTML sample (first 3000 chars) --")
+                  print(content[:3000])
+
+                  await browser.close()
+
+
+          asyncio.run(main())
+          PYEOF
+        env:
+          DEBUG_BROWSER_URL: ${{ inputs.debug_amc_browser_url }}
+          DEBUG_BROWSER_SELECT: ${{ inputs.debug_amc_browser_select }}
+          DEBUG_BROWSER_CLICK: ${{ inputs.debug_amc_browser_click }}
+
+      - name: Debug — smoke-test portfolio-fetcher's AMC adapters directly (no DB writes, no Drive/Sheets calls)
         if: ${{ inputs.debug_portfolio_fetcher_smoke_test == true }}
         run: |
           # main.py imports gspread/google-api-python-client at module
-          # level for its Drive/Sheets code paths, even though
-          # fetch_ppfas itself only needs httpx — so those still have to
-          # be installed for the import alone to succeed.
+          # level for its Drive/Sheets code paths, even though the
+          # adapter functions themselves only need httpx — so those
+          # still have to be installed for the import alone to succeed.
           pip install -r portfolio-fetcher/requirements.txt
           python3 << 'PYEOF'
           import datetime
           import sys
 
           sys.path.insert(0, "portfolio-fetcher")
-          from main import fetch_ppfas  # noqa: E402
+          from main import fetch_ppfas, fetch_mirae_asset  # noqa: E402
 
-          # Runs the exact function portfolio-fetcher's scheduled Render
+          # Runs the exact functions portfolio-fetcher's scheduled Render
           # Cron Job will call — no Google credentials involved, since
-          # fetch_ppfas is pure httpx logic. Confirms the AMC-fetch side
-          # still works today without needing the Drive/Sheets setup to
-          # be live first.
+          # both adapters are pure httpx logic. Confirms the AMC-fetch
+          # side still works today without needing the Drive/Sheets
+          # setup to be live first.
           first_of_this_month = datetime.date.today().replace(day=1)
           prev_month_date = first_of_this_month - datetime.timedelta(days=1)
           target_month = prev_month_date.strftime("%Y-%m")
-
           print(f"Target month (same logic main.py uses by default): {target_month}")
-          results = fetch_ppfas(target_month)
 
-          if results:
-              for file_bytes, file_name, mimetype, scheme_hint in results:
-                  print(f"SUCCESS: {file_name} ({scheme_hint}) — {len(file_bytes)} bytes, {mimetype}")
-          else:
-              print("NO FILE FOUND — fetch_ppfas's date-guessing missed this month's real URL (see its docstring for why this can happen; not necessarily a bug).")
+          for amc_name, fetch_fn in [("PPFAS", fetch_ppfas), ("Mirae Asset", fetch_mirae_asset)]:
+              print(f"\n-- {amc_name} --")
+              results = fetch_fn(target_month)
+              if results:
+                  for file_bytes, file_name, mimetype, scheme_hint in results:
+                      print(f"SUCCESS: {file_name} ({scheme_hint}) — {len(file_bytes)} bytes, {mimetype}")
+              else:
+                  print(f"NO FILE FOUND for {amc_name} — see its docstring for known limitations (not necessarily a bug).")
           PYEOF
 
       - name: Backfill real NAV history for a curated set of featured funds
@@ -705,10 +928,10 @@ jobs:
           PYEOF
 
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true && inputs.debug_amc_disclosure_url == '' && inputs.debug_amc_browser_url == '' }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true && inputs.debug_amc_disclosure_url == '' && inputs.debug_amc_browser_url == '' }}
         run: python -m data_pipeline.orchestration.daily_pipeline
