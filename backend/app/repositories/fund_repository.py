@@ -52,7 +52,7 @@ def list_schemes(
     if search:
         query = query.filter(_name_search_filter(search))
     if category:
-        query = query.filter(Scheme.category == category)
+        query = query.filter(Scheme.category.ilike(f"%{category}%"))
     if amc_name:
         query = query.filter(AMC.name.ilike(f"%{amc_name}%"))
     if search:
@@ -79,7 +79,7 @@ def count_schemes(
     if search:
         query = query.filter(_name_search_filter(search))
     if category:
-        query = query.filter(Scheme.category == category)
+        query = query.filter(Scheme.category.ilike(f"%{category}%"))
     if amc_name:
         query = query.filter(AMC.name.ilike(f"%{amc_name}%"))
     return query.count()

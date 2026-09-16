@@ -5,7 +5,7 @@ import { AnimatedHeroHeadline } from "@/components/hero/AnimatedHeroHeadline";
 import { RealityCheckWidget, type RealityCheckFund } from "@/components/fund/RealityCheckWidget";
 import { BenchmarkDeltaBadge, type BenchmarkMetrics, deltaVsBenchmark, safetyMarginVsBenchmark } from "@/components/fund/BenchmarkDeltaBadge";
 import { countFunds, getFund, getFundDrawdown, getFundReturns, getFundRollingReturns, listFunds } from "@/lib/api";
-import { formatNav } from "@/lib/format";
+import { formatNav, signColorClass } from "@/lib/format";
 import type { FundDetail, VariantSummary } from "@/types/fund";
 
 // A small, fixed-size sample rather than any kind of "top performers"
@@ -26,6 +26,14 @@ const BENCHMARK_FUND_ID = 2893; // Axis Nifty 50 Index Fund
 const BENCHMARK_LABEL = "Nifty 50 Index";
 
 const EXPLORE_COUNT = 6;
+
+// Substrings of real AMFI-style category text (e.g. "Equity Scheme -
+// Large Cap Fund", "Equity Schemes - Large Cap Fund" — AMCs don't agree
+// on "Scheme" vs "Schemes"), matched via /research's category filter
+// (a case-insensitive substring match, not exact — see
+// fund_repository.py) so a single fixed label like "Large Cap" still
+// works across every AMC's own wording.
+const CATEGORY_CHIPS = ["Large Cap", "Flexi Cap", "Mid Cap", "Small Cap", "Debt"];
 
 const FEATURES = [
   {
@@ -165,6 +173,18 @@ export default async function Home({
             </div>
           </form>
 
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {CATEGORY_CHIPS.map((chip) => (
+              <Link
+                key={chip}
+                href={`/research?category=${encodeURIComponent(chip)}`}
+                className="rounded-full border border-slate-800 px-3 py-1 text-xs text-slate-400 hover:border-slate-700 hover:text-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+              >
+                {chip}
+              </Link>
+            ))}
+          </div>
+
           <div className="mt-8 w-full max-w-4xl text-left">
             <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={heroFunds} benchmark={benchmark} />
           </div>
@@ -229,7 +249,7 @@ export default async function Home({
 }
 
 const CARD_LINK_CLASS =
-  "rounded-lg border border-slate-800 hover:border-slate-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+  "rounded-lg border border-slate-800 hover:border-slate-700 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
 
 async function CompleteDataGrid({
   fundIds,
@@ -268,10 +288,10 @@ async function CompleteDataGrid({
                 {fund.amc_name} · {fund.category}
               </p>
             </div>
-            <div className="flex items-center justify-between pt-2 border-t border-slate-900 text-xs">
+            <div className="flex items-start justify-between pt-2 border-t border-slate-900 text-xs">
               <div>
                 <div className="text-slate-500">3Y CAGR</div>
-                <div className="font-mono tabular-nums text-slate-100 mt-0.5">
+                <div className={`font-mono tabular-nums mt-0.5 ${m?.cagr3y != null ? signColorClass(m.cagr3y) : "text-slate-600"}`}>
                   {m?.cagr3y != null ? `${m.cagr3y.toFixed(1)}%` : "—"}
                 </div>
                 {benchmark && (
