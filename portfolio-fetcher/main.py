@@ -215,7 +215,15 @@ def fetch_mirae_asset(month_str: str):
     try:
         with httpx.Client(headers=headers, timeout=30.0, follow_redirects=True) as client:
             client.get(f"{MIRAE_ASSET_BASE_URL}/downloads/portfolio")
-            resp = client.post(f"{MIRAE_ASSET_BASE_URL}/AjaxService/GetDownloadsData")
+            # Sitefinity's server-side error ("GetType(String name)"
+            # throwing on a null/unresolved type) is consistent with its
+            # [FromBody] DownloadRequest model binder never populating a
+            # default object when the request has no body/Content-Type
+            # at all, vs. binding cleanly from an explicit empty JSON
+            # object — session cookies alone (tried above) weren't
+            # enough, so also send `json={}` here, which sets
+            # Content-Type: application/json and a real (empty) body.
+            resp = client.post(f"{MIRAE_ASSET_BASE_URL}/AjaxService/GetDownloadsData", json={})
     except Exception as exc:
         print(f"  Mirae Asset: GetDownloadsData request FAILED {type(exc).__name__}: {exc}")
         return []
