@@ -88,7 +88,7 @@ export function OmniSearch() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Search funds"
-        className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1.5 sm:px-3 text-sm text-slate-400 hover:border-slate-700 hover:text-slate-200 transition-colors"
+        className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1.5 sm:px-3 text-sm text-slate-400 hover:border-slate-700 hover:text-slate-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
       >
         <SearchIcon className="h-3.5 w-3.5 flex-shrink-0" />
         <span className="hidden sm:inline">Search funds…</span>
@@ -136,7 +136,7 @@ export function OmniSearch() {
                     type="button"
                     onClick={() => goTo(fund)}
                     onMouseEnter={() => setActiveIndex(i)}
-                    className={`flex w-full flex-col items-start px-4 py-2 text-left ${
+                    className={`flex w-full flex-col items-start px-4 py-2 text-left focus-visible:outline-none focus-visible:bg-slate-900 ${
                       i === activeIndex ? "bg-slate-900" : ""
                     }`}
                   >

@@ -158,7 +158,7 @@ export default async function Home({
               </kbd>
               <button
                 type="submit"
-                className="shrink-0 rounded-full bg-indigo-500 text-white font-medium text-sm px-4 py-2 hover:bg-indigo-400 transition-colors"
+                className="shrink-0 rounded-full bg-indigo-500 text-white font-medium text-sm px-4 py-2 hover:bg-indigo-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
               >
                 Search
               </button>
@@ -178,7 +178,7 @@ export default async function Home({
             <div className="flex rounded-md border border-slate-800 overflow-hidden text-xs">
               <Link
                 href="/?tab=complete"
-                className={`px-3 py-1.5 ${
+                className={`px-3 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
                   activeTab === "complete" ? "bg-indigo-900/50 text-indigo-200" : "text-slate-400 hover:bg-slate-900"
                 }`}
               >
@@ -186,7 +186,7 @@ export default async function Home({
               </Link>
               <Link
                 href="/?tab=all"
-                className={`px-3 py-1.5 ${
+                className={`px-3 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
                   activeTab === "all" ? "bg-indigo-900/50 text-indigo-200" : "text-slate-400 hover:bg-slate-900"
                 }`}
               >
@@ -201,7 +201,10 @@ export default async function Home({
             <AllFundsGrid funds={featuredFunds} />
           )}
 
-          <Link href="/research" className="inline-block text-xs text-indigo-400 hover:text-indigo-300">
+          <Link
+            href="/research"
+            className="inline-block rounded-sm text-xs text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+          >
             Browse all {fundCount.count.toLocaleString("en-IN")} funds →
           </Link>
         </section>
@@ -210,11 +213,7 @@ export default async function Home({
           <h2 className="text-sm uppercase tracking-wide text-slate-500">What You Can Do</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {FEATURES.map((feature) => (
-              <Link
-                key={feature.href}
-                href={feature.href}
-                className="rounded-lg border border-slate-800 p-6 space-y-3 hover:border-slate-700 transition-colors"
-              >
+              <Link key={feature.href} href={feature.href} className={`${CARD_LINK_CLASS} p-6 space-y-3`}>
                 <feature.icon className="h-5 w-5 text-indigo-400" />
                 <div>
                   <h3 className="text-sm font-semibold text-slate-100">{feature.title}</h3>
@@ -228,6 +227,9 @@ export default async function Home({
     </div>
   );
 }
+
+const CARD_LINK_CLASS =
+  "rounded-lg border border-slate-800 hover:border-slate-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
 
 async function CompleteDataGrid({
   fundIds,
@@ -259,11 +261,7 @@ async function CompleteDataGrid({
         const m = metrics.find((x) => x.id === id);
         if (!fund) return null;
         return (
-          <Link
-            key={id}
-            href={`/research/${id}`}
-            className="rounded-lg border border-slate-800 p-4 space-y-3 hover:border-slate-700 transition-colors"
-          >
+          <Link key={id} href={`/research/${id}`} className={`${CARD_LINK_CLASS} p-4 space-y-3`}>
             <div>
               <p className="text-sm font-medium leading-snug text-slate-100 line-clamp-2">{fund.scheme_name}</p>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -314,11 +312,7 @@ function AllFundsGrid({ funds }: { funds: FundDetail[] }) {
       {funds.map((fund) => {
         const variant = directGrowthVariant(fund);
         return (
-          <Link
-            key={fund.id}
-            href={`/research/${fund.id}`}
-            className="rounded-lg border border-slate-800 p-4 space-y-2 hover:border-slate-700 transition-colors"
-          >
+          <Link key={fund.id} href={`/research/${fund.id}`} className={`${CARD_LINK_CLASS} p-4 space-y-2`}>
             <div>
               <p className="text-sm font-medium leading-snug text-slate-100 line-clamp-2">{fund.scheme_name}</p>
               <p className="text-xs text-slate-500 mt-0.5">
