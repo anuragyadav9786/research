@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { Activity, GitCompare, Layers, Waves } from "lucide-react";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
-import { AnimatedHeroHeadline } from "@/components/hero/AnimatedHeroHeadline";
-import { RealityCheckWidget, type RealityCheckFund } from "@/components/fund/RealityCheckWidget";
+import { MythVsRealityCard, type MythVsRealityData } from "@/components/hero/MythVsRealityCard";
 import { BenchmarkDeltaBadge, type BenchmarkMetrics, deltaVsBenchmark, safetyMarginVsBenchmark } from "@/components/fund/BenchmarkDeltaBadge";
 import { countFunds, getFund, getFundDrawdown, getFundReturns, getFundRollingReturns, listFunds } from "@/lib/api";
 import { formatNav, signColorClass } from "@/lib/format";
@@ -17,7 +17,11 @@ import type { FundDetail, VariantSummary } from "@/types/fund";
 // of the "not enough history yet" every other fund still shows — real
 // AMFI ingestion for this platform only started a couple of days ago.
 const FEATURED_FUND_IDS = [1833, 2236, 2140] as const; // Parag Parikh Flexi Cap, Mirae Asset Large Cap, Quant Small Cap
-const REALITY_CHECK_PAIR = [1833, 2236] as const; // Parag Parikh Flexi Cap vs Mirae Asset Large Cap
+
+// The hero's "Myth vs. Reality" anchor is built around one real fund —
+// same one as the hero cards' first entry, deliberately backfilled with
+// full real NAV history (see the backfill_featured_funds workflow step).
+const MYTH_VS_REALITY_FUND_ID = FEATURED_FUND_IDS[0];
 
 // A real, currently-onboarded passive index fund, standing in for a
 // "vs Benchmark" comparison — see BenchmarkDeltaBadge.tsx for why an
@@ -28,38 +32,30 @@ const BENCHMARK_LABEL = "Nifty 50 Index";
 
 const EXPLORE_COUNT = 6;
 
-// Substrings of real AMFI-style category text (e.g. "Equity Scheme -
-// Large Cap Fund", "Equity Schemes - Large Cap Fund" — AMCs don't agree
-// on "Scheme" vs "Schemes"), matched via /research's category filter
-// (a case-insensitive substring match, not exact — see
-// fund_repository.py) so a single fixed label like "Large Cap" still
-// works across every AMC's own wording.
-const CATEGORY_CHIPS = ["Large Cap", "Flexi Cap", "Mid Cap", "Small Cap", "Debt"];
-
 const FEATURES = [
   {
     href: "/research",
     title: "Single-Fund Stress Test",
     description: "Analyze rolling returns, drawdown recovery days, and capture ratios computed from raw NAV history.",
-    icon: PulseIcon,
+    icon: Activity,
   },
   {
     href: "/research/compare",
     title: "Head-to-Head Benchmark",
     description: "Place two funds side by side to expose where their performance divergence actually occurred.",
-    icon: SplitIcon,
+    icon: GitCompare,
   },
   {
     href: "/portfolio",
     title: "Blended Portfolio Risk",
     description: "Combine your holdings to calculate real aggregate asset allocation, overlap, and blended drawdown.",
-    icon: LayersIcon,
+    icon: Layers,
   },
   {
     href: "/market",
     title: "Market Cycle Intelligence",
     description: "Examine how funds behaved during the 2020 crash, 2021 bull run, and 2022-2023 rate cycle.",
-    icon: WaveIcon,
+    icon: Waves,
   },
 ];
 
@@ -85,7 +81,7 @@ async function loadBenchmarkMetrics(): Promise<BenchmarkMetrics | null> {
   }
 }
 
-async function loadRealityCheckFund(fundId: number): Promise<RealityCheckFund | null> {
+async function loadMythVsRealityData(fundId: number): Promise<MythVsRealityData | null> {
   try {
     const [fund, returns, rolling, drawdown] = await Promise.all([
       getFund(fundId),
@@ -93,13 +89,15 @@ async function loadRealityCheckFund(fundId: number): Promise<RealityCheckFund | 
       getFundRollingReturns(fundId, { window_years: 3 }),
       getFundDrawdown(fundId),
     ]);
+    if (!rolling.available) return null;
     return {
       id: fundId,
-      name: fund.scheme_name,
+      schemeName: fund.scheme_name,
       category: fund.category,
       cagr3y: returns.windows["3y"]?.available ? returns.windows["3y"].cagr_pct : null,
-      medianRolling3y: rolling.available ? rolling.distribution.median : null,
       maxDrawdown: drawdown.available ? drawdown.max_drawdown_pct : null,
+      recovered: drawdown.available ? drawdown.recovered : null,
+      recoveryDurationDays: drawdown.available ? drawdown.recovery_duration_days : null,
       distribution: rolling.distribution,
     };
   } catch {
@@ -132,80 +130,50 @@ export default async function Home({
   const activeTab = tab === "complete" ? "complete" : "all";
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <SiteHeader active="dashboard" />
+    <div className="min-h-screen bg-[var(--canvas)] text-white">
+      <SiteHeader />
 
-      <main className="px-8 pt-6 pb-12 max-w-5xl mx-auto space-y-16">
-        <section className="relative isolate flex flex-col items-center text-center py-2 sm:py-4">
-          {/* Soft radial glow — purely decorative, sits behind the search bar like a focal spotlight. */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 -z-10 flex items-start justify-center"
-          >
-            <div className="mt-8 h-64 w-64 sm:h-80 sm:w-80 rounded-full bg-indigo-600/20 blur-3xl" />
-          </div>
-
+      <main className="px-8 pt-10 pb-12 max-w-5xl mx-auto space-y-16">
+        <section className="space-y-6">
           <div className="max-w-2xl">
-            <AnimatedHeroHeadline centered />
+            <p className="text-xs font-medium uppercase tracking-wide text-white/50">ThinkFin Decision Intelligence</p>
+            <h1 className="mt-2 font-serif text-3xl sm:text-4xl font-semibold leading-tight text-white">
+              The return you&rsquo;re shown isn&rsquo;t the return you&rsquo;ll get.
+            </h1>
+            <p className="mt-3 text-sm text-white/60">
+              A single point-to-point CAGR hides drawdowns, recovery time, and the real spread of outcomes. Press{" "}
+              <kbd className="rounded border border-[var(--border-subtle)] px-1.5 py-0.5 text-[10px] font-mono text-white/50">
+                ⌘K
+              </kbd>{" "}
+              to search any fund or run &ldquo;X vs Y&rdquo;.
+            </p>
           </div>
 
-          <form action="/research" className="mt-8 w-full max-w-xl">
-            <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900 pl-5 pr-1.5 py-1.5 shadow-lg shadow-indigo-950/40 focus-within:border-indigo-600 transition-colors">
-              <input
-                type="text"
-                name="search"
-                placeholder="Search by fund, AMC, or category…"
-                className="min-w-0 flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none"
-              />
-              <kbd className="hidden sm:inline-flex items-center rounded border border-slate-700 px-1.5 py-0.5 text-[10px] font-mono text-slate-400">
-                Enter ↵
-              </kbd>
-              <button
-                type="submit"
-                className="shrink-0 rounded-full bg-indigo-500 text-white font-medium text-sm px-4 py-2 hover:bg-indigo-400 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-              >
-                Search
-              </button>
-            </div>
-          </form>
-
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {CATEGORY_CHIPS.map((chip) => (
-              <Link
-                key={chip}
-                href={`/research?category=${encodeURIComponent(chip)}`}
-                className="rounded-full border border-slate-800 px-3 py-1 text-xs text-slate-400 hover:border-slate-700 hover:text-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-              >
-                {chip}
-              </Link>
-            ))}
-          </div>
+          <Suspense fallback={<MythVsRealitySkeleton />}>
+            <MythVsRealitySection />
+          </Suspense>
 
           <Suspense fallback={<HeroFundsSkeleton />}>
             <HeroFundsSection />
           </Suspense>
         </section>
 
-        <Suspense fallback={<RealityCheckSkeleton />}>
-          <RealityCheckSection />
-        </Suspense>
-
         <section className="space-y-4">
           <div className="flex items-baseline justify-between flex-wrap gap-3">
-            <h2 className="text-sm uppercase tracking-wide text-slate-400">Explore Funds</h2>
-            <div className="flex rounded-md border border-slate-800 overflow-hidden text-xs">
+            <h2 className="text-sm uppercase tracking-wide text-white/50">Explore Funds</h2>
+            <div className="flex rounded-md border border-[var(--border-subtle)] overflow-hidden text-xs">
               <Link
                 href="/?tab=complete"
-                className={`px-3 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
-                  activeTab === "complete" ? "bg-indigo-900/50 text-indigo-800" : "text-slate-400 hover:bg-slate-900"
+                className={`px-3 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
+                  activeTab === "complete" ? "bg-blue-500/15 text-blue-300" : "text-white/50 hover:bg-[var(--surface-2)]"
                 }`}
               >
                 Most Complete Data
               </Link>
               <Link
                 href="/?tab=all"
-                className={`px-3 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
-                  activeTab === "all" ? "bg-indigo-900/50 text-indigo-800" : "text-slate-400 hover:bg-slate-900"
+                className={`px-3 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${
+                  activeTab === "all" ? "bg-blue-500/15 text-blue-300" : "text-white/50 hover:bg-[var(--surface-2)]"
                 }`}
               >
                 All Funds
@@ -219,14 +187,14 @@ export default async function Home({
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm uppercase tracking-wide text-slate-400">What You Can Do</h2>
+          <h2 className="text-sm uppercase tracking-wide text-white/50">What You Can Do</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {FEATURES.map((feature) => (
               <Link key={feature.href} href={feature.href} className={`${CARD_LINK_CLASS} p-6 space-y-3`}>
-                <feature.icon className="h-5 w-5 text-indigo-500" />
+                <feature.icon className="h-5 w-5 text-blue-500" />
                 <div>
-                  <h3 className="text-sm font-semibold text-slate-100">{feature.title}</h3>
-                  <p className="text-sm text-slate-400 mt-1">{feature.description}</p>
+                  <h3 className="text-sm font-semibold text-white">{feature.title}</h3>
+                  <p className="text-sm text-white/50 mt-1">{feature.description}</p>
                 </div>
               </Link>
             ))}
@@ -238,17 +206,17 @@ export default async function Home({
 }
 
 const CARD_LINK_CLASS =
-  "rounded-lg border border-slate-800 hover:border-slate-700 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+  "rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] hover:border-[var(--border-hover)] hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--canvas)]";
 
 // Same navy-to-blue gradient as the marketing site's "retirement" goal card
 // (anuragyadav9786/new-design's goalVisuals.retirement) — used only for
-// fund cards specifically, not the plain white CARD_LINK_CLASS cards
-// elsewhere on this page, so its own text colors are set explicitly
-// (white-based) rather than through the sitewide light-theme slate remap,
-// which assumes a light card background.
+// fund cards specifically, not the plain CARD_LINK_CLASS cards elsewhere on
+// this page, so its own text colors are set explicitly (white-based)
+// rather than through the sitewide dark-theme tokens above, which assume
+// a near-black card background rather than this navy gradient.
 const FUND_CARD_CLASS =
-  "rounded-lg border border-white/10 text-white hover:-translate-y-0.5 hover:border-white/20 hover:shadow-lg hover:shadow-indigo-950/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
-const FUND_CARD_GRADIENT = "linear-gradient(160deg, var(--tf-navy) 0%, #123262 55%, var(--tf-blue) 130%)";
+  "rounded-lg border border-white/10 text-white hover:-translate-y-0.5 hover:border-white/20 hover:shadow-lg hover:shadow-black/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--canvas)]";
+const FUND_CARD_GRADIENT = "linear-gradient(160deg, #081b33 0%, #123262 55%, #1d5eff 130%)";
 
 async function CompleteDataGrid({
   fundIds,
@@ -276,9 +244,9 @@ async function CompleteDataGrid({
   const availableIds = fundIds.filter((id) => funds.some((f) => f.id === id));
   if (availableIds.length === 0) {
     return (
-      <p className="text-sm text-slate-400 py-6">
+      <p className="text-sm text-white/50 py-6">
         Featured funds are refreshing —{" "}
-        <Link href="/research" className="text-indigo-500 underline underline-offset-2 hover:text-indigo-600">
+        <Link href="/research" className="text-blue-400 underline underline-offset-2 hover:text-blue-300">
           browse all funds →
         </Link>
       </p>
@@ -342,7 +310,7 @@ async function CompleteDataGrid({
 }
 
 function AllFundsGrid({ funds }: { funds: FundDetail[] }) {
-  if (funds.length === 0) return <p className="text-sm text-slate-400">No funds available yet.</p>;
+  if (funds.length === 0) return <p className="text-sm text-white/50">No funds available yet.</p>;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {funds.map((fund) => {
@@ -390,7 +358,7 @@ async function HeroFundsSection() {
       {heroFunds.length > 0 && (
         <Link
           href={`/research/${heroFunds[0].id}`}
-          className="mt-5 inline-flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-sm"
+          className="mt-5 inline-flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--canvas)] rounded-sm"
         >
           See a live example: {heroFunds[0].scheme_name} →
         </Link>
@@ -403,23 +371,18 @@ async function HeroFundsSection() {
   );
 }
 
-/** Its own async component (see HeroFundsSection above) so a slow reality-
- * check fetch never blocks the hero or Explore Funds sections from
- * streaming in first. */
-async function RealityCheckSection() {
-  const [realityA, realityB, benchmark] = await Promise.all([
-    loadRealityCheckFund(REALITY_CHECK_PAIR[0]),
-    loadRealityCheckFund(REALITY_CHECK_PAIR[1]),
-    loadBenchmarkMetrics(),
-  ]);
+/** Its own async component (see HeroFundsSection above) so a slow myth-vs-
+ * reality fetch never blocks the rest of the hero from streaming in first. */
+async function MythVsRealitySection() {
+  const data = await loadMythVsRealityData(MYTH_VS_REALITY_FUND_ID);
 
-  if (!realityA || !realityB) {
+  if (!data) {
     return (
-      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-6">
-        <h2 className="text-lg font-semibold text-slate-100">See What Most Portals Hide</h2>
-        <p className="text-sm text-slate-400 mt-2">
+      <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-6">
+        <h2 className="text-lg font-semibold text-white">Myth vs. Reality</h2>
+        <p className="text-sm text-white/50 mt-2">
           This comparison is temporarily unavailable while its fund data refreshes.{" "}
-          <Link href="/research/compare" className="text-indigo-500 underline underline-offset-2 hover:text-indigo-600">
+          <Link href="/research/compare" className="text-blue-400 underline underline-offset-2 hover:text-blue-300">
             Compare any two funds yourself →
           </Link>
         </p>
@@ -427,7 +390,7 @@ async function RealityCheckSection() {
     );
   }
 
-  return <RealityCheckWidget fundA={realityA} fundB={realityB} benchmark={benchmark} />;
+  return <MythVsRealityCard fund={data} />;
 }
 
 /** The Explore Funds grid + "Browse all" link, split out so the section
@@ -458,7 +421,7 @@ async function ExploreFundsGrid({ activeTab }: { activeTab: "complete" | "all" }
 
       <Link
         href="/research"
-        className="inline-block rounded-sm text-xs text-indigo-500 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+        className="inline-block rounded-sm text-xs text-blue-400 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--canvas)]"
       >
         Browse all {fundCount.count.toLocaleString("en-IN")} funds →
       </Link>
@@ -495,56 +458,17 @@ function HeroFundsSkeleton() {
   );
 }
 
-function RealityCheckSkeleton() {
+function MythVsRealitySkeleton() {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-6 space-y-6 animate-pulse">
+    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-6 sm:p-8 space-y-6 animate-pulse">
       <div className="space-y-2">
-        <h2 className="text-lg font-semibold text-slate-100">See What Most Portals Hide</h2>
-        <div className="h-3 w-2/3 rounded bg-slate-800" />
+        <div className="h-3 w-1/3 rounded bg-white/10" />
+        <div className="h-3 w-1/4 rounded bg-white/10" />
       </div>
-      <div className="space-y-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <div key={i} className="h-8 rounded bg-slate-900 border border-slate-800" />
-        ))}
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <div className="h-16 rounded bg-slate-900 border border-slate-800" />
-        <div className="h-16 rounded bg-slate-900 border border-slate-800" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8">
+        <div className="h-24 rounded bg-white/5 border border-[var(--border-subtle)]" />
+        <div className="h-24 rounded bg-white/5 border border-[var(--border-subtle)]" />
       </div>
     </div>
-  );
-}
-
-function PulseIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" className={className}>
-      <path d="M3 12h4l2-7 4 14 2-7h6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function SplitIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" className={className}>
-      <path d="M12 3v18M7 7l-4 5 4 5M17 7l4 5-4 5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function LayersIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" className={className}>
-      <path d="m12 3 9 5-9 5-9-5 9-5Z" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="m3 13 9 5 9-5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function WaveIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" className={className}>
-      <path d="M3 17c2-4 4-4 6 0s4 4 6 0 4-4 6 0" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3 9c2-4 4-4 6 0s4 4 6 0 4-4 6 0" strokeLinecap="round" strokeLinejoin="round" opacity="0.4" />
-    </svg>
   );
 }
