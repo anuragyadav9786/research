@@ -135,8 +135,8 @@ export default async function Home({
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <SiteHeader active="dashboard" />
 
-      <main className="px-8 py-12 max-w-5xl mx-auto space-y-16">
-        <section className="relative isolate flex flex-col items-center text-center py-6 sm:py-10">
+      <main className="px-8 pt-6 pb-12 max-w-5xl mx-auto space-y-16">
+        <section className="relative isolate flex flex-col items-center text-center py-2 sm:py-4">
           {/* Soft radial glow — purely decorative, sits behind the search bar like a focal spotlight. */}
           <div
             aria-hidden="true"
