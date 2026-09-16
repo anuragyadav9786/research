@@ -34,7 +34,7 @@ export function SiteHeader({ active }: { active?: SiteHeaderActive }) {
             className={`border-b-2 pb-1 transition-colors rounded-sm ${FOCUS_RING} ${
               item.key === active
                 ? "text-slate-100 font-medium border-indigo-500"
-                : "text-slate-500 hover:text-slate-100 border-transparent"
+                : "text-slate-400 hover:text-slate-100 border-transparent"
             }`}
           >
             {item.label}

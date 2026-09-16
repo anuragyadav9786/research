@@ -23,7 +23,7 @@ export function DistributionBar({
   const { min, max, p10, p25, median, p75, p90 } = distribution;
 
   if (min === null || max === null || min === max) {
-    return <p className="text-sm text-slate-500">Not enough history to show a distribution.</p>;
+    return <p className="text-sm text-slate-400">Not enough history to show a distribution.</p>;
   }
 
   const axisMin = scaleMin ?? min;
@@ -56,7 +56,7 @@ export function DistributionBar({
           <div className="absolute top-0 bottom-0 w-px bg-slate-400" style={{ left: `${toPct(0)}%` }} title="0%" />
         )}
       </div>
-      <div className="flex justify-between text-xs text-slate-500">
+      <div className="flex justify-between text-xs text-slate-400">
         <span>worst {formatPct(min)}</span>
         <span className="text-slate-300">median {formatPct(median)}</span>
         <span>best {formatPct(max)}</span>

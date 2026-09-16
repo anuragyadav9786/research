@@ -42,7 +42,7 @@ export function MobileNav({
               href={item.href}
               onClick={() => setOpen(false)}
               className={`rounded-sm py-2.5 transition-colors ${FOCUS_RING} ${
-                item.key === active ? "text-slate-100 font-medium" : "text-slate-500 hover:text-slate-100"
+                item.key === active ? "text-slate-100 font-medium" : "text-slate-400 hover:text-slate-100"
               }`}
             >
               {item.label}

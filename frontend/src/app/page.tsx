@@ -151,7 +151,7 @@ export default async function Home({
                 placeholder="Search by fund, AMC, or category…"
                 className="min-w-0 flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none"
               />
-              <kbd className="hidden sm:inline-flex items-center rounded border border-slate-700 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
+              <kbd className="hidden sm:inline-flex items-center rounded border border-slate-700 px-1.5 py-0.5 text-[10px] font-mono text-slate-400">
                 Enter ↵
               </kbd>
               <button
@@ -186,7 +186,7 @@ export default async function Home({
 
         <section className="space-y-4">
           <div className="flex items-baseline justify-between flex-wrap gap-3">
-            <h2 className="text-sm uppercase tracking-wide text-slate-500">Explore Funds</h2>
+            <h2 className="text-sm uppercase tracking-wide text-slate-400">Explore Funds</h2>
             <div className="flex rounded-md border border-slate-800 overflow-hidden text-xs">
               <Link
                 href="/?tab=complete"
@@ -213,14 +213,14 @@ export default async function Home({
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm uppercase tracking-wide text-slate-500">What You Can Do</h2>
+          <h2 className="text-sm uppercase tracking-wide text-slate-400">What You Can Do</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {FEATURES.map((feature) => (
               <Link key={feature.href} href={feature.href} className={`${CARD_LINK_CLASS} p-6 space-y-3`}>
                 <feature.icon className="h-5 w-5 text-indigo-400" />
                 <div>
                   <h3 className="text-sm font-semibold text-slate-100">{feature.title}</h3>
-                  <p className="text-sm text-slate-500 mt-1">{feature.description}</p>
+                  <p className="text-sm text-slate-400 mt-1">{feature.description}</p>
                 </div>
               </Link>
             ))}
@@ -260,9 +260,9 @@ async function CompleteDataGrid({
   const availableIds = fundIds.filter((id) => funds.some((f) => f.id === id));
   if (availableIds.length === 0) {
     return (
-      <p className="text-sm text-slate-500 py-6">
+      <p className="text-sm text-slate-400 py-6">
         Featured funds are refreshing —{" "}
-        <Link href="/research" className="text-indigo-400 hover:text-indigo-300">
+        <Link href="/research" className="text-indigo-400 underline underline-offset-2 hover:text-indigo-300">
           browse all funds →
         </Link>
       </p>
@@ -279,13 +279,13 @@ async function CompleteDataGrid({
           <Link key={id} href={`/research/${id}`} className={`${CARD_LINK_CLASS} p-4 space-y-3`}>
             <div>
               <p className="text-sm font-medium leading-snug text-slate-100 line-clamp-2">{fund.scheme_name}</p>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-400 mt-0.5">
                 {fund.amc_name} · {fund.category}
               </p>
             </div>
             <div className="flex items-start justify-between pt-2 border-t border-slate-900 text-xs">
               <div>
-                <div className="text-slate-500">3Y CAGR</div>
+                <div className="text-slate-400">3Y CAGR</div>
                 <div className={`font-mono tabular-nums mt-0.5 ${m?.cagr3y != null ? signColorClass(m.cagr3y) : "text-slate-600"}`}>
                   {m?.cagr3y != null ? `${m.cagr3y.toFixed(1)}%` : "—"}
                 </div>
@@ -299,7 +299,7 @@ async function CompleteDataGrid({
                 )}
               </div>
               <div className="text-right">
-                <div className="text-slate-500">Max Drawdown</div>
+                <div className="text-slate-400">Max Drawdown</div>
                 <div className="font-mono tabular-nums text-rose-400 mt-0.5">
                   {m?.maxDrawdown != null ? `${m.maxDrawdown.toFixed(1)}%` : "—"}
                 </div>
@@ -321,7 +321,7 @@ async function CompleteDataGrid({
 }
 
 function AllFundsGrid({ funds }: { funds: FundDetail[] }) {
-  if (funds.length === 0) return <p className="text-sm text-slate-500">No funds available yet.</p>;
+  if (funds.length === 0) return <p className="text-sm text-slate-400">No funds available yet.</p>;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {funds.map((fund) => {
@@ -330,12 +330,12 @@ function AllFundsGrid({ funds }: { funds: FundDetail[] }) {
           <Link key={fund.id} href={`/research/${fund.id}`} className={`${CARD_LINK_CLASS} p-4 space-y-2`}>
             <div>
               <p className="text-sm font-medium leading-snug text-slate-100 line-clamp-2">{fund.scheme_name}</p>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-400 mt-0.5">
                 {fund.amc_name} · {fund.category}
               </p>
             </div>
             <div className="flex items-baseline justify-between pt-1 border-t border-slate-900">
-              <span className="text-xs text-slate-500">Latest NAV</span>
+              <span className="text-xs text-slate-400">Latest NAV</span>
               <span className="text-sm font-mono tabular-nums text-slate-100">
                 {variant?.latest_nav != null ? formatNav(variant.latest_nav) : "—"}
               </span>
@@ -391,9 +391,9 @@ async function RealityCheckSection() {
     return (
       <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-6">
         <h2 className="text-lg font-semibold text-slate-100">See What Most Portals Hide</h2>
-        <p className="text-sm text-slate-500 mt-2">
+        <p className="text-sm text-slate-400 mt-2">
           This comparison is temporarily unavailable while its fund data refreshes.{" "}
-          <Link href="/research/compare" className="text-indigo-400 hover:text-indigo-300">
+          <Link href="/research/compare" className="text-indigo-400 underline underline-offset-2 hover:text-indigo-300">
             Compare any two funds yourself →
           </Link>
         </p>
