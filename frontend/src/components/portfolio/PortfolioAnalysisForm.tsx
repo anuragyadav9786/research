@@ -99,7 +99,7 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
             <select
               value={row.fundId}
               onChange={(e) => updateRow(i, { fundId: e.target.value })}
-              className="min-w-[240px] rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+              className="min-w-[240px] rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm"
             >
               <option value="" disabled>Select a fund…</option>
               {funds.map((f) => (
@@ -114,15 +114,15 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
                 step={0.1}
                 value={row.weightPct}
                 onChange={(e) => updateRow(i, { weightPct: e.target.value })}
-                className="w-24 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+                className="w-24 rounded-md border border-slate-800 bg-slate-900 px-3 py-2 text-sm"
               />
-              <span className="text-sm text-neutral-500">%</span>
+              <span className="text-sm text-slate-500">%</span>
             </div>
             <button
               type="button"
               onClick={() => removeRow(i)}
               disabled={rows.length <= MIN_ROWS}
-              className="text-sm text-neutral-500 hover:text-rose-400 disabled:opacity-30 disabled:hover:text-neutral-500"
+              className="text-sm text-slate-500 hover:text-rose-400 disabled:opacity-30 disabled:hover:text-slate-500"
             >
               Remove
             </button>
@@ -134,17 +134,17 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
             type="button"
             onClick={addRow}
             disabled={rows.length >= MAX_ROWS}
-            className="text-sm rounded-md border border-neutral-800 px-3 py-1.5 text-neutral-400 hover:text-neutral-100 disabled:opacity-30"
+            className="text-sm rounded-md border border-slate-800 px-3 py-1.5 text-slate-400 hover:text-slate-100 disabled:opacity-30"
           >
             + Add fund
           </button>
-          <span className={`text-sm ${Math.abs(totalWeight - 100) > 0.5 ? "text-amber-400" : "text-neutral-500"}`}>
+          <span className={`text-sm ${Math.abs(totalWeight - 100) > 0.5 ? "text-amber-400" : "text-slate-500"}`}>
             Total: {totalWeight.toFixed(1)}%
           </span>
           <button
             type="submit"
             disabled={loading}
-            className="ml-auto rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm hover:bg-neutral-700 disabled:opacity-50"
+            className="ml-auto rounded-md border border-slate-700 bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700 disabled:opacity-50"
           >
             {loading ? "Analysing…" : "Analyse Portfolio"}
           </button>
@@ -154,13 +154,13 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
       {error && <p className="text-sm text-rose-400">{error}</p>}
 
       {result && (
-        <div className="space-y-6 border-t border-neutral-900 pt-6">
+        <div className="space-y-6 border-t border-slate-900 pt-6">
           <div>
-            <h2 className="text-sm uppercase tracking-wide text-neutral-500 mb-3">Portfolio</h2>
-            <ul className="text-sm text-neutral-300 space-y-1">
+            <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Portfolio</h2>
+            <ul className="text-sm text-slate-300 space-y-1">
               {result.funds.map((f) => (
                 <li key={f.fund_id} className="flex justify-between max-w-md">
-                  <Link href={`/research/${f.fund_id}`} className="text-cyan-400 hover:text-cyan-300">
+                  <Link href={`/research/${f.fund_id}`} className="text-indigo-400 hover:text-indigo-300">
                     {f.scheme_name}
                   </Link>
                   <span>{formatNumber(f.weight_pct, 1)}%</span>
@@ -199,32 +199,32 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
           </div>
 
           <div className="grid sm:grid-cols-2 gap-4">
-            <div className="rounded-lg border border-neutral-800 p-4">
-              <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-3">Sector Allocation (Look-Through)</h3>
+            <div className="rounded-lg border border-slate-800 p-4">
+              <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">Sector Allocation (Look-Through)</h3>
               <AllocationBar slices={result.sector_allocation} />
             </div>
-            <div className="rounded-lg border border-neutral-800 p-4">
-              <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-3">Market-Cap Allocation (Look-Through)</h3>
+            <div className="rounded-lg border border-slate-800 p-4">
+              <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">Market-Cap Allocation (Look-Through)</h3>
               <AllocationBar slices={result.market_cap_allocation} />
             </div>
           </div>
 
           {result.combined_top_holdings.length > 0 && (
             <div>
-              <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-3">Combined Top Holdings</h3>
-              <div className="overflow-x-auto rounded-lg border border-neutral-800">
+              <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">Combined Top Holdings</h3>
+              <div className="overflow-x-auto rounded-lg border border-slate-800">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-800 text-left text-xs uppercase tracking-wide text-neutral-500">
+                    <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500">
                       <th className="px-4 py-2 font-medium">#</th>
                       <th className="px-4 py-2 font-medium">Security</th>
                       <th className="px-4 py-2 font-medium text-right">Effective Weight</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-900">
+                  <tbody className="divide-y divide-slate-900">
                     {result.combined_top_holdings.map((h) => (
                       <tr key={h.rank}>
-                        <td className="px-4 py-2 text-neutral-500">{h.rank}</td>
+                        <td className="px-4 py-2 text-slate-500">{h.rank}</td>
                         <td className="px-4 py-2">{h.security_name}</td>
                         <td className="px-4 py-2 text-right font-medium">{formatNumber(h.effective_weight_pct, 2)}%</td>
                       </tr>
@@ -237,24 +237,24 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
 
           {result.pairwise_overlap.length > 0 && (
             <div>
-              <h3 className="text-xs uppercase tracking-wide text-neutral-500 mb-3">Pairwise Fund Overlap</h3>
-              <div className="overflow-x-auto rounded-lg border border-neutral-800">
+              <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">Pairwise Fund Overlap</h3>
+              <div className="overflow-x-auto rounded-lg border border-slate-800">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-neutral-800 text-left text-xs uppercase tracking-wide text-neutral-500">
+                    <tr className="border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500">
                       <th className="px-4 py-2 font-medium">Fund A</th>
                       <th className="px-4 py-2 font-medium">Fund B</th>
                       <th className="px-4 py-2 font-medium text-right">Weighted Overlap</th>
                       <th className="px-4 py-2 font-medium text-right">Level</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-900">
+                  <tbody className="divide-y divide-slate-900">
                     {result.pairwise_overlap.map((o) => (
                       <tr key={`${o.fund_a_id}-${o.fund_b_id}`}>
                         <td className="px-4 py-2">{o.fund_a_name}</td>
                         <td className="px-4 py-2">{o.fund_b_name}</td>
                         <td className="px-4 py-2 text-right font-medium">{formatNumber(o.weighted_overlap_pct, 1)}%</td>
-                        <td className="px-4 py-2 text-right text-neutral-400">
+                        <td className="px-4 py-2 text-right text-slate-400">
                           {OVERLAP_LABELS[o.overlap_label] ?? o.overlap_label}
                         </td>
                       </tr>
@@ -266,7 +266,7 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
           )}
 
           {result.drawdown.available && (
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-slate-500">
               Portfolio-level max drawdown from {formatDate(result.drawdown.peak_date)} to{" "}
               {formatDate(result.drawdown.trough_date)}
               {result.drawdown.recovered
@@ -275,7 +275,7 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
             </p>
           )}
 
-          <p className="text-xs text-neutral-600 border-t border-neutral-900 pt-4">{result.disclaimer}</p>
+          <p className="text-xs text-slate-600 border-t border-slate-900 pt-4">{result.disclaimer}</p>
         </div>
       )}
     </div>

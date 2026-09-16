@@ -32,7 +32,7 @@ export function NavChart({
   const allDates = Array.from(new Set([...fundRebased.keys(), ...benchmarkRebased.keys()])).sort();
 
   if (allDates.length === 0) {
-    return <p className="text-sm text-neutral-500">No NAV history available yet.</p>;
+    return <p className="text-sm text-slate-500">No NAV history available yet.</p>;
   }
 
   const step = Math.max(1, Math.floor(allDates.length / MAX_CHART_POINTS));
@@ -45,21 +45,21 @@ export function NavChart({
       <div className="h-72 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
-            <XAxis dataKey="date" tick={{ fill: "#a3a3a3", fontSize: 11 }} minTickGap={50} />
-            <YAxis tick={{ fill: "#a3a3a3", fontSize: 11 }} width={44} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+            <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} minTickGap={50} />
+            <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} width={44} />
             <Tooltip
-              contentStyle={{ background: "#171717", border: "1px solid #404040", fontSize: 12 }}
-              labelStyle={{ color: "#e5e5e5" }}
+              contentStyle={{ background: "#0f172a", border: "1px solid #334155", fontSize: 12 }}
+              labelStyle={{ color: "#e2e8f0" }}
             />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            <Line type="monotone" dataKey="fund" name={fundLabel} stroke="#22d3ee" dot={false} strokeWidth={1.5} />
+            <Line type="monotone" dataKey="fund" name={fundLabel} stroke="#818cf8" dot={false} strokeWidth={1.5} />
             {benchmarkLabel && (
               <Line
                 type="monotone"
                 dataKey="benchmark"
                 name={benchmarkLabel}
-                stroke="#a3a3a3"
+                stroke="#94a3b8"
                 dot={false}
                 strokeWidth={1.5}
                 strokeDasharray="4 3"
@@ -68,7 +68,7 @@ export function NavChart({
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <p className="text-xs text-neutral-500 mt-2">
+      <p className="text-xs text-slate-500 mt-2">
         Rebased to 100 at the start of the available history for comparison — not actual investment amounts.
       </p>
     </div>

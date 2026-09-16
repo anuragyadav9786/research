@@ -32,7 +32,7 @@ export function AiSummaryPanel({ fundId, plan, option }: { fundId: number; plan:
       <button
         onClick={handleGenerate}
         disabled={loading}
-        className="text-sm rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 hover:bg-neutral-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+        className="text-sm rounded-md border border-slate-700 bg-slate-800 px-4 py-2 hover:bg-slate-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
       >
         {loading ? "Generating…" : "Generate AI Summary"}
       </button>
@@ -45,16 +45,16 @@ export function AiSummaryPanel({ fundId, plan, option }: { fundId: number; plan:
 
   if (!result!.available) {
     return (
-      <div className="rounded-lg border border-neutral-800 p-4">
-        <p className="text-sm text-neutral-500">{result!.reason}</p>
+      <div className="rounded-lg border border-slate-800 p-4">
+        <p className="text-sm text-slate-500">{result!.reason}</p>
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-neutral-800 p-4 space-y-3">
-      <p className="text-sm text-neutral-200 leading-relaxed">{result!.summary}</p>
-      <p className="text-xs text-neutral-600 border-t border-neutral-900 pt-3">{result!.ai_disclaimer}</p>
+    <div className="rounded-lg border border-slate-800 p-4 space-y-3">
+      <p className="text-sm text-slate-200 leading-relaxed">{result!.summary}</p>
+      <p className="text-xs text-slate-600 border-t border-slate-900 pt-3">{result!.ai_disclaimer}</p>
     </div>
   );
 }

@@ -31,16 +31,16 @@ export default async function MarketIntelligencePage() {
   const regimes = await listMarketRegimes();
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
+    <div className="min-h-screen bg-slate-950 text-slate-100">
       <SiteHeader active="market" />
 
       <main className="px-8 py-10 max-w-4xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-semibold">Market Regimes</h1>
-          <p className="text-neutral-400 text-sm mt-1">
+          <p className="text-slate-400 text-sm mt-1">
             Historical market-cycle windows used to evaluate fund behaviour on each fund&apos;s page.
           </p>
-          <p className="text-xs text-neutral-600 mt-2 max-w-2xl">
+          <p className="text-xs text-slate-600 mt-2 max-w-2xl">
             In the current sample dataset these are illustrative date windows derived from the Phase 2
             synthetic seed data&apos;s own shape, not verified real-world market classifications. Sector
             trends and a broader risk environment view are not built yet.
@@ -48,20 +48,20 @@ export default async function MarketIntelligencePage() {
         </div>
 
         {regimes.length === 0 ? (
-          <p className="text-sm text-neutral-500">No market regimes defined yet.</p>
+          <p className="text-sm text-slate-500">No market regimes defined yet.</p>
         ) : (
-          <div className="rounded-lg border border-neutral-800 divide-y divide-neutral-800">
+          <div className="rounded-lg border border-slate-800 divide-y divide-slate-800">
             {regimes.map((r) => (
               <div key={r.id} className="flex items-center justify-between px-5 py-4">
                 <div>
                   <div className="font-medium">{r.name.replace(/^Sample Regime — /, "")}</div>
-                  <div className="text-sm text-neutral-500 mt-0.5">
+                  <div className="text-sm text-slate-500 mt-0.5">
                     {formatDate(r.start_date)} – {r.end_date ? formatDate(r.end_date) : "present"}
                   </div>
                 </div>
                 <span
                   className={`text-xs px-2.5 py-1 rounded-full ${
-                    REGIME_TYPE_COLORS[r.regime_type] ?? "bg-neutral-800 text-neutral-300"
+                    REGIME_TYPE_COLORS[r.regime_type] ?? "bg-slate-800 text-slate-300"
                   }`}
                 >
                   {REGIME_TYPE_LABELS[r.regime_type] ?? r.regime_type}
@@ -71,10 +71,10 @@ export default async function MarketIntelligencePage() {
           </div>
         )}
 
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-slate-500">
           See how any fund performed during these periods on its own research page (Market-Cycle
           Behaviour section) — start from{" "}
-          <Link href="/research" className="text-cyan-400 hover:text-cyan-300">
+          <Link href="/research" className="text-indigo-400 hover:text-indigo-300">
             Research
           </Link>
           .
