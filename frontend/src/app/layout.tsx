@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
-import { Inter, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono, Source_Serif_4 } from "next/font/google";
 
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import "./globals.css";
 
-// Matches the marketing site's font exactly (see
-// anuragyadav9786/new-design's redesign-styles.tsx) — Geist Mono stays for
-// this platform's own tabular figures (NAV/CAGR/drawdown columns), which
-// the marketing site has no equivalent of.
+// Inter for nav/labels/body, Geist Mono for every numeric data cell
+// (NAV/CAGR/drawdown — already applied via `font-mono tabular-nums`
+// throughout), and Source Serif 4 for the hero's high-conviction
+// analytical claim — the "editorial contrasts" pairing from the
+// Institutional Terminal redesign brief.
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
@@ -15,6 +16,11 @@ const inter = Inter({
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+const sourceSerif = Source_Serif_4({
+  variable: "--font-source-serif",
   subsets: ["latin"],
 });
 
@@ -30,7 +36,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${inter.variable} ${geistMono.variable} ${sourceSerif.variable} antialiased`}>
         {children}
         <SiteFooter />
       </body>

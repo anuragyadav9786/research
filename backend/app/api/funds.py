@@ -152,7 +152,7 @@ def list_funds(
     search: str | None = Query(
         None, description="Scheme name search — substring match, tolerant of minor typos"
     ),
-    category: str | None = Query(None, description="Exact category match, e.g. 'Equity - Large Cap'"),
+    category: str | None = Query(None, description="Case-insensitive substring match, e.g. 'Large Cap'. Comma-separated terms OR together, e.g. 'Small Cap,Mid Cap'."),
     amc: str | None = Query(None, description="Case-insensitive substring match on AMC name"),
     limit: int = Query(
         50, gt=0, le=2000,
@@ -177,7 +177,7 @@ def count_funds(
     search: str | None = Query(
         None, description="Scheme name search — substring match, tolerant of minor typos"
     ),
-    category: str | None = Query(None, description="Exact category match, e.g. 'Equity - Large Cap'"),
+    category: str | None = Query(None, description="Case-insensitive substring match, e.g. 'Large Cap'. Comma-separated terms OR together, e.g. 'Small Cap,Mid Cap'."),
     amc: str | None = Query(None, description="Case-insensitive substring match on AMC name"),
     db: Session = Depends(get_db),
 ) -> dict:
