@@ -691,13 +691,22 @@ jobs:
 
           async def main():
               requests_log = []
+              responses = []
 
               async with async_playwright() as p:
                   browser = await p.chromium.launch()
                   page = await browser.new_page()
                   page.on("request", lambda req: requests_log.append(
-                      {"method": req.method, "url": req.url, "resource_type": req.resource_type}
+                      {"method": req.method, "url": req.url, "resource_type": req.resource_type, "post_data": req.post_data}
                   ))
+                  # Kept as full Response objects (not just url/status) so
+                  # their body can be read after the page interaction is
+                  # done — this is what actually revealed the real payload
+                  # on Mirae Asset's AjaxService/GetDownloadsData XHR call,
+                  # which the URL-keyword filter alone would have missed
+                  # (its own URL contains neither "disclosure" nor
+                  # "portfolio").
+                  page.on("response", lambda res: responses.append(res))
 
                   print(f"Navigating to {URL}")
                   try:
@@ -724,15 +733,45 @@ jobs:
                       except Exception as exc:
                           print(f"  click FAILED: {type(exc).__name__}: {exc}")
 
+                  # A request is "interesting" if its URL matches the file/
+                  # keyword regex, OR it's an xhr/fetch call at all — most
+                  # AMC sites drive their real download link through a
+                  # background data request whose URL itself gives no hint
+                  # (e.g. "AjaxService/GetDownloadsData"), so resource type
+                  # alone has to catch what the keyword regex would miss.
+                  interesting = [
+                      r for r in requests_log
+                      if FILE_OR_KEYWORD_RE.search(r["url"]) or r["resource_type"] in ("xhr", "fetch")
+                  ]
                   print(f"\n-- {len(requests_log)} network requests captured during render/interaction --")
-                  interesting = [r for r in requests_log if FILE_OR_KEYWORD_RE.search(r["url"])]
-                  print(f"-- {len(interesting)} of those match a file extension or mention 'disclosure'/'portfolio' --")
+                  print(f"-- {len(interesting)} of those are xhr/fetch calls or match a file extension/'disclosure'/'portfolio' --")
                   for r in interesting[:60]:
-                      print(f"  [{r['resource_type']}] {r['method']} {r['url']}")
+                      post_suffix = f"\n      POST body: {r['post_data']}" if r["post_data"] else ""
+                      print(f"  [{r['resource_type']}] {r['method']} {r['url']}{post_suffix}")
 
                   print(f"\n-- all {min(len(requests_log), 150)} captured request URLs (capped at 150) --")
                   for r in requests_log[:150]:
                       print(f"  [{r['resource_type']}] {r['method']} {r['url']}")
+
+                  # Response bodies only for the interesting xhr/fetch
+                  # calls above — this is what a fast fetch_<amc> adapter
+                  # would need to see to replicate the call directly with
+                  # plain httpx, skipping the browser at runtime entirely.
+                  interesting_urls = {r["url"] for r in interesting if r["resource_type"] in ("xhr", "fetch")}
+                  print(f"\n-- response bodies for {len(interesting_urls)} matching xhr/fetch request(s) --")
+                  seen = set()
+                  for res in responses:
+                      if res.url not in interesting_urls or res.url in seen:
+                          continue
+                      seen.add(res.url)
+                      try:
+                          body = await res.text()
+                      except Exception as exc:
+                          body = f"<could not read body: {type(exc).__name__}: {exc}>"
+                      print(f"  URL: {res.url}")
+                      print(f"  status: {res.status}")
+                      print(f"  body (first 3000 chars): {body[:3000]}")
+                      print()
 
                   print(f"\n-- final page title: {await page.title()!r} --")
                   print(f"-- final page URL (after any redirects/navigation): {page.url} --")
