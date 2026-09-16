@@ -160,7 +160,7 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
             <ul className="text-sm text-slate-300 space-y-1">
               {result.funds.map((f) => (
                 <li key={f.fund_id} className="flex justify-between max-w-md">
-                  <Link href={`/research/${f.fund_id}`} className="text-indigo-400 hover:text-indigo-300">
+                  <Link href={`/research/${f.fund_id}`} className="text-indigo-400 hover:text-indigo-600">
                     {f.scheme_name}
                   </Link>
                   <span>{formatNumber(f.weight_pct, 1)}%</span>
@@ -221,7 +221,7 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
                       <th className="px-4 py-2 font-medium text-right">Effective Weight</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-900">
+                  <tbody className="divide-y divide-slate-800">
                     {result.combined_top_holdings.map((h) => (
                       <tr key={h.rank}>
                         <td className="px-4 py-2 text-slate-500">{h.rank}</td>
@@ -248,7 +248,7 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
                       <th className="px-4 py-2 font-medium text-right">Level</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-900">
+                  <tbody className="divide-y divide-slate-800">
                     {result.pairwise_overlap.map((o) => (
                       <tr key={`${o.fund_a_id}-${o.fund_b_id}`}>
                         <td className="px-4 py-2">{o.fund_a_name}</td>

@@ -74,7 +74,7 @@ export default async function MarketIntelligencePage() {
         <p className="text-xs text-slate-500">
           See how any fund performed during these periods on its own research page (Market-Cycle
           Behaviour section) — start from{" "}
-          <Link href="/research" className="text-indigo-400 hover:text-indigo-300">
+          <Link href="/research" className="text-indigo-400 hover:text-indigo-600">
             Research
           </Link>
           .

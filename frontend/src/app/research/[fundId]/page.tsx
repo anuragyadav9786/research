@@ -160,7 +160,7 @@ export default async function FundDetailPage({
                 aria-disabled={!availablePlans.has(p)}
                 className={`px-3 py-1.5 capitalize ${FOCUS_RING} ${
                   p === plan
-                    ? "bg-indigo-900/60 text-indigo-100"
+                    ? "bg-indigo-900/60 text-indigo-800"
                     : availablePlans.has(p)
                       ? "hover:bg-slate-900 text-slate-300"
                       : "text-slate-700 pointer-events-none"
@@ -177,7 +177,7 @@ export default async function FundDetailPage({
                 href={urlFor({ option: o })}
                 className={`px-3 py-1.5 uppercase ${FOCUS_RING} ${
                   o === option
-                    ? "bg-indigo-900/60 text-indigo-100"
+                    ? "bg-indigo-900/60 text-indigo-800"
                     : availableOptions.has(o)
                       ? "hover:bg-slate-900 text-slate-300"
                       : "text-slate-700 pointer-events-none"
@@ -282,7 +282,7 @@ export default async function FundDetailPage({
                       key={w}
                       href={urlFor({ window: w })}
                       className={`px-3 py-1 ${FOCUS_RING} ${
-                        w === windowYears ? "bg-indigo-900/60 text-indigo-100" : "hover:bg-slate-900 text-slate-400"
+                        w === windowYears ? "bg-indigo-900/60 text-indigo-800" : "hover:bg-slate-900 text-slate-400"
                       }`}
                     >
                       {w}Y

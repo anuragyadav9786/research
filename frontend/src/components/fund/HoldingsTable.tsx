@@ -21,7 +21,7 @@ export function HoldingsTable({ holdings }: { holdings: HoldingItem[] }) {
             <th className="px-4 py-2 font-medium text-right">Weight</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-900">
+        <tbody className="divide-y divide-slate-800">
           {holdings.map((h) => (
             <tr key={h.rank}>
               <td className="px-4 py-2 text-slate-500">{h.rank}</td>
