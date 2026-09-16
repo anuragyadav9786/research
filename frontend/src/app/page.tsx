@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { AnimatedHeroHeadline } from "@/components/hero/AnimatedHeroHeadline";
@@ -106,6 +107,16 @@ async function loadRealityCheckFund(fundId: number): Promise<RealityCheckFund | 
   }
 }
 
+// Shared by the hero cards and the "Most Complete Data" explore tab — kept
+// as one function so both call sites hit the exact same fetch() signature
+// per fund, letting Next.js's request-level fetch memoization deduplicate
+// the network calls instead of fetching each fund twice per page load.
+async function loadHeroFunds(): Promise<FundDetail[]> {
+  return (await Promise.all(FEATURED_FUND_IDS.map((id) => getFund(id).catch(() => null)))).filter(
+    (f): f is FundDetail => f !== null,
+  );
+}
+
 export default async function Home({
   searchParams,
 }: {
@@ -113,27 +124,6 @@ export default async function Home({
 }) {
   const { tab } = await searchParams;
   const activeTab = tab === "all" ? "all" : "complete";
-
-  const [fundCount, realityA, realityB, benchmark, exploreList] = await Promise.all([
-    countFunds().catch(() => ({ count: 0 })),
-    loadRealityCheckFund(REALITY_CHECK_PAIR[0]),
-    loadRealityCheckFund(REALITY_CHECK_PAIR[1]),
-    loadBenchmarkMetrics(),
-    activeTab === "all" ? listFunds({ limit: EXPLORE_COUNT }).catch(() => ({ items: [], has_more: false })) : null,
-  ]);
-
-  // Fetched unconditionally (unlike featuredFunds below) so the hero's fund
-  // cards stay populated regardless of which Explore Funds tab is active.
-  const heroFunds = (await Promise.all(FEATURED_FUND_IDS.map((id) => getFund(id).catch(() => null)))).filter(
-    (f): f is FundDetail => f !== null,
-  );
-
-  const featuredFunds =
-    activeTab === "complete"
-      ? heroFunds
-      : (await Promise.all((exploreList?.items ?? []).map((f) => getFund(f.id).catch(() => null)))).filter(
-          (f): f is FundDetail => f !== null,
-        );
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -185,38 +175,14 @@ export default async function Home({
             ))}
           </div>
 
-          {/* For visitors who don't yet know which fund to search for — a
-           * concrete, already-populated example beats an empty search box.
-           * Only shown when a real backfilled fund is actually available, so
-           * this never links somewhere the fallback state below admits is
-           * degraded. */}
-          {heroFunds.length > 0 && (
-            <Link
-              href={`/research/${heroFunds[0].id}`}
-              className="mt-5 inline-flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-sm"
-            >
-              See a live example: {heroFunds[0].scheme_name} →
-            </Link>
-          )}
-
-          <div className="mt-8 w-full max-w-4xl text-left">
-            <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={heroFunds} benchmark={benchmark} />
-          </div>
+          <Suspense fallback={<HeroFundsSkeleton />}>
+            <HeroFundsSection />
+          </Suspense>
         </section>
 
-        {realityA && realityB ? (
-          <RealityCheckWidget fundA={realityA} fundB={realityB} benchmark={benchmark} />
-        ) : (
-          <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-6">
-            <h2 className="text-lg font-semibold text-slate-100">See What Most Portals Hide</h2>
-            <p className="text-sm text-slate-500 mt-2">
-              This comparison is temporarily unavailable while its fund data refreshes.{" "}
-              <Link href="/research/compare" className="text-indigo-400 hover:text-indigo-300">
-                Compare any two funds yourself →
-              </Link>
-            </p>
-          </div>
-        )}
+        <Suspense fallback={<RealityCheckSkeleton />}>
+          <RealityCheckSection />
+        </Suspense>
 
         <section className="space-y-4">
           <div className="flex items-baseline justify-between flex-wrap gap-3">
@@ -241,18 +207,9 @@ export default async function Home({
             </div>
           </div>
 
-          {activeTab === "complete" ? (
-            <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={featuredFunds} benchmark={benchmark} />
-          ) : (
-            <AllFundsGrid funds={featuredFunds} />
-          )}
-
-          <Link
-            href="/research"
-            className="inline-block rounded-sm text-xs text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-          >
-            Browse all {fundCount.count.toLocaleString("en-IN")} funds →
-          </Link>
+          <Suspense fallback={<CardGridSkeleton count={activeTab === "all" ? EXPLORE_COUNT : FEATURED_FUND_IDS.length} />}>
+            <ExploreFundsGrid activeTab={activeTab} />
+          </Suspense>
         </section>
 
         <section className="space-y-4">
@@ -386,6 +343,144 @@ function AllFundsGrid({ funds }: { funds: FundDetail[] }) {
           </Link>
         );
       })}
+    </div>
+  );
+}
+
+/** The hero's "live example" link + fund cards, split into its own async
+ * component so <Suspense> can stream it in independently of the static
+ * headline/search bar above it, instead of the whole page waiting on this
+ * fetch before sending any HTML. */
+async function HeroFundsSection() {
+  const [heroFunds, benchmark] = await Promise.all([loadHeroFunds(), loadBenchmarkMetrics()]);
+
+  return (
+    <>
+      {/* For visitors who don't yet know which fund to search for — a
+       * concrete, already-populated example beats an empty search box.
+       * Only shown when a real backfilled fund is actually available, so
+       * this never links somewhere the fallback state below admits is
+       * degraded. */}
+      {heroFunds.length > 0 && (
+        <Link
+          href={`/research/${heroFunds[0].id}`}
+          className="mt-5 inline-flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-sm"
+        >
+          See a live example: {heroFunds[0].scheme_name} →
+        </Link>
+      )}
+
+      <div className="mt-8 w-full max-w-4xl text-left">
+        <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={heroFunds} benchmark={benchmark} />
+      </div>
+    </>
+  );
+}
+
+/** Its own async component (see HeroFundsSection above) so a slow reality-
+ * check fetch never blocks the hero or Explore Funds sections from
+ * streaming in first. */
+async function RealityCheckSection() {
+  const [realityA, realityB, benchmark] = await Promise.all([
+    loadRealityCheckFund(REALITY_CHECK_PAIR[0]),
+    loadRealityCheckFund(REALITY_CHECK_PAIR[1]),
+    loadBenchmarkMetrics(),
+  ]);
+
+  if (!realityA || !realityB) {
+    return (
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-6">
+        <h2 className="text-lg font-semibold text-slate-100">See What Most Portals Hide</h2>
+        <p className="text-sm text-slate-500 mt-2">
+          This comparison is temporarily unavailable while its fund data refreshes.{" "}
+          <Link href="/research/compare" className="text-indigo-400 hover:text-indigo-300">
+            Compare any two funds yourself →
+          </Link>
+        </p>
+      </div>
+    );
+  }
+
+  return <RealityCheckWidget fundA={realityA} fundB={realityB} benchmark={benchmark} />;
+}
+
+/** The Explore Funds grid + "Browse all" link, split out so the section
+ * heading and tab toggle above it (both static, known synchronously from
+ * `activeTab`) render immediately instead of waiting on this fetch. */
+async function ExploreFundsGrid({ activeTab }: { activeTab: "complete" | "all" }) {
+  const [fundCount, benchmark, heroFunds, exploreList] = await Promise.all([
+    countFunds().catch(() => ({ count: 0 })),
+    loadBenchmarkMetrics(),
+    loadHeroFunds(),
+    activeTab === "all" ? listFunds({ limit: EXPLORE_COUNT }).catch(() => ({ items: [], has_more: false })) : null,
+  ]);
+
+  const featuredFunds =
+    activeTab === "complete"
+      ? heroFunds
+      : (await Promise.all((exploreList?.items ?? []).map((f) => getFund(f.id).catch(() => null)))).filter(
+          (f): f is FundDetail => f !== null,
+        );
+
+  return (
+    <>
+      {activeTab === "complete" ? (
+        <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={featuredFunds} benchmark={benchmark} />
+      ) : (
+        <AllFundsGrid funds={featuredFunds} />
+      )}
+
+      <Link
+        href="/research"
+        className="inline-block rounded-sm text-xs text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+      >
+        Browse all {fundCount.count.toLocaleString("en-IN")} funds →
+      </Link>
+    </>
+  );
+}
+
+function CardGridSkeleton({ count }: { count: number }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-pulse">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="rounded-lg border border-slate-800 p-4 space-y-3">
+          <div className="h-4 w-3/4 rounded bg-slate-800" />
+          <div className="h-3 w-1/2 rounded bg-slate-800" />
+          <div className="flex items-start justify-between pt-2 border-t border-slate-900">
+            <div className="h-8 w-14 rounded bg-slate-800" />
+            <div className="h-8 w-14 rounded bg-slate-800" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HeroFundsSkeleton() {
+  return (
+    <div className="mt-8 w-full max-w-4xl">
+      <CardGridSkeleton count={FEATURED_FUND_IDS.length} />
+    </div>
+  );
+}
+
+function RealityCheckSkeleton() {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-6 space-y-6 animate-pulse">
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold text-slate-100">See What Most Portals Hide</h2>
+        <div className="h-3 w-2/3 rounded bg-slate-800" />
+      </div>
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-8 rounded bg-slate-900 border border-slate-800" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div className="h-16 rounded bg-slate-900 border border-slate-800" />
+        <div className="h-16 rounded bg-slate-900 border border-slate-800" />
+      </div>
     </div>
   );
 }
