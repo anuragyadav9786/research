@@ -791,38 +791,39 @@ jobs:
           DEBUG_BROWSER_SELECT: ${{ inputs.debug_amc_browser_select }}
           DEBUG_BROWSER_CLICK: ${{ inputs.debug_amc_browser_click }}
 
-      - name: Debug — smoke-test portfolio-fetcher's fetch_ppfas() directly (no DB writes, no Drive/Sheets calls)
+      - name: Debug — smoke-test portfolio-fetcher's AMC adapters directly (no DB writes, no Drive/Sheets calls)
         if: ${{ inputs.debug_portfolio_fetcher_smoke_test == true }}
         run: |
           # main.py imports gspread/google-api-python-client at module
-          # level for its Drive/Sheets code paths, even though
-          # fetch_ppfas itself only needs httpx — so those still have to
-          # be installed for the import alone to succeed.
+          # level for its Drive/Sheets code paths, even though the
+          # adapter functions themselves only need httpx — so those
+          # still have to be installed for the import alone to succeed.
           pip install -r portfolio-fetcher/requirements.txt
           python3 << 'PYEOF'
           import datetime
           import sys
 
           sys.path.insert(0, "portfolio-fetcher")
-          from main import fetch_ppfas  # noqa: E402
+          from main import fetch_ppfas, fetch_mirae_asset  # noqa: E402
 
-          # Runs the exact function portfolio-fetcher's scheduled Render
+          # Runs the exact functions portfolio-fetcher's scheduled Render
           # Cron Job will call — no Google credentials involved, since
-          # fetch_ppfas is pure httpx logic. Confirms the AMC-fetch side
-          # still works today without needing the Drive/Sheets setup to
-          # be live first.
+          # both adapters are pure httpx logic. Confirms the AMC-fetch
+          # side still works today without needing the Drive/Sheets
+          # setup to be live first.
           first_of_this_month = datetime.date.today().replace(day=1)
           prev_month_date = first_of_this_month - datetime.timedelta(days=1)
           target_month = prev_month_date.strftime("%Y-%m")
-
           print(f"Target month (same logic main.py uses by default): {target_month}")
-          results = fetch_ppfas(target_month)
 
-          if results:
-              for file_bytes, file_name, mimetype, scheme_hint in results:
-                  print(f"SUCCESS: {file_name} ({scheme_hint}) — {len(file_bytes)} bytes, {mimetype}")
-          else:
-              print("NO FILE FOUND — fetch_ppfas's date-guessing missed this month's real URL (see its docstring for why this can happen; not necessarily a bug).")
+          for amc_name, fetch_fn in [("PPFAS", fetch_ppfas), ("Mirae Asset", fetch_mirae_asset)]:
+              print(f"\n-- {amc_name} --")
+              results = fetch_fn(target_month)
+              if results:
+                  for file_bytes, file_name, mimetype, scheme_hint in results:
+                      print(f"SUCCESS: {file_name} ({scheme_hint}) — {len(file_bytes)} bytes, {mimetype}")
+              else:
+                  print(f"NO FILE FOUND for {amc_name} — see its docstring for known limitations (not necessarily a bug).")
           PYEOF
 
       - name: Backfill real NAV history for a curated set of featured funds

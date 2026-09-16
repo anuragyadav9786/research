@@ -9,7 +9,9 @@ import argparse
 import datetime
 import json
 import os
+import re
 import tempfile
+from urllib.parse import urljoin
 
 import httpx
 import gspread
@@ -142,8 +144,106 @@ def fetch_ppfas(month_str: str):
     return []
 
 
+MIRAE_ASSET_BASE_URL = "https://www.miraeassetmf.co.in"
+
+
+_MIRAE_TITLE_PERIOD_RE = re.compile(r"as on \d+\w*\s+([A-Za-z]+)\s+(\d{4})", re.IGNORECASE)
+
+
+def _parse_mirae_title_period(title: str) -> tuple[int, int] | None:
+    """Extracts the (month, year) a Mirae Asset item's Title actually
+    covers, e.g. 'Portfolio Details as on 31st August 2026 for ...' ->
+    (8, 2026). Deliberately NOT using the item's own PublishDate field
+    for this — confirmed via a real API response that PublishDate is
+    when the AMC uploaded the file (per SEBI, up to ~10 days into the
+    following month), not the period it covers, so filtering on it
+    would compare the wrong month entirely."""
+    match = _MIRAE_TITLE_PERIOD_RE.search(title or "")
+    if not match:
+        return None
+    month_name, year_str = match.groups()
+    try:
+        month_num = datetime.datetime.strptime(month_name, "%B").month
+    except ValueError:
+        return None
+    return month_num, int(year_str)
+
+
+def fetch_mirae_asset(month_str: str):
+    """Mirae Asset — one of this platform's 3 real featured AMCs (Mirae
+    Asset Large Cap). Confirmed real: instead of scraping
+    /downloads/portfolio's static HTML (which never contains the file
+    link — the page draws it client-side through a PDF-viewer widget),
+    this calls the same background data API that widget itself calls,
+    found by loading the page in a real headless browser (Playwright)
+    and inspecting its network requests. Each item in the response is
+    one scheme's current portfolio file, so a single call can return
+    real files for several schemes at once — unlike PPFAS's adapter,
+    which guesses at one consolidated file.
+
+    KNOWN LIMITATION: the endpoint returned only its 10 most-recent
+    items in testing, with no request body/parameters sent — no
+    pagination parameter has been found yet, so this can miss the
+    current month's file for some of Mirae Asset's ~35-40 schemes if
+    more than 10 published in the same batch. Covering every scheme
+    needs the real pagination/page-size parameter; not yet done here —
+    each scheme this misses is simply absent from the results (not
+    logged as its own NOT_FOUND row, since AMC_ADAPTERS tracks success/
+    failure per AMC, not per scheme).
+    """
+    year_str, month_num_str = month_str.split("-")
+    year, month_num = int(year_str), int(month_num_str)
+
+    try:
+        resp = httpx.post(f"{MIRAE_ASSET_BASE_URL}/AjaxService/GetDownloadsData", timeout=30.0)
+    except Exception as exc:
+        print(f"  Mirae Asset: GetDownloadsData request FAILED {type(exc).__name__}: {exc}")
+        return []
+
+    if resp.status_code != 200:
+        print(f"  Mirae Asset: GetDownloadsData -> HTTP {resp.status_code}")
+        return []
+
+    items = (resp.json() or {}).get("Data") or []
+    print(f"  Mirae Asset: GetDownloadsData returned {len(items)} item(s)")
+
+    results = []
+    for item in items:
+        title = item.get("Title", "")
+        relative_url = item.get("URL")
+        period = _parse_mirae_title_period(title)
+        if not relative_url or not period:
+            continue
+        if period != (month_num, year):
+            continue
+
+        file_url = urljoin(MIRAE_ASSET_BASE_URL, relative_url)
+        scheme_hint = re.sub(r"^Portfolio Details as on .*? for\s*", "", title).strip() or "Mirae Asset"
+
+        try:
+            file_resp = httpx.get(file_url, timeout=30.0, follow_redirects=True)
+        except Exception as exc:
+            print(f"  Mirae Asset: {file_url} -> FAILED {type(exc).__name__}: {exc}")
+            continue
+        if file_resp.status_code != 200 or len(file_resp.content) < 1_000:
+            print(f"  Mirae Asset: {file_url} -> HTTP {file_resp.status_code}")
+            continue
+
+        extension = os.path.splitext(relative_url)[1] or ".xlsx"
+        mimetype = XLS_MIMETYPE if extension.lower() == ".xls" else XLSX_MIMETYPE
+        file_name = f"MiraeAsset_{scheme_hint.replace(' ', '_')}_{month_str}{extension}"
+        print(f"  Mirae Asset: found real file for {scheme_hint!r} at {file_url} ({len(file_resp.content)} bytes)")
+        results.append((file_resp.content, file_name, mimetype, scheme_hint))
+
+    if not results:
+        print(f"  Mirae Asset: no files matched {month_str} among {len(items)} returned item(s) — needs manual confirmation (may be a pagination gap, see docstring)")
+
+    return results
+
+
 AMC_ADAPTERS = {
     "PPFAS": fetch_ppfas,
+    "Mirae Asset": fetch_mirae_asset,
     # Add more AMCs here as they're onboarded — see docs/data-sources.md.
 }
 
