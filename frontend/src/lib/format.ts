@@ -22,8 +22,8 @@ export function formatNav(value: number | null): string {
 /** Positive-good/negative-bad color, never the sole signal (always paired
  * with a +/- sign in the text itself, per Section 23's UI principles). */
 export function signColorClass(value: number | null): string {
-  if (value === null) return "text-neutral-400";
+  if (value === null) return "text-slate-400";
   if (value > 0) return "text-emerald-400";
   if (value < 0) return "text-rose-400";
-  return "text-neutral-300";
+  return "text-slate-300";
 }
