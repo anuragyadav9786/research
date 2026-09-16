@@ -33,10 +33,8 @@ export function SiteHeader({ active }: { active?: SiteHeaderActive }) {
           <Link
             key={item.key}
             href={item.href}
-            className={`border-b-2 pb-1 transition-colors rounded-sm ${FOCUS_RING} ${
-              item.key === active
-                ? "text-slate-100 font-medium border-indigo-500"
-                : "text-slate-400 hover:text-slate-100 border-transparent"
+            className={`border-b-2 border-transparent pb-1 transition-colors rounded-sm ${FOCUS_RING} ${
+              item.key === active ? "text-slate-100 font-medium" : "text-slate-400 hover:text-slate-100"
             }`}
           >
             {item.label}
