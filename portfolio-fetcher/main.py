@@ -194,8 +194,22 @@ def fetch_mirae_asset(month_str: str):
     year_str, month_num_str = month_str.split("-")
     year, month_num = int(year_str), int(month_num_str)
 
+    # Referer + a real browser User-Agent — a bare request with neither
+    # returned zero items in testing even though the exact same endpoint
+    # returned 10 real items when called from an actual browser session
+    # (Playwright), so something about looking like a real page visit
+    # evidently matters to this endpoint.
+    headers = {
+        "Referer": f"{MIRAE_ASSET_BASE_URL}/downloads/portfolio",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "X-Requested-With": "XMLHttpRequest",
+    }
+
     try:
-        resp = httpx.post(f"{MIRAE_ASSET_BASE_URL}/AjaxService/GetDownloadsData", timeout=30.0)
+        resp = httpx.post(f"{MIRAE_ASSET_BASE_URL}/AjaxService/GetDownloadsData", headers=headers, timeout=30.0)
     except Exception as exc:
         print(f"  Mirae Asset: GetDownloadsData request FAILED {type(exc).__name__}: {exc}")
         return []
@@ -204,8 +218,11 @@ def fetch_mirae_asset(month_str: str):
         print(f"  Mirae Asset: GetDownloadsData -> HTTP {resp.status_code}")
         return []
 
-    items = (resp.json() or {}).get("Data") or []
+    data = resp.json() or {}
+    items = data.get("Data") or []
     print(f"  Mirae Asset: GetDownloadsData returned {len(items)} item(s)")
+    if not items:
+        print(f"  Mirae Asset: full response for diagnosis: {data}")
 
     results = []
     for item in items:
