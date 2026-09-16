@@ -4,6 +4,7 @@ import { Activity, GitCompare, Layers, Waves } from "lucide-react";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { MythVsRealityCard, type MythVsRealityData } from "@/components/hero/MythVsRealityCard";
+import { PersonaCards } from "@/components/hero/PersonaCards";
 import { BenchmarkDeltaBadge, type BenchmarkMetrics, deltaVsBenchmark, safetyMarginVsBenchmark } from "@/components/fund/BenchmarkDeltaBadge";
 import { countFunds, getFund, getFundDrawdown, getFundReturns, getFundRollingReturns, listFunds } from "@/lib/api";
 import { formatNav, signColorClass } from "@/lib/format";
@@ -156,6 +157,11 @@ export default async function Home({
           <Suspense fallback={<HeroFundsSkeleton />}>
             <HeroFundsSection />
           </Suspense>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-sm uppercase tracking-wide text-white/50">Start Here</h2>
+          <PersonaCards />
         </section>
 
         <section className="space-y-4">

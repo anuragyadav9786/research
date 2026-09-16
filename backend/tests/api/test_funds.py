@@ -62,6 +62,26 @@ def test_list_funds_search_is_typo_tolerant():
     assert "Meridian Midcap Opportunities Fund" in names
 
 
+def test_list_funds_category_filter_is_substring_match():
+    response = client.get("/api/funds", params={"category": "Large Cap"})
+    assert response.status_code == 200
+    names = [f["scheme_name"] for f in response.json()["items"]]
+    assert names == ["Northbridge Bluechip Equity Fund"]
+
+
+def test_list_funds_category_filter_comma_separated_ors_terms():
+    # Comma-separated categories OR together — the persona quick-start
+    # cards (e.g. "aggressive": Small Cap + Mid Cap) rely on this to span
+    # more than one AMFI category in a single /research link.
+    response = client.get("/api/funds", params={"category": "Mid Cap,Flexi Cap"})
+    assert response.status_code == 200
+    names = {f["scheme_name"] for f in response.json()["items"]}
+    assert names == {"Meridian Midcap Opportunities Fund", "Northbridge Flexi Cap Fund"}
+
+    count = client.get("/api/funds/count", params={"category": "Mid Cap,Flexi Cap"})
+    assert count.json() == {"count": 2}
+
+
 def test_list_funds_pagination_has_more_flag():
     first_page = client.get("/api/funds", params={"limit": 2, "offset": 0}).json()
     assert len(first_page["items"]) == 2

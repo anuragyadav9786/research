@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { listFunds } from "@/lib/api";
+import { PERSONAS } from "@/lib/constants";
 
 export const metadata = { title: "Research — ThinkFin" };
 
@@ -10,9 +11,9 @@ const PAGE_SIZE = 50;
 export default async function ResearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ search?: string; category?: string; amc?: string; page?: string }>;
+  searchParams: Promise<{ search?: string; category?: string; amc?: string; page?: string; persona?: string }>;
 }) {
-  const { search, category, amc, page: pageParam } = await searchParams;
+  const { search, category, amc, page: pageParam, persona: personaId } = await searchParams;
   const page = Math.max(1, Number(pageParam) || 1);
   const { items: funds, has_more: hasMore } = await listFunds({
     search,
@@ -22,11 +23,17 @@ export default async function ResearchPage({
     offset: (page - 1) * PAGE_SIZE,
   });
 
+  // Only trusted when it actually matches the category this persona
+  // defines — a stray/stale ?persona= param on an otherwise different
+  // filter shouldn't label results with the wrong persona's copy.
+  const persona = PERSONAS.find((p) => p.id === personaId && p.categories?.join(",") === category);
+
   function pageUrlFor(targetPage: number) {
     const qs = new URLSearchParams();
     if (search) qs.set("search", search);
     if (category) qs.set("category", category);
     if (amc) qs.set("amc", amc);
+    if (persona) qs.set("persona", persona.id);
     if (targetPage > 1) qs.set("page", String(targetPage));
     const query = qs.toString();
     return query ? `/research?${query}` : "/research";
@@ -39,6 +46,7 @@ export default async function ResearchPage({
       <main className="px-8 py-10 max-w-5xl mx-auto space-y-6">
         <div>
           <h1 className="text-2xl font-semibold">Fund Research</h1>
+          {persona && <p className="text-indigo-400 text-sm mt-1">{persona.label}: {persona.description}</p>}
           {funds.length > 0 && (
             <p className="text-slate-400 text-sm mt-1">
               Showing {funds.length} fund{funds.length === 1 ? "" : "s"}

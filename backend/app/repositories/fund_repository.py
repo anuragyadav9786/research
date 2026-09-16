@@ -26,6 +26,17 @@ from app.models.timeseries import BenchmarkHistory, FundMetric, NavHistory
 FUZZY_SEARCH_THRESHOLD = 0.3
 
 
+def _category_filter(category: str):
+    # Comma-separated categories OR together (e.g. "Small Cap,Mid Cap" for
+    # an "aggressive growth" persona spanning both) — each term still an
+    # independent substring match against the free-text AMFI category
+    # string, same as a single category always has been.
+    terms = [t.strip() for t in category.split(",") if t.strip()]
+    if len(terms) <= 1:
+        return Scheme.category.ilike(f"%{terms[0] if terms else category}%")
+    return or_(*(Scheme.category.ilike(f"%{t}%") for t in terms))
+
+
 def _name_search_filter(search: str):
     # ILIKE first: a plain substring match should never depend on the
     # trigram extension being present/healthy. word_similarity() is the
@@ -52,7 +63,7 @@ def list_schemes(
     if search:
         query = query.filter(_name_search_filter(search))
     if category:
-        query = query.filter(Scheme.category.ilike(f"%{category}%"))
+        query = query.filter(_category_filter(category))
     if amc_name:
         query = query.filter(AMC.name.ilike(f"%{amc_name}%"))
     if search:
@@ -79,7 +90,7 @@ def count_schemes(
     if search:
         query = query.filter(_name_search_filter(search))
     if category:
-        query = query.filter(Scheme.category.ilike(f"%{category}%"))
+        query = query.filter(_category_filter(category))
     if amc_name:
         query = query.filter(AMC.name.ilike(f"%{amc_name}%"))
     return query.count()
