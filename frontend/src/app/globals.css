@@ -51,7 +51,17 @@
   --color-slate-900: var(--tf-white);
   --color-slate-800: var(--tf-border);
   --color-slate-700: #d0d5dd;
-  --color-slate-600: #98a2b3;
+  /* slate-600 was meant to read as *more* muted than slate-500 in the old
+     dark theme (a darker gray, closer to the near-black page bg) — but on
+     a light bg, "more muted" would mean lighter, and several real uses of
+     slate-600 are actual legible UI text (kbd hints, an OmniSearch footer
+     instruction) that a lighter value fails AA contrast on outright
+     (computed ~2.6:1 against the new card backgrounds, needs 4.5:1).
+     Collapsing it onto the same value as 500/400 trades the old three-way
+     muted/more-muted/most-muted gradient for one guaranteed-legible gray —
+     the only usages actually affected are decorative (placeholder text),
+     where the difference is invisible anyway. */
+  --color-slate-600: var(--tf-text-secondary);
   --color-slate-500: var(--tf-text-secondary);
   --color-slate-400: var(--tf-text-secondary);
   --color-slate-300: #475467;

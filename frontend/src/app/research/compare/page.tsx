@@ -113,11 +113,11 @@ export default async function CompareFundsPage({
             </div>
 
             <p className="text-xs text-slate-500">
-              <Link href={`/research/${overlap.fund_a.id}`} className="text-indigo-400 hover:text-indigo-600">
+              <Link href={`/research/${overlap.fund_a.id}`} className="text-indigo-500 hover:text-indigo-600">
                 {overlap.fund_a.scheme_name}
               </Link>{" "}
               (holdings as of {formatDate(overlap.as_of_date_a)}) vs.{" "}
-              <Link href={`/research/${overlap.fund_b.id}`} className="text-indigo-400 hover:text-indigo-600">
+              <Link href={`/research/${overlap.fund_b.id}`} className="text-indigo-500 hover:text-indigo-600">
                 {overlap.fund_b.scheme_name}
               </Link>{" "}
               (holdings as of {formatDate(overlap.as_of_date_b)})

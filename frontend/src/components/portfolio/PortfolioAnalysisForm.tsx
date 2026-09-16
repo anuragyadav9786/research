@@ -160,7 +160,7 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
             <ul className="text-sm text-slate-300 space-y-1">
               {result.funds.map((f) => (
                 <li key={f.fund_id} className="flex justify-between max-w-md">
-                  <Link href={`/research/${f.fund_id}`} className="text-indigo-400 hover:text-indigo-600">
+                  <Link href={`/research/${f.fund_id}`} className="text-indigo-500 hover:text-indigo-600">
                     {f.scheme_name}
                   </Link>
                   <span>{formatNumber(f.weight_pct, 1)}%</span>
