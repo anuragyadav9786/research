@@ -185,6 +185,20 @@ export default async function Home({
             ))}
           </div>
 
+          {/* For visitors who don't yet know which fund to search for — a
+           * concrete, already-populated example beats an empty search box.
+           * Only shown when a real backfilled fund is actually available, so
+           * this never links somewhere the fallback state below admits is
+           * degraded. */}
+          {heroFunds.length > 0 && (
+            <Link
+              href={`/research/${heroFunds[0].id}`}
+              className="mt-5 inline-flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-sm"
+            >
+              See a live example: {heroFunds[0].scheme_name} →
+            </Link>
+          )}
+
           <div className="mt-8 w-full max-w-4xl text-left">
             <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={heroFunds} benchmark={benchmark} />
           </div>
