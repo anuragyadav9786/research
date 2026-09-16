@@ -1,27 +1,96 @@
 @import "tailwindcss";
 
-/* Permanently dark — every page already hardcodes bg-slate-950/text-slate-100
-   with no light-mode alternative, so a prefers-color-scheme toggle here was
-   leftover Next.js starter boilerplate that never matched the real design:
-   body's own background stayed white outside that media query, which
-   showed through as a visible flash wherever a page element's margin (or
-   any gap) exposed body underneath it. */
+/* ThinkFin brand tokens, synced from the marketing site's own design system
+   (anuragyadav9786/new-design, src/app/globals.css's --tf-* variables) so
+   this platform and the marketing site read as one product. Same variable
+   names and values as the source, intentionally — a future brand tweak
+   there is meant to be portable here by copying these lines verbatim. */
 :root {
-  --background: #020617;
-  --foreground: #f1f5f9;
+  --tf-bg: #f7f8fa;
+  --tf-white: #ffffff;
+  --tf-navy: #081b33;
+  --tf-navy-rgb: 8, 27, 51;
+  --tf-blue: #1d5eff;
+  --tf-blue-rgb: 29, 94, 255;
+  --tf-blue-hover: #164fdb;
+  --tf-blue-secondary: #4a7dff;
+  --tf-blue-secondary-rgb: 74, 125, 255;
+  --tf-bg-soft: #eef3ff;
+  --tf-blue-tint: #8fb0ff;
+  --tf-text: #111827;
+  --tf-text-secondary: #667085;
+  --tf-border: #e6eaf0;
+
+  --tf-radius-xs: 10px;
+  --tf-radius-sm: 12px;
+  --tf-radius-btn: 14px;
+  --tf-radius-md: 20px;
+  --tf-radius-lg: 24px;
+
+  --tf-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --background: var(--tf-bg);
+  --foreground: var(--tf-navy);
+}
+
+/* Every page on this platform is built from Tailwind's slate/indigo scale
+   (bg-slate-950, text-slate-400, bg-indigo-500, ...) rather than one-off
+   hex values, so remapping those two scales here — instead of hand-editing
+   every className across ~20 files — re-themes the whole app from this one
+   place. The "step" relationship inverts on purpose: slate-950 was the
+   darkest page background in the old dark theme and is now the lightest
+   (--tf-bg); slate-900 was "one step lighter than the page" for card/input
+   surfaces and is now "one step different from the page" (white), same
+   relationship, opposite direction. Signal colors (emerald/rose/amber) are
+   deliberately left at Tailwind's defaults — green-means-gain and
+   red-means-loss aren't part of the brand palette, and those defaults
+   already read fine on a light background.
+   Cross-check anytime with: rg -oh "(bg|text|border|ring|from|via|to|divide|decoration|shadow|placeholder)-(slate|indigo)-[0-9]+" src --include="*.tsx" -I | sort -u */
+@theme {
+  --color-slate-950: var(--tf-bg);
+  --color-slate-900: var(--tf-white);
+  --color-slate-800: var(--tf-border);
+  --color-slate-700: #d0d5dd;
+  --color-slate-600: #98a2b3;
+  --color-slate-500: var(--tf-text-secondary);
+  --color-slate-400: var(--tf-text-secondary);
+  --color-slate-300: #475467;
+  --color-slate-200: #344054;
+  --color-slate-100: var(--tf-navy);
+
+  --color-indigo-950: var(--tf-navy);
+  --color-indigo-900: var(--tf-bg-soft);
+  --color-indigo-800: var(--tf-blue);
+  --color-indigo-700: #1339a6;
+  --color-indigo-600: var(--tf-blue-hover);
+  --color-indigo-500: var(--tf-blue);
+  --color-indigo-400: var(--tf-blue-secondary);
+  --color-indigo-300: var(--tf-blue-tint);
+  --color-indigo-200: #d6e4ff;
+  --color-indigo-100: var(--tf-bg-soft);
+
+  /* Same idea for corner rounding — the brand uses a noticeably rounder
+     scale (10-24px) than this platform's Tailwind defaults (2-8px), which
+     otherwise reads as flatter/sharper than the marketing site everywhere
+     at once: cards, inputs, badges, buttons. */
+  --radius: var(--tf-radius-xs);
+  --radius-sm: var(--tf-radius-sm);
+  --radius-md: var(--tf-radius-btn);
+  --radius-lg: var(--tf-radius-lg);
+
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-geist-mono);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 @keyframes hero-sparkline-dash {

@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, Geist_Mono } from "next/font/google";
 
 import { SiteFooter } from "@/components/layout/SiteFooter";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Matches the marketing site's font exactly (see
+// anuragyadav9786/new-design's redesign-styles.tsx) — Geist Mono stays for
+// this platform's own tabular figures (NAV/CAGR/drawdown columns), which
+// the marketing site has no equivalent of.
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
@@ -26,7 +30,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${inter.variable} ${geistMono.variable} antialiased`}>
         {children}
         <SiteFooter />
       </body>
