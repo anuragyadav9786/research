@@ -194,11 +194,15 @@ def fetch_mirae_asset(month_str: str):
     year_str, month_num_str = month_str.split("-")
     year, month_num = int(year_str), int(month_num_str)
 
-    # Referer + a real browser User-Agent — a bare request with neither
-    # returned zero items in testing even though the exact same endpoint
-    # returned 10 real items when called from an actual browser session
-    # (Playwright), so something about looking like a real page visit
-    # evidently matters to this endpoint.
+    # Headers alone weren't enough — a real run returned ReturnCode 9999
+    # ("Specified argument was out of the range of valid values...
+    # SitefinityAPI.DownloadsManager.GetDownloadsData"), a .NET
+    # Sitefinity CMS server error consistent with the endpoint reading
+    # some server-side session state that only exists after actually
+    # visiting the portfolio page first — not from any request body
+    # (Playwright never captured one). So: visit the real page first (in
+    # the same client, to pick up its session cookies), then reuse that
+    # session for the data call, the way an actual browser tab would.
     headers = {
         "Referer": f"{MIRAE_ASSET_BASE_URL}/downloads/portfolio",
         "User-Agent": (
@@ -209,7 +213,9 @@ def fetch_mirae_asset(month_str: str):
     }
 
     try:
-        resp = httpx.post(f"{MIRAE_ASSET_BASE_URL}/AjaxService/GetDownloadsData", headers=headers, timeout=30.0)
+        with httpx.Client(headers=headers, timeout=30.0, follow_redirects=True) as client:
+            client.get(f"{MIRAE_ASSET_BASE_URL}/downloads/portfolio")
+            resp = client.post(f"{MIRAE_ASSET_BASE_URL}/AjaxService/GetDownloadsData")
     except Exception as exc:
         print(f"  Mirae Asset: GetDownloadsData request FAILED {type(exc).__name__}: {exc}")
         return []
