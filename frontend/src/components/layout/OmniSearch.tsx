@@ -103,6 +103,9 @@ export function OmniSearch() {
           onClick={() => setOpen(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Search funds"
             className="w-full max-w-xl rounded-lg border border-slate-800 bg-slate-950 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >

@@ -108,7 +108,8 @@ export function RealityCheckWidget({
                 <tr key={row.label}>
                   <td className="py-2.5 text-slate-400">
                     <span
-                      className="underline decoration-dotted decoration-slate-600 underline-offset-4 cursor-help"
+                      tabIndex={0}
+                      className="underline decoration-dotted decoration-slate-600 underline-offset-4 cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                       title={row.help}
                     >
                       {row.label}
