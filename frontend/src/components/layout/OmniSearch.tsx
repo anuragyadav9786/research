@@ -98,7 +98,7 @@ export function OmniSearch() {
         <span className="sr-only sm:not-sr-only sm:inline">Search funds…</span>
         <kbd
           aria-hidden="true"
-          className="hidden sm:inline-flex items-center rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono text-slate-400"
+          className="hidden sm:inline-flex items-center rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono text-slate-300"
         >
           ⌘K
         </kbd>

@@ -113,11 +113,11 @@ export default async function CompareFundsPage({
             </div>
 
             <p className="text-xs text-slate-500">
-              <Link href={`/research/${overlap.fund_a.id}`} className="text-indigo-400 hover:text-indigo-300">
+              <Link href={`/research/${overlap.fund_a.id}`} className="text-indigo-500 hover:text-indigo-600">
                 {overlap.fund_a.scheme_name}
               </Link>{" "}
               (holdings as of {formatDate(overlap.as_of_date_a)}) vs.{" "}
-              <Link href={`/research/${overlap.fund_b.id}`} className="text-indigo-400 hover:text-indigo-300">
+              <Link href={`/research/${overlap.fund_b.id}`} className="text-indigo-500 hover:text-indigo-600">
                 {overlap.fund_b.scheme_name}
               </Link>{" "}
               (holdings as of {formatDate(overlap.as_of_date_b)})
@@ -136,7 +136,7 @@ export default async function CompareFundsPage({
                         <th className="px-4 py-2 font-medium text-right">Shared</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-900">
+                    <tbody className="divide-y divide-slate-800">
                       {overlap.common_holdings.map((h) => (
                         <tr key={h.security_name}>
                           <td className="px-4 py-2">{h.security_name}</td>
@@ -163,7 +163,7 @@ export default async function CompareFundsPage({
                       <th className="px-4 py-2 font-medium text-right">Shared</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-900">
+                  <tbody className="divide-y divide-slate-800">
                     {overlap.sector_detail.map((s) => (
                       <tr key={s.sector}>
                         <td className="px-4 py-2">{s.sector.replace(/^Sample: /, "")}</td>

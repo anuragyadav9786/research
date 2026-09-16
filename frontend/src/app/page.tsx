@@ -197,7 +197,7 @@ export default async function Home({
               <Link
                 href="/?tab=complete"
                 className={`px-3 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
-                  activeTab === "complete" ? "bg-indigo-900/50 text-indigo-200" : "text-slate-400 hover:bg-slate-900"
+                  activeTab === "complete" ? "bg-indigo-900/50 text-indigo-800" : "text-slate-400 hover:bg-slate-900"
                 }`}
               >
                 Most Complete Data
@@ -205,7 +205,7 @@ export default async function Home({
               <Link
                 href="/?tab=all"
                 className={`px-3 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 ${
-                  activeTab === "all" ? "bg-indigo-900/50 text-indigo-200" : "text-slate-400 hover:bg-slate-900"
+                  activeTab === "all" ? "bg-indigo-900/50 text-indigo-800" : "text-slate-400 hover:bg-slate-900"
                 }`}
               >
                 All Funds
@@ -223,7 +223,7 @@ export default async function Home({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {FEATURES.map((feature) => (
               <Link key={feature.href} href={feature.href} className={`${CARD_LINK_CLASS} p-6 space-y-3`}>
-                <feature.icon className="h-5 w-5 text-indigo-400" />
+                <feature.icon className="h-5 w-5 text-indigo-500" />
                 <div>
                   <h3 className="text-sm font-semibold text-slate-100">{feature.title}</h3>
                   <p className="text-sm text-slate-400 mt-1">{feature.description}</p>
@@ -268,7 +268,7 @@ async function CompleteDataGrid({
     return (
       <p className="text-sm text-slate-400 py-6">
         Featured funds are refreshing —{" "}
-        <Link href="/research" className="text-indigo-400 underline underline-offset-2 hover:text-indigo-300">
+        <Link href="/research" className="text-indigo-500 underline underline-offset-2 hover:text-indigo-600">
           browse all funds →
         </Link>
       </p>
@@ -370,7 +370,7 @@ async function HeroFundsSection() {
       {heroFunds.length > 0 && (
         <Link
           href={`/research/${heroFunds[0].id}`}
-          className="mt-5 inline-flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-sm"
+          className="mt-5 inline-flex items-center gap-1.5 text-sm text-indigo-500 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-sm"
         >
           See a live example: {heroFunds[0].scheme_name} →
         </Link>
@@ -399,7 +399,7 @@ async function RealityCheckSection() {
         <h2 className="text-lg font-semibold text-slate-100">See What Most Portals Hide</h2>
         <p className="text-sm text-slate-400 mt-2">
           This comparison is temporarily unavailable while its fund data refreshes.{" "}
-          <Link href="/research/compare" className="text-indigo-400 underline underline-offset-2 hover:text-indigo-300">
+          <Link href="/research/compare" className="text-indigo-500 underline underline-offset-2 hover:text-indigo-600">
             Compare any two funds yourself →
           </Link>
         </p>
@@ -438,7 +438,7 @@ async function ExploreFundsGrid({ activeTab }: { activeTab: "complete" | "all" }
 
       <Link
         href="/research"
-        className="inline-block rounded-sm text-xs text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+        className="inline-block rounded-sm text-xs text-indigo-500 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
       >
         Browse all {fundCount.count.toLocaleString("en-IN")} funds →
       </Link>

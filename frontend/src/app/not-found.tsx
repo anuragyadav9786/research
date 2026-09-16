@@ -6,7 +6,7 @@ export default function NotFound() {
       <div className="text-center space-y-3">
         <h1 className="text-2xl font-semibold">Not found</h1>
         <p className="text-slate-400 text-sm">This page, or the fund it refers to, doesn&apos;t exist.</p>
-        <Link href="/research" className="inline-block text-sm text-indigo-400 hover:text-indigo-300">
+        <Link href="/research" className="inline-block text-sm text-indigo-500 hover:text-indigo-600">
           ← Back to Research
         </Link>
       </div>

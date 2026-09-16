@@ -31,7 +31,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
           </button>
           <Link
             href="/"
-            className="text-sm text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-sm"
+            className="text-sm text-indigo-500 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-sm"
           >
             ← Back to Dashboard
           </Link>

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { MobileNav } from "./MobileNav";
@@ -22,9 +23,10 @@ const FOCUS_RING =
 
 export function SiteHeader({ active }: { active?: SiteHeaderActive }) {
   return (
-    <header className="relative border-b border-slate-800 px-8 py-4 flex items-center justify-between gap-x-6 gap-y-3">
-      <Link href="/" className={`text-lg font-semibold tracking-tight text-slate-100 rounded-sm ${FOCUS_RING}`}>
-        ThinkFin
+    <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-900/80 px-8 py-4 flex items-center justify-between gap-x-6 gap-y-3 backdrop-blur-md">
+      <Link href="/" className={`flex items-center gap-2 rounded-sm ${FOCUS_RING}`}>
+        <Image src="/icon/icon.png" alt="ThinkFin" width={32} height={32} className="h-8 w-8" priority />
+        <span className="text-lg font-semibold tracking-tight text-slate-100">ThinkFin</span>
       </Link>
       <nav className="hidden lg:flex flex-wrap gap-x-6 gap-y-1 text-sm">
         {NAV_ITEMS.map((item) => (
