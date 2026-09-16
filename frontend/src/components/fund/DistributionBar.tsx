@@ -6,15 +6,31 @@ import type { RollingReturnDistribution } from "@/types/fund";
  * the p10-p90 band, the p25-p75 "typical" band, the median, and a 0%
  * reference line so it's immediately visible whether typical outcomes
  * were positive or negative. */
-export function DistributionBar({ distribution }: { distribution: RollingReturnDistribution }) {
+export function DistributionBar({
+  distribution,
+  scaleMin,
+  scaleMax,
+}: {
+  distribution: RollingReturnDistribution;
+  /** Override the axis range so multiple bars can share one scale — e.g.
+   * comparing two funds side by side, where each bar's own min/max would
+   * otherwise normalize independently and make visually-similar bars hide
+   * real differences in the underlying numbers. Falls back to this
+   * distribution's own min/max when omitted. */
+  scaleMin?: number;
+  scaleMax?: number;
+}) {
   const { min, max, p10, p25, median, p75, p90 } = distribution;
 
   if (min === null || max === null || min === max) {
     return <p className="text-sm text-slate-500">Not enough history to show a distribution.</p>;
   }
 
-  const toPct = (v: number) => ((v - min) / (max - min)) * 100;
-  const showZeroLine = min < 0 && max > 0;
+  const axisMin = scaleMin ?? min;
+  const axisMax = scaleMax ?? max;
+
+  const toPct = (v: number) => ((v - axisMin) / (axisMax - axisMin)) * 100;
+  const showZeroLine = axisMin < 0 && axisMax > 0;
 
   return (
     <div className="space-y-2">
