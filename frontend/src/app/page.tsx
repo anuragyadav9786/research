@@ -240,6 +240,16 @@ export default async function Home({
 const CARD_LINK_CLASS =
   "rounded-lg border border-slate-800 hover:border-slate-700 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
 
+// Same navy-to-blue gradient as the marketing site's "wealth" goal card
+// (anuragyadav9786/new-design's goalVisuals.wealth) — used only for fund
+// cards specifically, not the plain white CARD_LINK_CLASS cards elsewhere
+// on this page, so its own text colors are set explicitly (white-based)
+// rather than through the sitewide light-theme slate remap, which assumes
+// a light card background.
+const FUND_CARD_CLASS =
+  "rounded-lg border border-white/10 text-white hover:-translate-y-0.5 hover:border-white/20 hover:shadow-lg hover:shadow-indigo-950/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+const FUND_CARD_GRADIENT = "linear-gradient(160deg, var(--tf-navy) 0%, #0F2A54 45%, var(--tf-blue) 120%)";
+
 async function CompleteDataGrid({
   fundIds,
   funds,
@@ -282,17 +292,22 @@ async function CompleteDataGrid({
         const m = metrics.find((x) => x.id === id);
         if (!fund) return null;
         return (
-          <Link key={id} href={`/research/${id}`} className={`${CARD_LINK_CLASS} p-4 space-y-3`}>
+          <Link
+            key={id}
+            href={`/research/${id}`}
+            className={`${FUND_CARD_CLASS} p-4 space-y-3`}
+            style={{ background: FUND_CARD_GRADIENT }}
+          >
             <div>
-              <p className="text-sm font-medium leading-snug text-slate-100 line-clamp-2">{fund.scheme_name}</p>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-sm font-medium leading-snug text-white line-clamp-2">{fund.scheme_name}</p>
+              <p className="text-xs text-white/70 mt-0.5">
                 {fund.amc_name} · {fund.category}
               </p>
             </div>
-            <div className="flex items-start justify-between pt-2 border-t border-slate-900 text-xs">
+            <div className="flex items-start justify-between pt-2 border-t border-white/10 text-xs">
               <div>
-                <div className="text-slate-400">3Y CAGR</div>
-                <div className={`font-mono tabular-nums mt-0.5 ${m?.cagr3y != null ? signColorClass(m.cagr3y) : "text-slate-600"}`}>
+                <div className="text-white/60">3Y CAGR</div>
+                <div className={`font-mono tabular-nums mt-0.5 ${m?.cagr3y != null ? signColorClass(m.cagr3y) : "text-white/40"}`}>
                   {m?.cagr3y != null ? `${m.cagr3y.toFixed(1)}%` : "—"}
                 </div>
                 {benchmark && (
@@ -305,7 +320,7 @@ async function CompleteDataGrid({
                 )}
               </div>
               <div className="text-right">
-                <div className="text-slate-400">Max Drawdown</div>
+                <div className="text-white/60">Max Drawdown</div>
                 <div className="font-mono tabular-nums text-rose-400 mt-0.5">
                   {m?.maxDrawdown != null ? `${m.maxDrawdown.toFixed(1)}%` : "—"}
                 </div>
@@ -333,16 +348,21 @@ function AllFundsGrid({ funds }: { funds: FundDetail[] }) {
       {funds.map((fund) => {
         const variant = directGrowthVariant(fund);
         return (
-          <Link key={fund.id} href={`/research/${fund.id}`} className={`${CARD_LINK_CLASS} p-4 space-y-2`}>
+          <Link
+            key={fund.id}
+            href={`/research/${fund.id}`}
+            className={`${FUND_CARD_CLASS} p-4 space-y-2`}
+            style={{ background: FUND_CARD_GRADIENT }}
+          >
             <div>
-              <p className="text-sm font-medium leading-snug text-slate-100 line-clamp-2">{fund.scheme_name}</p>
-              <p className="text-xs text-slate-400 mt-0.5">
+              <p className="text-sm font-medium leading-snug text-white line-clamp-2">{fund.scheme_name}</p>
+              <p className="text-xs text-white/70 mt-0.5">
                 {fund.amc_name} · {fund.category}
               </p>
             </div>
-            <div className="flex items-baseline justify-between pt-1 border-t border-slate-900">
-              <span className="text-xs text-slate-400">Latest NAV</span>
-              <span className="text-sm font-mono tabular-nums text-slate-100">
+            <div className="flex items-baseline justify-between pt-1 border-t border-white/10">
+              <span className="text-xs text-white/60">Latest NAV</span>
+              <span className="text-sm font-mono tabular-nums text-white">
                 {variant?.latest_nav != null ? formatNav(variant.latest_nav) : "—"}
               </span>
             </div>
@@ -450,12 +470,16 @@ function CardGridSkeleton({ count }: { count: number }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-pulse">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="rounded-lg border border-slate-800 p-4 space-y-3">
-          <div className="h-4 w-3/4 rounded bg-slate-800" />
-          <div className="h-3 w-1/2 rounded bg-slate-800" />
-          <div className="flex items-start justify-between pt-2 border-t border-slate-900">
-            <div className="h-8 w-14 rounded bg-slate-800" />
-            <div className="h-8 w-14 rounded bg-slate-800" />
+        <div
+          key={i}
+          className="rounded-lg border border-white/10 p-4 space-y-3"
+          style={{ background: FUND_CARD_GRADIENT }}
+        >
+          <div className="h-4 w-3/4 rounded bg-white/15" />
+          <div className="h-3 w-1/2 rounded bg-white/15" />
+          <div className="flex items-start justify-between pt-2 border-t border-white/10">
+            <div className="h-8 w-14 rounded bg-white/15" />
+            <div className="h-8 w-14 rounded bg-white/15" />
           </div>
         </div>
       ))}
