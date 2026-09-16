@@ -95,7 +95,7 @@ export function RealityCheckWidget({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-slate-800">
+            <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-800">
               <th className="pb-2 font-normal">Metric</th>
               <th className="pb-2 font-normal text-right">{fundA.name}</th>
               <th className="pb-2 font-normal text-right">{fundB.name}</th>
@@ -108,7 +108,8 @@ export function RealityCheckWidget({
                 <tr key={row.label}>
                   <td className="py-2.5 text-slate-400">
                     <span
-                      className="underline decoration-dotted decoration-slate-600 underline-offset-4 cursor-help"
+                      tabIndex={0}
+                      className="underline decoration-dotted decoration-slate-600 underline-offset-4 cursor-help rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                       title={row.help}
                     >
                       {row.label}
@@ -159,13 +160,13 @@ export function RealityCheckWidget({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">
+          <p className="text-xs uppercase tracking-wide text-slate-400 mb-2">
             {fundA.name} — 3Y rolling return spread
           </p>
           <DistributionBar distribution={fundA.distribution} {...sharedScale} />
         </div>
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">
+          <p className="text-xs uppercase tracking-wide text-slate-400 mb-2">
             {fundB.name} — 3Y rolling return spread
           </p>
           <DistributionBar distribution={fundB.distribution} {...sharedScale} />

@@ -87,12 +87,19 @@ export function OmniSearch() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Search funds"
         className="flex items-center gap-2 rounded-md border border-slate-800 bg-slate-900/60 px-2.5 py-1.5 sm:px-3 text-sm text-slate-400 hover:border-slate-700 hover:text-slate-200 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
       >
-        <SearchIcon className="h-3.5 w-3.5 flex-shrink-0" />
-        <span className="hidden sm:inline">Search funds…</span>
-        <kbd className="hidden sm:inline-flex items-center rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
+        <SearchIcon aria-hidden="true" className="h-3.5 w-3.5 flex-shrink-0" />
+        {/* Always in the accessible tree (just visually hidden below sm:) so
+         * the button's accessible name always matches its visible label —
+         * an aria-label here previously fell out of sync with what desktop
+         * users could actually see ("Search funds…" plus a "⌘K" hint),
+         * which axe flags as a name/label mismatch. */}
+        <span className="sr-only sm:not-sr-only sm:inline">Search funds…</span>
+        <kbd
+          aria-hidden="true"
+          className="hidden sm:inline-flex items-center rounded border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[10px] font-mono text-slate-400"
+        >
           ⌘K
         </kbd>
       </button>
@@ -103,6 +110,9 @@ export function OmniSearch() {
           onClick={() => setOpen(false)}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Search funds"
             className="w-full max-w-xl rounded-lg border border-slate-800 bg-slate-950 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >

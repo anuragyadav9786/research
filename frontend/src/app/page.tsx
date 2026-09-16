@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { AnimatedHeroHeadline } from "@/components/hero/AnimatedHeroHeadline";
@@ -106,34 +107,29 @@ async function loadRealityCheckFund(fundId: number): Promise<RealityCheckFund | 
   }
 }
 
+// Shared by the hero cards and the "Most Complete Data" explore tab — kept
+// as one function so both call sites hit the exact same fetch() signature
+// per fund, letting Next.js's request-level fetch memoization deduplicate
+// the network calls instead of fetching each fund twice per page load.
+async function loadHeroFunds(): Promise<FundDetail[]> {
+  return (await Promise.all(FEATURED_FUND_IDS.map((id) => getFund(id).catch(() => null)))).filter(
+    (f): f is FundDetail => f !== null,
+  );
+}
+
 export default async function Home({
   searchParams,
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { tab } = await searchParams;
-  const activeTab = tab === "all" ? "all" : "complete";
-
-  const [fundCount, realityA, realityB, benchmark, exploreList] = await Promise.all([
-    countFunds().catch(() => ({ count: 0 })),
-    loadRealityCheckFund(REALITY_CHECK_PAIR[0]),
-    loadRealityCheckFund(REALITY_CHECK_PAIR[1]),
-    loadBenchmarkMetrics(),
-    activeTab === "all" ? listFunds({ limit: EXPLORE_COUNT }).catch(() => ({ items: [], has_more: false })) : null,
-  ]);
-
-  // Fetched unconditionally (unlike featuredFunds below) so the hero's fund
-  // cards stay populated regardless of which Explore Funds tab is active.
-  const heroFunds = (await Promise.all(FEATURED_FUND_IDS.map((id) => getFund(id).catch(() => null)))).filter(
-    (f): f is FundDetail => f !== null,
-  );
-
-  const featuredFunds =
-    activeTab === "complete"
-      ? heroFunds
-      : (await Promise.all((exploreList?.items ?? []).map((f) => getFund(f.id).catch(() => null)))).filter(
-          (f): f is FundDetail => f !== null,
-        );
+  // Defaults to "all" rather than "complete": the hero above already shows
+  // the same curated FEATURED_FUND_IDS set that "complete" would repeat
+  // here verbatim (identical cards, identical numbers) — on first load
+  // that's the same 2-3 funds appearing twice on one screen with zero
+  // differentiation. "complete" stays one click away for anyone who
+  // deliberately wants to revisit that curated set.
+  const activeTab = tab === "complete" ? "complete" : "all";
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -161,7 +157,7 @@ export default async function Home({
                 placeholder="Search by fund, AMC, or category…"
                 className="min-w-0 flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none"
               />
-              <kbd className="hidden sm:inline-flex items-center rounded border border-slate-700 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
+              <kbd className="hidden sm:inline-flex items-center rounded border border-slate-700 px-1.5 py-0.5 text-[10px] font-mono text-slate-400">
                 Enter ↵
               </kbd>
               <button
@@ -185,16 +181,18 @@ export default async function Home({
             ))}
           </div>
 
-          <div className="mt-8 w-full max-w-4xl text-left">
-            <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={heroFunds} benchmark={benchmark} />
-          </div>
+          <Suspense fallback={<HeroFundsSkeleton />}>
+            <HeroFundsSection />
+          </Suspense>
         </section>
 
-        {realityA && realityB && <RealityCheckWidget fundA={realityA} fundB={realityB} benchmark={benchmark} />}
+        <Suspense fallback={<RealityCheckSkeleton />}>
+          <RealityCheckSection />
+        </Suspense>
 
         <section className="space-y-4">
           <div className="flex items-baseline justify-between flex-wrap gap-3">
-            <h2 className="text-sm uppercase tracking-wide text-slate-500">Explore Funds</h2>
+            <h2 className="text-sm uppercase tracking-wide text-slate-400">Explore Funds</h2>
             <div className="flex rounded-md border border-slate-800 overflow-hidden text-xs">
               <Link
                 href="/?tab=complete"
@@ -215,29 +213,20 @@ export default async function Home({
             </div>
           </div>
 
-          {activeTab === "complete" ? (
-            <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={featuredFunds} benchmark={benchmark} />
-          ) : (
-            <AllFundsGrid funds={featuredFunds} />
-          )}
-
-          <Link
-            href="/research"
-            className="inline-block rounded-sm text-xs text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-          >
-            Browse all {fundCount.count.toLocaleString("en-IN")} funds →
-          </Link>
+          <Suspense fallback={<CardGridSkeleton count={activeTab === "all" ? EXPLORE_COUNT : FEATURED_FUND_IDS.length} />}>
+            <ExploreFundsGrid activeTab={activeTab} />
+          </Suspense>
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm uppercase tracking-wide text-slate-500">What You Can Do</h2>
+          <h2 className="text-sm uppercase tracking-wide text-slate-400">What You Can Do</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {FEATURES.map((feature) => (
               <Link key={feature.href} href={feature.href} className={`${CARD_LINK_CLASS} p-6 space-y-3`}>
                 <feature.icon className="h-5 w-5 text-indigo-400" />
                 <div>
                   <h3 className="text-sm font-semibold text-slate-100">{feature.title}</h3>
-                  <p className="text-sm text-slate-500 mt-1">{feature.description}</p>
+                  <p className="text-sm text-slate-400 mt-1">{feature.description}</p>
                 </div>
               </Link>
             ))}
@@ -274,6 +263,18 @@ async function CompleteDataGrid({
     }),
   );
 
+  const availableIds = fundIds.filter((id) => funds.some((f) => f.id === id));
+  if (availableIds.length === 0) {
+    return (
+      <p className="text-sm text-slate-400 py-6">
+        Featured funds are refreshing —{" "}
+        <Link href="/research" className="text-indigo-400 underline underline-offset-2 hover:text-indigo-300">
+          browse all funds →
+        </Link>
+      </p>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {fundIds.map((id) => {
@@ -284,13 +285,13 @@ async function CompleteDataGrid({
           <Link key={id} href={`/research/${id}`} className={`${CARD_LINK_CLASS} p-4 space-y-3`}>
             <div>
               <p className="text-sm font-medium leading-snug text-slate-100 line-clamp-2">{fund.scheme_name}</p>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-400 mt-0.5">
                 {fund.amc_name} · {fund.category}
               </p>
             </div>
             <div className="flex items-start justify-between pt-2 border-t border-slate-900 text-xs">
               <div>
-                <div className="text-slate-500">3Y CAGR</div>
+                <div className="text-slate-400">3Y CAGR</div>
                 <div className={`font-mono tabular-nums mt-0.5 ${m?.cagr3y != null ? signColorClass(m.cagr3y) : "text-slate-600"}`}>
                   {m?.cagr3y != null ? `${m.cagr3y.toFixed(1)}%` : "—"}
                 </div>
@@ -304,7 +305,7 @@ async function CompleteDataGrid({
                 )}
               </div>
               <div className="text-right">
-                <div className="text-slate-500">Max Drawdown</div>
+                <div className="text-slate-400">Max Drawdown</div>
                 <div className="font-mono tabular-nums text-rose-400 mt-0.5">
                   {m?.maxDrawdown != null ? `${m.maxDrawdown.toFixed(1)}%` : "—"}
                 </div>
@@ -326,7 +327,7 @@ async function CompleteDataGrid({
 }
 
 function AllFundsGrid({ funds }: { funds: FundDetail[] }) {
-  if (funds.length === 0) return <p className="text-sm text-slate-500">No funds available yet.</p>;
+  if (funds.length === 0) return <p className="text-sm text-slate-400">No funds available yet.</p>;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {funds.map((fund) => {
@@ -335,12 +336,12 @@ function AllFundsGrid({ funds }: { funds: FundDetail[] }) {
           <Link key={fund.id} href={`/research/${fund.id}`} className={`${CARD_LINK_CLASS} p-4 space-y-2`}>
             <div>
               <p className="text-sm font-medium leading-snug text-slate-100 line-clamp-2">{fund.scheme_name}</p>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-400 mt-0.5">
                 {fund.amc_name} · {fund.category}
               </p>
             </div>
             <div className="flex items-baseline justify-between pt-1 border-t border-slate-900">
-              <span className="text-xs text-slate-500">Latest NAV</span>
+              <span className="text-xs text-slate-400">Latest NAV</span>
               <span className="text-sm font-mono tabular-nums text-slate-100">
                 {variant?.latest_nav != null ? formatNav(variant.latest_nav) : "—"}
               </span>
@@ -348,6 +349,144 @@ function AllFundsGrid({ funds }: { funds: FundDetail[] }) {
           </Link>
         );
       })}
+    </div>
+  );
+}
+
+/** The hero's "live example" link + fund cards, split into its own async
+ * component so <Suspense> can stream it in independently of the static
+ * headline/search bar above it, instead of the whole page waiting on this
+ * fetch before sending any HTML. */
+async function HeroFundsSection() {
+  const [heroFunds, benchmark] = await Promise.all([loadHeroFunds(), loadBenchmarkMetrics()]);
+
+  return (
+    <>
+      {/* For visitors who don't yet know which fund to search for — a
+       * concrete, already-populated example beats an empty search box.
+       * Only shown when a real backfilled fund is actually available, so
+       * this never links somewhere the fallback state below admits is
+       * degraded. */}
+      {heroFunds.length > 0 && (
+        <Link
+          href={`/research/${heroFunds[0].id}`}
+          className="mt-5 inline-flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 rounded-sm"
+        >
+          See a live example: {heroFunds[0].scheme_name} →
+        </Link>
+      )}
+
+      <div className="mt-8 w-full max-w-4xl text-left">
+        <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={heroFunds} benchmark={benchmark} />
+      </div>
+    </>
+  );
+}
+
+/** Its own async component (see HeroFundsSection above) so a slow reality-
+ * check fetch never blocks the hero or Explore Funds sections from
+ * streaming in first. */
+async function RealityCheckSection() {
+  const [realityA, realityB, benchmark] = await Promise.all([
+    loadRealityCheckFund(REALITY_CHECK_PAIR[0]),
+    loadRealityCheckFund(REALITY_CHECK_PAIR[1]),
+    loadBenchmarkMetrics(),
+  ]);
+
+  if (!realityA || !realityB) {
+    return (
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-6">
+        <h2 className="text-lg font-semibold text-slate-100">See What Most Portals Hide</h2>
+        <p className="text-sm text-slate-400 mt-2">
+          This comparison is temporarily unavailable while its fund data refreshes.{" "}
+          <Link href="/research/compare" className="text-indigo-400 underline underline-offset-2 hover:text-indigo-300">
+            Compare any two funds yourself →
+          </Link>
+        </p>
+      </div>
+    );
+  }
+
+  return <RealityCheckWidget fundA={realityA} fundB={realityB} benchmark={benchmark} />;
+}
+
+/** The Explore Funds grid + "Browse all" link, split out so the section
+ * heading and tab toggle above it (both static, known synchronously from
+ * `activeTab`) render immediately instead of waiting on this fetch. */
+async function ExploreFundsGrid({ activeTab }: { activeTab: "complete" | "all" }) {
+  const [fundCount, benchmark, heroFunds, exploreList] = await Promise.all([
+    countFunds().catch(() => ({ count: 0 })),
+    loadBenchmarkMetrics(),
+    loadHeroFunds(),
+    activeTab === "all" ? listFunds({ limit: EXPLORE_COUNT }).catch(() => ({ items: [], has_more: false })) : null,
+  ]);
+
+  const featuredFunds =
+    activeTab === "complete"
+      ? heroFunds
+      : (await Promise.all((exploreList?.items ?? []).map((f) => getFund(f.id).catch(() => null)))).filter(
+          (f): f is FundDetail => f !== null,
+        );
+
+  return (
+    <>
+      {activeTab === "complete" ? (
+        <CompleteDataGrid fundIds={FEATURED_FUND_IDS} funds={featuredFunds} benchmark={benchmark} />
+      ) : (
+        <AllFundsGrid funds={featuredFunds} />
+      )}
+
+      <Link
+        href="/research"
+        className="inline-block rounded-sm text-xs text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+      >
+        Browse all {fundCount.count.toLocaleString("en-IN")} funds →
+      </Link>
+    </>
+  );
+}
+
+function CardGridSkeleton({ count }: { count: number }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-pulse">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="rounded-lg border border-slate-800 p-4 space-y-3">
+          <div className="h-4 w-3/4 rounded bg-slate-800" />
+          <div className="h-3 w-1/2 rounded bg-slate-800" />
+          <div className="flex items-start justify-between pt-2 border-t border-slate-900">
+            <div className="h-8 w-14 rounded bg-slate-800" />
+            <div className="h-8 w-14 rounded bg-slate-800" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HeroFundsSkeleton() {
+  return (
+    <div className="mt-8 w-full max-w-4xl">
+      <CardGridSkeleton count={FEATURED_FUND_IDS.length} />
+    </div>
+  );
+}
+
+function RealityCheckSkeleton() {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-6 space-y-6 animate-pulse">
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold text-slate-100">See What Most Portals Hide</h2>
+        <div className="h-3 w-2/3 rounded bg-slate-800" />
+      </div>
+      <div className="space-y-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="h-8 rounded bg-slate-900 border border-slate-800" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <div className="h-16 rounded bg-slate-900 border border-slate-800" />
+        <div className="h-16 rounded bg-slate-900 border border-slate-800" />
+      </div>
     </div>
   );
 }

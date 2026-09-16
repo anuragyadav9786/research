@@ -15,7 +15,7 @@ const LINK_CLASS =
  * anywhere in the app; every page just ended after its last section. */
 export function SiteFooter() {
   return (
-    <footer className="border-t border-slate-800 bg-slate-950 px-8 py-8 text-slate-500">
+    <footer className="border-t border-slate-800 bg-slate-950 px-8 py-8 text-slate-400">
       <div className="mx-auto flex max-w-5xl flex-col items-start justify-between gap-4 text-xs sm:flex-row sm:items-center">
         <p className="max-w-md">
           Every number shown here is either real, ingested market data or explicitly
@@ -29,7 +29,7 @@ export function SiteFooter() {
           ))}
         </nav>
       </div>
-      <p className="mx-auto mt-4 max-w-5xl text-[11px] text-slate-600">
+      <p className="mx-auto mt-4 max-w-5xl text-[11px] text-slate-400">
         ThinkFin is a research tool, not investment advice.
       </p>
     </footer>
