@@ -240,15 +240,15 @@ export default async function Home({
 const CARD_LINK_CLASS =
   "rounded-lg border border-slate-800 hover:border-slate-700 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-950/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
 
-// Same navy-to-blue gradient as the marketing site's "wealth" goal card
-// (anuragyadav9786/new-design's goalVisuals.wealth) — used only for fund
-// cards specifically, not the plain white CARD_LINK_CLASS cards elsewhere
-// on this page, so its own text colors are set explicitly (white-based)
-// rather than through the sitewide light-theme slate remap, which assumes
-// a light card background.
+// Same navy-to-blue gradient as the marketing site's "retirement" goal card
+// (anuragyadav9786/new-design's goalVisuals.retirement) — used only for
+// fund cards specifically, not the plain white CARD_LINK_CLASS cards
+// elsewhere on this page, so its own text colors are set explicitly
+// (white-based) rather than through the sitewide light-theme slate remap,
+// which assumes a light card background.
 const FUND_CARD_CLASS =
   "rounded-lg border border-white/10 text-white hover:-translate-y-0.5 hover:border-white/20 hover:shadow-lg hover:shadow-indigo-950/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
-const FUND_CARD_GRADIENT = "linear-gradient(160deg, var(--tf-navy) 0%, #0F2A54 45%, var(--tf-blue) 120%)";
+const FUND_CARD_GRADIENT = "linear-gradient(160deg, var(--tf-navy) 0%, #123262 55%, var(--tf-blue) 130%)";
 
 async function CompleteDataGrid({
   fundIds,
