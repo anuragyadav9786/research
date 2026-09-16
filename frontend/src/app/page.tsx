@@ -123,7 +123,13 @@ export default async function Home({
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { tab } = await searchParams;
-  const activeTab = tab === "all" ? "all" : "complete";
+  // Defaults to "all" rather than "complete": the hero above already shows
+  // the same curated FEATURED_FUND_IDS set that "complete" would repeat
+  // here verbatim (identical cards, identical numbers) — on first load
+  // that's the same 2-3 funds appearing twice on one screen with zero
+  // differentiation. "complete" stays one click away for anyone who
+  // deliberately wants to revisit that curated set.
+  const activeTab = tab === "complete" ? "complete" : "all";
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
