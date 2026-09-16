@@ -190,7 +190,19 @@ export default async function Home({
           </div>
         </section>
 
-        {realityA && realityB && <RealityCheckWidget fundA={realityA} fundB={realityB} benchmark={benchmark} />}
+        {realityA && realityB ? (
+          <RealityCheckWidget fundA={realityA} fundB={realityB} benchmark={benchmark} />
+        ) : (
+          <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-6">
+            <h2 className="text-lg font-semibold text-slate-100">See What Most Portals Hide</h2>
+            <p className="text-sm text-slate-500 mt-2">
+              This comparison is temporarily unavailable while its fund data refreshes.{" "}
+              <Link href="/research/compare" className="text-indigo-400 hover:text-indigo-300">
+                Compare any two funds yourself →
+              </Link>
+            </p>
+          </div>
+        )}
 
         <section className="space-y-4">
           <div className="flex items-baseline justify-between flex-wrap gap-3">
@@ -273,6 +285,18 @@ async function CompleteDataGrid({
       };
     }),
   );
+
+  const availableIds = fundIds.filter((id) => funds.some((f) => f.id === id));
+  if (availableIds.length === 0) {
+    return (
+      <p className="text-sm text-slate-500 py-6">
+        Featured funds are refreshing —{" "}
+        <Link href="/research" className="text-indigo-400 hover:text-indigo-300">
+          browse all funds →
+        </Link>
+      </p>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

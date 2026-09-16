@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { MobileNav } from "./MobileNav";
 import { OmniSearch } from "./OmniSearch";
 
 const NAV_ITEMS = [
@@ -21,11 +22,11 @@ const FOCUS_RING =
 
 export function SiteHeader({ active }: { active?: SiteHeaderActive }) {
   return (
-    <header className="border-b border-slate-800 px-8 py-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+    <header className="relative border-b border-slate-800 px-8 py-4 flex items-center justify-between gap-x-6 gap-y-3">
       <Link href="/" className={`text-lg font-semibold tracking-tight text-slate-100 rounded-sm ${FOCUS_RING}`}>
         ThinkFin
       </Link>
-      <nav className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+      <nav className="hidden sm:flex flex-wrap gap-x-6 gap-y-1 text-sm">
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.key}
@@ -40,7 +41,10 @@ export function SiteHeader({ active }: { active?: SiteHeaderActive }) {
           </Link>
         ))}
       </nav>
-      <OmniSearch />
+      <div className="flex items-center gap-3">
+        <OmniSearch />
+        <MobileNav items={NAV_ITEMS} active={active} />
+      </div>
     </header>
   );
 }
