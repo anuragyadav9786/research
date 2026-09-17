@@ -14,14 +14,29 @@ import {
 } from "@/lib/api";
 import { formatDate, formatNav, formatNumber, formatPct, signColorClass } from "@/lib/format";
 import { AllocationBar } from "@/components/fund/AllocationBar";
+import { Disclosure } from "@/components/fund/Disclosure";
 import { DistributionBar } from "@/components/fund/DistributionBar";
 import { HoldingsTable } from "@/components/fund/HoldingsTable";
 import { MarketRegimeTable } from "@/components/fund/MarketRegimeTable";
+import { MetricDisclosure } from "@/components/fund/MetricDisclosure";
 import { NavChart } from "@/components/fund/NavChart";
 import { RollingReturnBarChart } from "@/components/fund/RollingReturnBarChart";
+import { ScalarScaleBar } from "@/components/fund/ScalarScaleBar";
 import { StatCard } from "@/components/fund/StatCard";
 import { AiSummaryPanel } from "@/components/fund/AiSummaryPanel";
 import { StressTestPanel } from "@/components/fund/StressTestPanel";
+import {
+  interpretBeta,
+  interpretDownsideCapture,
+  interpretDownsideDeviation,
+  interpretJensenAlpha,
+  interpretMaxDrawdown,
+  interpretRollingReturns,
+  interpretSharpe,
+  interpretSortino,
+  interpretUpsideCapture,
+  interpretVolatility,
+} from "@/lib/metricInterpretation";
 import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, RiskResponse, RollingReturnsResponse } from "@/types/fund";
 import type { MarketRegimeBehaviorResponse } from "@/types/marketRegime";
 import type { StressTestResponse } from "@/types/stressTest";
@@ -206,7 +221,11 @@ export default async function FundDetailPage({
         ) : (
           <>
             <section>
-              <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Returns (Annualized)</h2>
+              <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-1">Returns (Annualized)</h2>
+              <p className="text-xs text-slate-500 mb-3">
+                Point-to-point figures — each depends on the exact day measured. See Rolling Returns below for how
+                consistent this fund&rsquo;s outcomes actually were.
+              </p>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 {Object.entries(returns!.windows).map(([key, w]) => (
                   <StatCard
@@ -240,33 +259,133 @@ export default async function FundDetailPage({
                 </span>
               </h2>
               {risk!.available ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <StatCard label="Volatility" value={`${formatNumber(risk!.volatility_pct)}%`} />
-                  <StatCard label="Downside Deviation" value={`${formatNumber(risk!.downside_deviation_pct)}%`} />
-                  <StatCard
-                    label="Sharpe Ratio"
-                    value={formatNumber(risk!.sharpe_ratio)}
-                    valueClassName={signColorClass(risk!.sharpe_ratio)}
-                  />
-                  <StatCard
-                    label="Sortino Ratio"
-                    value={formatNumber(risk!.sortino_ratio)}
-                    valueClassName={signColorClass(risk!.sortino_ratio)}
-                  />
-                  <StatCard
-                    label="Upside Capture"
-                    value={risk!.upside_capture_pct !== null ? `${formatNumber(risk!.upside_capture_pct, 1)}%` : "N/A"}
-                  />
-                  <StatCard
-                    label="Downside Capture"
-                    value={risk!.downside_capture_pct !== null ? `${formatNumber(risk!.downside_capture_pct, 1)}%` : "N/A"}
-                  />
-                  <StatCard label="Beta" value={formatNumber(risk!.beta)} />
-                  <StatCard
-                    label="Jensen's Alpha"
-                    value={risk!.jensen_alpha_pct !== null ? formatPct(risk!.jensen_alpha_pct) : "N/A"}
-                    valueClassName={signColorClass(risk!.jensen_alpha_pct)}
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(() => {
+                    const cards: {
+                      key: string;
+                      label: string;
+                      raw: number | null;
+                      interp: ReturnType<typeof interpretSharpe>;
+                      formatValue: (v: number) => string;
+                      displayValue: string;
+                      preciseValue: string;
+                      usesRiskFreeRate: boolean;
+                    }[] = [
+                      {
+                        key: "sharpe",
+                        label: "Sharpe Ratio",
+                        raw: risk!.sharpe_ratio,
+                        interp: interpretSharpe(risk!.sharpe_ratio),
+                        formatValue: (v) => formatNumber(v),
+                        displayValue: formatNumber(risk!.sharpe_ratio),
+                        preciseValue: formatNumber(risk!.sharpe_ratio, 4),
+                        usesRiskFreeRate: true,
+                      },
+                      {
+                        key: "sortino",
+                        label: "Sortino Ratio",
+                        raw: risk!.sortino_ratio,
+                        interp: interpretSortino(risk!.sortino_ratio),
+                        formatValue: (v) => formatNumber(v),
+                        displayValue: formatNumber(risk!.sortino_ratio),
+                        preciseValue: formatNumber(risk!.sortino_ratio, 4),
+                        usesRiskFreeRate: true,
+                      },
+                      {
+                        key: "volatility",
+                        label: "Volatility",
+                        raw: risk!.volatility_pct,
+                        interp: interpretVolatility(risk!.volatility_pct),
+                        formatValue: (v) => `${formatNumber(v, 0)}%`,
+                        displayValue: `${formatNumber(risk!.volatility_pct)}%`,
+                        preciseValue: `${formatNumber(risk!.volatility_pct, 4)}%`,
+                        usesRiskFreeRate: false,
+                      },
+                      {
+                        key: "downside_deviation",
+                        label: "Downside Deviation",
+                        raw: risk!.downside_deviation_pct,
+                        interp: interpretDownsideDeviation(risk!.downside_deviation_pct),
+                        formatValue: (v) => `${formatNumber(v, 0)}%`,
+                        displayValue: `${formatNumber(risk!.downside_deviation_pct)}%`,
+                        preciseValue: `${formatNumber(risk!.downside_deviation_pct, 4)}%`,
+                        usesRiskFreeRate: false,
+                      },
+                      {
+                        key: "upside_capture",
+                        label: "Upside Capture",
+                        raw: risk!.upside_capture_pct,
+                        interp: interpretUpsideCapture(risk!.upside_capture_pct),
+                        formatValue: (v) => `${formatNumber(v, 0)}%`,
+                        displayValue: risk!.upside_capture_pct !== null ? `${formatNumber(risk!.upside_capture_pct, 1)}%` : "N/A",
+                        preciseValue: `${formatNumber(risk!.upside_capture_pct, 4)}%`,
+                        usesRiskFreeRate: false,
+                      },
+                      {
+                        key: "downside_capture",
+                        label: "Downside Capture",
+                        raw: risk!.downside_capture_pct,
+                        interp: interpretDownsideCapture(risk!.downside_capture_pct),
+                        formatValue: (v) => `${formatNumber(v, 0)}%`,
+                        displayValue: risk!.downside_capture_pct !== null ? `${formatNumber(risk!.downside_capture_pct, 1)}%` : "N/A",
+                        preciseValue: `${formatNumber(risk!.downside_capture_pct, 4)}%`,
+                        usesRiskFreeRate: false,
+                      },
+                      {
+                        key: "beta",
+                        label: "Beta",
+                        raw: risk!.beta,
+                        interp: interpretBeta(risk!.beta),
+                        formatValue: (v) => formatNumber(v, 1),
+                        displayValue: formatNumber(risk!.beta),
+                        preciseValue: formatNumber(risk!.beta, 4),
+                        usesRiskFreeRate: false,
+                      },
+                      {
+                        key: "alpha",
+                        label: "Jensen's Alpha",
+                        raw: risk!.jensen_alpha_pct,
+                        interp: interpretJensenAlpha(risk!.jensen_alpha_pct),
+                        formatValue: (v) => formatPct(v, 0),
+                        displayValue: risk!.jensen_alpha_pct !== null ? formatPct(risk!.jensen_alpha_pct) : "N/A",
+                        preciseValue: formatPct(risk!.jensen_alpha_pct, 4),
+                        usesRiskFreeRate: true,
+                      },
+                    ];
+
+                    return cards.map((card) => {
+                      if (card.raw === null || card.interp === null) {
+                        return <StatCard key={card.key} label={card.label} value="N/A" />;
+                      }
+                      return (
+                        <MetricDisclosure
+                          key={card.key}
+                          label={card.label}
+                          value={card.displayValue}
+                          valueClassName={card.interp.verdictColorClass}
+                          sentence={card.interp.sentence}
+                          tier3={
+                            <p className="text-sm font-mono tabular-nums text-slate-200">
+                              {card.preciseValue}
+                              <span className="text-slate-500 font-sans ml-2">
+                                · computed from {risk!.observations_used} monthly return observations
+                                {card.usesRiskFreeRate ? ` at a ${formatNumber(risk!.risk_free_rate_pct)}% annual risk-free rate` : ""}
+                              </span>
+                            </p>
+                          }
+                          tier2={
+                            <ScalarScaleBar
+                              value={card.raw}
+                              scaleMin={card.interp.scaleMin}
+                              scaleMax={card.interp.scaleMax}
+                              zones={card.interp.zones}
+                              formatValue={card.formatValue}
+                            />
+                          }
+                        />
+                      );
+                    });
+                  })()}
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">Not enough NAV history to compute risk metrics yet.</p>
@@ -293,7 +412,32 @@ export default async function FundDetailPage({
               <div className="rounded-lg border border-slate-800 p-4 space-y-4">
                 {rolling!.available ? (
                   <>
+                    <p className="text-sm text-slate-300">
+                      {interpretRollingReturns(
+                        rolling!.distribution,
+                        windowYears,
+                        rolling!.benchmark_consistency?.beat_rate_pct ?? null,
+                      )}
+                    </p>
                     <DistributionBar distribution={rolling!.distribution} />
+                    <Disclosure label="Show exact percentile values">
+                      <dl className="grid grid-cols-3 sm:grid-cols-5 gap-3 text-center">
+                        {(
+                          [
+                            ["P10", rolling!.distribution.p10],
+                            ["P25", rolling!.distribution.p25],
+                            ["Median", rolling!.distribution.median],
+                            ["P75", rolling!.distribution.p75],
+                            ["P90", rolling!.distribution.p90],
+                          ] as const
+                        ).map(([label, v]) => (
+                          <div key={label}>
+                            <dt className="text-[11px] uppercase tracking-wide text-slate-500">{label}</dt>
+                            <dd className="text-sm font-mono tabular-nums text-slate-200 mt-0.5">{formatPct(v)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </Disclosure>
                     {rolling!.benchmark_consistency && (
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-900">
                         <StatCard
@@ -333,12 +477,28 @@ export default async function FundDetailPage({
             <section>
               <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Drawdown</h2>
               {drawdown!.available ? (
-                <div className="rounded-lg border border-slate-800 p-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <StatCard
-                    label="Max Drawdown"
-                    value={formatPct(drawdown!.max_drawdown_pct)}
-                    valueClassName="text-rose-400"
-                  />
+                <div className="space-y-3">
+                  {(() => {
+                    const interp = interpretMaxDrawdown(drawdown!.max_drawdown_pct);
+                    return interp === null ? null : (
+                      <MetricDisclosure
+                        label="Max Drawdown"
+                        value={formatPct(drawdown!.max_drawdown_pct)}
+                        valueClassName={interp.verdictColorClass}
+                        sentence={interp.sentence}
+                        tier2={
+                          <ScalarScaleBar
+                            value={drawdown!.max_drawdown_pct!}
+                            scaleMin={interp.scaleMin}
+                            scaleMax={interp.scaleMax}
+                            zones={interp.zones}
+                            formatValue={(v) => formatPct(v, 0)}
+                          />
+                        }
+                      />
+                    );
+                  })()}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <StatCard label="Peak" value={formatDate(drawdown!.peak_date)} hint={formatNav(drawdown!.peak_nav)} />
                   <StatCard
                     label="Trough"
@@ -355,6 +515,7 @@ export default async function FundDetailPage({
                     }
                     valueClassName={drawdown!.recovered ? "" : "text-amber-400"}
                   />
+                  </div>
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">Not enough NAV history to compute drawdown yet.</p>
