@@ -1,14 +1,185 @@
 import Link from "next/link";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
-import { ApiError, getFundOverlap, listAllFunds } from "@/lib/api";
-import { formatDate, formatNumber } from "@/lib/format";
+import { SyncedRollingComparison } from "@/components/fund/SyncedRollingComparison";
+import { ApiError, getFundIntelligence, getFundOverlap, listAllFunds } from "@/lib/api";
+import { formatDate, formatNumber, formatPct } from "@/lib/format";
+import type { IntelligenceResponse } from "@/types/fund";
 
 const OVERLAP_LABELS: Record<string, string> = {
   low_overlap: "Low Overlap",
   moderate_overlap: "Moderate Overlap",
   high_overlap: "High Overlap",
 };
+
+const CAGR_WINDOWS = ["1y", "3y", "5y"] as const;
+const CAGR_WINDOW_LABELS: Record<string, string> = { "1y": "1Y CAGR", "3y": "3Y CAGR", "5y": "5Y CAGR" };
+
+/** A small pill shown only in the winning side's own cell — the brief's
+ * "delta tag for downside defense" — used only on the two rows where
+ * "defends better" has an unambiguous real-data meaning (smaller-
+ * magnitude drawdown, lower downside capture). Other rows (CAGR, Sharpe)
+ * just bold+color the higher number; "better" there is closer to opinion
+ * than a tag should claim. */
+function DefenseTag() {
+  return (
+    <span className="ml-2 inline-flex items-center rounded-full bg-emerald-900/60 text-emerald-300 text-[10px] px-2 py-0.5 whitespace-nowrap">
+      Defends better
+    </span>
+  );
+}
+
+function HeadToHeadRow({
+  label,
+  valueA,
+  valueB,
+  formatValue,
+  leader,
+  defenseWinner,
+}: {
+  label: string;
+  valueA: number | null;
+  valueB: number | null;
+  formatValue: (v: number) => string;
+  /** Which side to color as ahead on this row — independent of
+   * `defenseWinner` since not every row is about downside defense. */
+  leader: "a" | "b" | "tie" | null;
+  /** Present only on the two downside-defense rows; the side named here
+   * (never both) gets the DefenseTag in its own cell. */
+  defenseWinner?: "a" | "b" | "tie" | null;
+}) {
+  const showTag = valueA !== null && valueB !== null;
+  return (
+    <tr className="border-b border-slate-900">
+      <td className="px-4 py-3 text-sm text-slate-400">{label}</td>
+      <td className={`px-4 py-3 text-sm text-right font-mono tabular-nums ${leader === "a" ? "text-emerald-400 font-semibold" : "text-slate-200"}`}>
+        {valueA !== null ? formatValue(valueA) : "N/A"}
+        {showTag && defenseWinner === "a" && <DefenseTag />}
+      </td>
+      <td className={`px-4 py-3 text-sm text-right font-mono tabular-nums ${leader === "b" ? "text-emerald-400 font-semibold" : "text-slate-200"}`}>
+        {valueB !== null ? formatValue(valueB) : "N/A"}
+        {showTag && defenseWinner === "b" && <DefenseTag />}
+      </td>
+    </tr>
+  );
+}
+
+/** Real per-fund figures compared side by side — the platform's own
+ * "Head-to-Head Benchmark" homepage promise, previously unfulfilled here
+ * (this page only ever showed portfolio-overlap data, never returns or
+ * risk). Sticky column header (top-16, matching SiteHeader's own height)
+ * so the two fund names stay visible while scrolling past a long row
+ * list; the two downside rows carry a DefenseTag; the rolling-return
+ * distributions get the synced-hover comparison bars. */
+function HeadToHeadPerformance({
+  intelligenceA,
+  intelligenceB,
+}: {
+  intelligenceA: IntelligenceResponse;
+  intelligenceB: IntelligenceResponse;
+}) {
+  const { fund: fundA, returns: returnsA, risk: riskA, drawdown: drawdownA, rolling_3y: rollingA } = intelligenceA;
+  const { fund: fundB, returns: returnsB, risk: riskB, drawdown: drawdownB, rolling_3y: rollingB } = intelligenceB;
+
+  function leaderFor(a: number | null, b: number | null): "a" | "b" | "tie" | null {
+    if (a === null || b === null) return null;
+    if (a === b) return "tie";
+    return a > b ? "a" : "b";
+  }
+
+  // Smaller-magnitude drawdown, and lower downside capture, defend
+  // better — both real, already-computed figures (drawdown.max_drawdown_pct,
+  // risk.downside_capture_pct), not a derived/estimated score.
+  const drawdownDefense = (() => {
+    const a = drawdownA.available ? drawdownA.max_drawdown_pct : null;
+    const b = drawdownB.available ? drawdownB.max_drawdown_pct : null;
+    if (a === null || b === null) return null;
+    if (a === b) return "tie" as const;
+    return a > b ? ("a" as const) : ("b" as const);
+  })();
+  const captureDefense = (() => {
+    const a = riskA.available ? riskA.downside_capture_pct : null;
+    const b = riskB.available ? riskB.downside_capture_pct : null;
+    if (a === null || b === null) return null;
+    if (a === b) return "tie" as const;
+    return a < b ? ("a" as const) : ("b" as const);
+  })();
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-lg border border-slate-800">
+        <table className="w-full">
+          <thead>
+            <tr className="sticky top-16 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500">
+              <th className="px-4 py-3 font-medium">Head-to-Head Performance</th>
+              <th className="px-4 py-3 font-medium text-right">
+                <Link href={`/research/${fundA.id}`} className="text-indigo-400 hover:text-indigo-300">
+                  {fundA.scheme_name}
+                </Link>
+              </th>
+              <th className="px-4 py-3 font-medium text-right">
+                <Link href={`/research/${fundB.id}`} className="text-indigo-400 hover:text-indigo-300">
+                  {fundB.scheme_name}
+                </Link>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {CAGR_WINDOWS.map((w) => {
+              const a = returnsA.windows[w]?.available ? returnsA.windows[w].cagr_pct : null;
+              const b = returnsB.windows[w]?.available ? returnsB.windows[w].cagr_pct : null;
+              return (
+                <HeadToHeadRow
+                  key={w}
+                  label={CAGR_WINDOW_LABELS[w]}
+                  valueA={a}
+                  valueB={b}
+                  formatValue={(v) => formatPct(v, 1)}
+                  leader={leaderFor(a, b)}
+                />
+              );
+            })}
+            <HeadToHeadRow
+              label="Max Drawdown"
+              valueA={drawdownA.available ? drawdownA.max_drawdown_pct : null}
+              valueB={drawdownB.available ? drawdownB.max_drawdown_pct : null}
+              formatValue={(v) => formatPct(v, 1)}
+              leader={drawdownDefense}
+              defenseWinner={drawdownDefense}
+            />
+            <HeadToHeadRow
+              label="Downside Capture"
+              valueA={riskA.available ? riskA.downside_capture_pct : null}
+              valueB={riskB.available ? riskB.downside_capture_pct : null}
+              formatValue={(v) => `${formatNumber(v, 1)}%`}
+              leader={captureDefense}
+              defenseWinner={captureDefense}
+            />
+            <HeadToHeadRow
+              label="Sharpe Ratio"
+              valueA={riskA.available ? riskA.sharpe_ratio : null}
+              valueB={riskB.available ? riskB.sharpe_ratio : null}
+              formatValue={(v) => formatNumber(v)}
+              leader={leaderFor(riskA.available ? riskA.sharpe_ratio : null, riskB.available ? riskB.sharpe_ratio : null)}
+            />
+          </tbody>
+        </table>
+      </div>
+
+      {rollingA.available && rollingB.available && (
+        <div className="rounded-lg border border-slate-800 p-4">
+          <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">
+            Rolling 3-Year Return Distribution
+          </h2>
+          <SyncedRollingComparison
+            fundA={{ label: fundA.scheme_name, distribution: rollingA.distribution }}
+            fundB={{ label: fundB.scheme_name, distribution: rollingB.distribution }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export const metadata = { title: "Compare Funds — ThinkFin" };
 
@@ -25,10 +196,25 @@ export default async function CompareFundsPage({
   const canCompare = fundIdA && fundIdB && fundIdA !== fundIdB;
 
   let overlapError: string | null = null;
-  const overlap = canCompare ? await getFundOverlap(fundIdA, fundIdB).catch((err) => {
-    overlapError = err instanceof ApiError ? err.message : "Could not load overlap data.";
-    return null;
-  }) : null;
+  const overlapPromise = canCompare
+    ? getFundOverlap(fundIdA, fundIdB).catch((err) => {
+        overlapError = err instanceof ApiError ? err.message : "Could not load overlap data.";
+        return null;
+      })
+    : Promise.resolve(null);
+
+  // getFundIntelligence bundles returns/risk/rolling(3y)/drawdown into one
+  // call per fund (same endpoint the fund detail page uses) — two calls
+  // total for the head-to-head section below, not eight. A fund with no
+  // direct/growth variant, or too little NAV history for a metric, still
+  // renders: intelligenceA/B fall back to null and each metric row below
+  // already handles a missing value as "N/A", same as everywhere else on
+  // this platform.
+  const [overlap, intelligenceA, intelligenceB] = await Promise.all([
+    overlapPromise,
+    canCompare ? getFundIntelligence(fundIdA).catch(() => null) : Promise.resolve(null),
+    canCompare ? getFundIntelligence(fundIdB).catch(() => null) : Promise.resolve(null),
+  ]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -36,9 +222,9 @@ export default async function CompareFundsPage({
 
       <main className="px-8 py-10 max-w-4xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold">Fund Overlap</h1>
+          <h1 className="text-2xl font-semibold">Compare Funds</h1>
           <p className="text-slate-400 text-sm mt-1">
-            How much do two funds actually share — holdings, sectors, and return behaviour?
+            Place two funds side by side — returns, risk, and how much they actually overlap in holdings and sectors.
           </p>
         </div>
 
@@ -82,6 +268,10 @@ export default async function CompareFundsPage({
         )}
 
         {overlapError && <p className="text-sm text-rose-400">{overlapError}</p>}
+
+        {canCompare && intelligenceA && intelligenceB && (
+          <HeadToHeadPerformance intelligenceA={intelligenceA} intelligenceB={intelligenceB} />
+        )}
 
         {overlap && overlap.available && (
           <div className="space-y-6">
