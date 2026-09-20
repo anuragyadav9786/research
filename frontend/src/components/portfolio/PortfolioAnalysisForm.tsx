@@ -6,6 +6,7 @@ import Link from "next/link";
 import { analysePortfolio, ApiError } from "@/lib/api";
 import { formatDate, formatNumber, formatPct } from "@/lib/format";
 import { AllocationBar } from "@/components/fund/AllocationBar";
+import { Disclosure } from "@/components/fund/Disclosure";
 import { StatCard } from "@/components/fund/StatCard";
 import type { FundSummary } from "@/types/fund";
 import type { PortfolioAnalysisResponse } from "@/types/portfolioAnalysis";
@@ -261,6 +262,17 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="mt-3">
+                <Disclosure label="What does this mean?">
+                  <p className="text-sm text-slate-400">
+                    Portfolio Overlap measures how much of two funds&rsquo; underlying holdings are the same
+                    companies, weighted by position size in each fund. If several of your funds show high overlap
+                    with each other, you&rsquo;re carrying less real diversification than the fund count alone
+                    suggests — a downturn in those shared holdings affects several of your funds at once, not just
+                    one.
+                  </p>
+                </Disclosure>
               </div>
             </div>
           )}

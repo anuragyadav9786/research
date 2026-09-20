@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
+import { Disclosure } from "@/components/fund/Disclosure";
 import { SyncedRollingComparison } from "@/components/fund/SyncedRollingComparison";
 import { ApiError, getFundIntelligence, getFundOverlap, listAllFunds } from "@/lib/api";
 import { formatDate, formatNumber, formatPct } from "@/lib/format";
@@ -301,6 +302,29 @@ export default async function CompareFundsPage({
                 </div>
               </div>
             </div>
+
+            <p className="text-sm text-slate-300">
+              <Link href={`/research/${overlap.fund_a.id}`} className="text-indigo-400 hover:text-indigo-300">
+                {overlap.fund_a.scheme_name}
+              </Link>{" "}
+              ↔{" "}
+              <Link href={`/research/${overlap.fund_b.id}`} className="text-indigo-400 hover:text-indigo-300">
+                {overlap.fund_b.scheme_name}
+              </Link>
+              : {formatNumber(overlap.weighted_overlap_pct, 1)}% overlap.{" "}
+              {overlap.common_securities_count > 0
+                ? `They share ${overlap.common_securities_count} underlying holding${overlap.common_securities_count === 1 ? "" : "s"}, weighted by how much of each fund's disclosed portfolio those holdings represent.`
+                : "They share no disclosed holdings in common."}
+            </p>
+
+            <Disclosure label="What does this mean?">
+              <p className="text-sm text-slate-400">
+                Portfolio Overlap measures how much of two funds&rsquo; underlying holdings are the same companies,
+                weighted by position size in each fund. High overlap means holding both funds gives you less real
+                diversification than owning two different funds would suggest — you&rsquo;re more exposed to the
+                same set of companies than the fund count implies.
+              </p>
+            </Disclosure>
 
             <p className="text-xs text-slate-500">
               <Link href={`/research/${overlap.fund_a.id}`} className="text-indigo-500 hover:text-indigo-600">

@@ -284,3 +284,86 @@ export function interpretRollingReturns(
   if (beatRatePct === null) return base;
   return `${base} It beat its benchmark in ${formatNumber(beatRatePct, 0)}% of those windows.`;
 }
+
+// Fund → Category → Benchmark context (product-upgrade brief Section 5):
+// a neutral "the fund's X was higher/lower/about the same as Y" clause,
+// never a verdict ("better"/"worse") — the reader draws their own
+// conclusion from the comparison, this only states what the numbers show.
+function neutralComparisonClause(
+  fundValue: number,
+  otherValue: number,
+  metricNoun: string,
+  contextName: string,
+  { higherIsLarger = true }: { higherIsLarger?: boolean } = {},
+): string {
+  const diff = fundValue - otherValue;
+  // Below this, the two numbers are close enough that "larger"/"smaller"
+  // would overstate a difference that's really just noise.
+  if (Math.abs(diff) < 0.05) {
+    return `The fund's ${metricNoun} was about the same as ${contextName} during the analysed period.`;
+  }
+  const isLarger = higherIsLarger ? diff > 0 : diff < 0;
+  return `The fund experienced a ${isLarger ? "larger" : "smaller"} ${metricNoun} than ${contextName} during the analysed period.`;
+}
+
+export function drawdownContextSentence(
+  fundValue: number,
+  categoryAvg: number | null,
+  categoryLabel: string,
+  benchmarkValue: number | null,
+  benchmarkName: string | null,
+): string | null {
+  const clauses: string[] = [];
+  // Drawdown is a negative percentage — a numerically *lower* (more
+  // negative) fund value is the *larger* drawdown, the opposite of CAGR/
+  // volatility's plain "higher number reads as larger" convention.
+  if (categoryAvg !== null) {
+    clauses.push(
+      neutralComparisonClause(fundValue, categoryAvg, "historical maximum drawdown", `its ${categoryLabel} category average`, {
+        higherIsLarger: false,
+      }),
+    );
+  }
+  if (benchmarkValue !== null && benchmarkName !== null) {
+    clauses.push(
+      neutralComparisonClause(fundValue, benchmarkValue, "historical maximum drawdown", `its benchmark, ${benchmarkName}`, {
+        higherIsLarger: false,
+      }),
+    );
+  }
+  return clauses.length > 0 ? clauses.join(" ") : null;
+}
+
+export function cagrContextSentence(
+  fundValue: number,
+  categoryAvg: number | null,
+  categoryLabel: string,
+  benchmarkValue: number | null,
+  benchmarkName: string | null,
+): string | null {
+  const clauses: string[] = [];
+  if (categoryAvg !== null) {
+    clauses.push(neutralComparisonClause(fundValue, categoryAvg, "3-year annualised return", `its ${categoryLabel} category average`));
+  }
+  if (benchmarkValue !== null && benchmarkName !== null) {
+    clauses.push(neutralComparisonClause(fundValue, benchmarkValue, "3-year annualised return", `its benchmark, ${benchmarkName}`));
+  }
+  return clauses.length > 0 ? clauses.join(" ") : null;
+}
+
+export function volatilityContextSentence(
+  fundValue: number,
+  categoryAvg: number | null,
+  categoryLabel: string,
+  benchmarkValue: number | null,
+  benchmarkName: string | null,
+): string | null {
+  const clauses: string[] = [];
+  if (categoryAvg !== null) {
+    clauses.push(neutralComparisonClause(fundValue, categoryAvg, "volatility", `its ${categoryLabel} category average`));
+  }
+  if (benchmarkValue !== null && benchmarkName !== null) {
+    clauses.push(neutralComparisonClause(fundValue, benchmarkValue, "volatility", `its benchmark, ${benchmarkName}`));
+  }
+  return clauses.length > 0 ? clauses.join(" ") : null;
+}

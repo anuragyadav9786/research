@@ -1,4 +1,5 @@
 import type {
+  CategoryBenchmarkResponse,
   DrawdownResponse,
   FundDetail,
   FundListResponse,
@@ -141,6 +142,10 @@ export function getFundRollingReturnSeries(
 
 export function getFundDrawdown(fundId: number, params: VariantParams = {}): Promise<DrawdownResponse> {
   return apiGet<DrawdownResponse>(`/api/funds/${fundId}/drawdown`, params);
+}
+
+export function getFundCategoryBenchmark(fundId: number): Promise<CategoryBenchmarkResponse> {
+  return apiGet<CategoryBenchmarkResponse>(`/api/funds/${fundId}/category-benchmark`);
 }
 
 export function getFundPortfolio(fundId: number): Promise<PortfolioResponse> {

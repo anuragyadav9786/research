@@ -31,6 +31,7 @@ from app.repositories import fund_repository, market_regime_repository, portfoli
 from data_pipeline.orchestration.lazy_nav_backfill import ensure_nav_history
 from data_pipeline.orchestration.precompute_metrics import RISK_OPTIONAL_FIELDS, RISK_REQUIRED_FIELDS
 from app.schemas.funds import (
+    CategoryBenchmarkResponse,
     DrawdownResponse,
     FundDetail,
     FundListResponse,
@@ -50,6 +51,7 @@ from app.schemas.portfolio import PortfolioResponse
 from app.schemas.stress_test import StressTestResponse
 from app.services import (
     ai_explanation_service,
+    category_analytics_service,
     fund_analytics_service,
     market_regime_service,
     overlap_service,
@@ -289,6 +291,22 @@ def get_fund_drawdown(
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
     return fund_analytics_service.compute_drawdown(nav)
+
+
+@router.get("/{fund_id}/category-benchmark", response_model=CategoryBenchmarkResponse)
+def get_fund_category_benchmark(fund_id: int, db: Session = Depends(get_db)) -> dict:
+    """Fund vs. category-average vs. own-benchmark CAGR/drawdown/volatility
+    — the "Fund → Category → Benchmark" context layer (product-upgrade
+    brief Section 5). Category figures are live-computed across same-
+    category funds that already have NAV history (see
+    category_analytics_service.py for why this can't come from a cache);
+    never triggers a live NAV backfill itself, so a category full of not-
+    yet-backfilled funds degrades to `available: false` rather than a slow
+    request. Benchmark figures come from this fund's own linked index."""
+    scheme = _resolve_scheme(db, fund_id)
+    return category_analytics_service.compute_fund_context(
+        db, scheme, risk_free_rate_annual=get_settings().risk_free_rate
+    )
 
 
 @router.get("/{fund_id}/market-regimes", response_model=MarketRegimeBehaviorResponse)

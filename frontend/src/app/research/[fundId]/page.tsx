@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/layout/SiteHeader";
 import {
   ApiError,
   getFund,
+  getFundCategoryBenchmark,
   getFundIntelligence,
   getFundMarketRegimes,
   getFundNavHistory,
@@ -14,6 +15,7 @@ import {
 } from "@/lib/api";
 import { formatDate, formatNav, formatNumber, formatPct, signColorClass } from "@/lib/format";
 import { AllocationBar } from "@/components/fund/AllocationBar";
+import { CategoryBenchmarkRow } from "@/components/fund/CategoryBenchmarkRow";
 import { Disclosure } from "@/components/fund/Disclosure";
 import { DistributionBar } from "@/components/fund/DistributionBar";
 import { HoldingsTable } from "@/components/fund/HoldingsTable";
@@ -26,6 +28,8 @@ import { StatCard } from "@/components/fund/StatCard";
 import { AiSummaryPanel } from "@/components/fund/AiSummaryPanel";
 import { StressTestPanel } from "@/components/fund/StressTestPanel";
 import {
+  cagrContextSentence,
+  drawdownContextSentence,
   interpretBeta,
   interpretDownsideCapture,
   interpretDownsideDeviation,
@@ -36,6 +40,7 @@ import {
   interpretSortino,
   interpretUpsideCapture,
   interpretVolatility,
+  volatilityContextSentence,
 } from "@/lib/metricInterpretation";
 import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, RiskResponse, RollingReturnsResponse } from "@/types/fund";
 import type { MarketRegimeBehaviorResponse } from "@/types/marketRegime";
@@ -77,10 +82,14 @@ export default async function FundDetailPage({
     throw err;
   }
 
-  // Portfolio is variant-independent (holdings are the same across
-  // plan/option), so it's fetched separately and renders even if the
-  // requested plan/option combination doesn't exist.
-  const portfolio = await getFundPortfolio(fundId);
+  // Portfolio and category-benchmark are both variant-independent
+  // (holdings, and this fund's own category/benchmark, don't change with
+  // plan/option), so they're fetched separately and still render even if
+  // the requested plan/option combination doesn't exist.
+  const [portfolio, categoryBenchmark] = await Promise.all([
+    getFundPortfolio(fundId),
+    getFundCategoryBenchmark(fundId).catch(() => null),
+  ]);
 
   const variantParams = { plan, option };
   let returns: ReturnsResponse | null = null;
@@ -237,6 +246,37 @@ export default async function FundDetailPage({
                   />
                 ))}
               </div>
+
+              <div className="mt-3">
+                <Disclosure label="What does this mean?">
+                  <p className="text-sm text-slate-400">
+                    CAGR (Compound Annual Growth Rate) is the annualised rate of return over the selected period,
+                    assuming gains are reinvested. It smooths out the actual up-and-down path into a single average
+                    figure — two funds with the same CAGR can have had very different journeys to get there.
+                  </p>
+                </Disclosure>
+              </div>
+
+              {returns!.windows["3y"]?.available && categoryBenchmark && returns!.windows["3y"].cagr_pct !== null && (
+                <div className="mt-4">
+                  <CategoryBenchmarkRow
+                    label="3-Year Return"
+                    fundValue={returns!.windows["3y"].cagr_pct}
+                    categoryValue={categoryBenchmark.avg_cagr_3y_pct}
+                    categoryLabel={fund.category}
+                    benchmarkValue={categoryBenchmark.benchmark_cagr_3y_pct}
+                    benchmarkName={categoryBenchmark.benchmark_name}
+                    formatValue={(v) => formatPct(v, 1)}
+                    interpretation={cagrContextSentence(
+                      returns!.windows["3y"].cagr_pct,
+                      categoryBenchmark.avg_cagr_3y_pct,
+                      fund.category,
+                      categoryBenchmark.benchmark_cagr_3y_pct,
+                      categoryBenchmark.benchmark_name,
+                    )}
+                  />
+                </div>
+              )}
             </section>
 
             <section>
@@ -390,6 +430,27 @@ export default async function FundDetailPage({
               ) : (
                 <p className="text-sm text-slate-500">Not enough NAV history to compute risk metrics yet.</p>
               )}
+
+              {risk!.available && categoryBenchmark && (
+                <div className="mt-4">
+                  <CategoryBenchmarkRow
+                    label="Volatility"
+                    fundValue={risk!.volatility_pct!}
+                    categoryValue={categoryBenchmark.avg_volatility_pct}
+                    categoryLabel={fund.category}
+                    benchmarkValue={categoryBenchmark.benchmark_volatility_pct}
+                    benchmarkName={categoryBenchmark.benchmark_name}
+                    formatValue={(v) => `${formatNumber(v, 1)}%`}
+                    interpretation={volatilityContextSentence(
+                      risk!.volatility_pct!,
+                      categoryBenchmark.avg_volatility_pct,
+                      fund.category,
+                      categoryBenchmark.benchmark_volatility_pct,
+                      categoryBenchmark.benchmark_name,
+                    )}
+                  />
+                </div>
+              )}
             </section>
 
             <section>
@@ -516,6 +577,38 @@ export default async function FundDetailPage({
                     valueClassName={drawdown!.recovered ? "" : "text-amber-400"}
                   />
                   </div>
+
+                  <Disclosure label="What does this mean?">
+                    <p className="text-sm text-slate-400">
+                      <span className="text-slate-300 font-medium">Maximum Drawdown</span> is the largest fall from a
+                      previous peak before a new peak was reached — a fund can have a strong long-term return and
+                      still have gone through a period like this along the way.
+                    </p>
+                    <p className="text-sm text-slate-400 mt-2">
+                      <span className="text-slate-300 font-medium">Recovery Period</span> is how long it took the
+                      fund&rsquo;s NAV to climb back to its pre-drawdown peak after the trough. A fund that
+                      hasn&rsquo;t recovered yet is still underwater relative to that peak.
+                    </p>
+                  </Disclosure>
+
+                  {categoryBenchmark && (
+                    <CategoryBenchmarkRow
+                      label="Maximum Drawdown"
+                      fundValue={drawdown!.max_drawdown_pct!}
+                      categoryValue={categoryBenchmark.avg_max_drawdown_pct}
+                      categoryLabel={fund.category}
+                      benchmarkValue={categoryBenchmark.benchmark_max_drawdown_pct}
+                      benchmarkName={categoryBenchmark.benchmark_name}
+                      formatValue={(v) => formatPct(v, 1)}
+                      interpretation={drawdownContextSentence(
+                        drawdown!.max_drawdown_pct!,
+                        categoryBenchmark.avg_max_drawdown_pct,
+                        fund.category,
+                        categoryBenchmark.benchmark_max_drawdown_pct,
+                        categoryBenchmark.benchmark_name,
+                      )}
+                    />
+                  )}
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">Not enough NAV history to compute drawdown yet.</p>
