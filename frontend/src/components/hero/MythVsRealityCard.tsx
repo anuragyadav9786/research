@@ -1,8 +1,16 @@
 import { AlertTriangle, TrendingDown } from "lucide-react";
 
 import { DistributionBar } from "@/components/fund/DistributionBar";
-import { formatPct } from "@/lib/format";
+import { formatLakh, formatPct } from "@/lib/format";
 import type { RollingReturnDistribution } from "@/types/fund";
+
+// A round, easy-to-hold-in-your-head principal for the rupee-terms
+// translation below — ₹10 lakh, not this fund's actual AUM or any real
+// investor's holding. Applying a real, computed drawdown percentage to an
+// illustrative principal is standard practice for making a percentage
+// concrete; the copy is explicit that it's hypothetical, not a real
+// outcome.
+const ILLUSTRATIVE_PRINCIPAL = 1_000_000;
 
 export interface MythVsRealityData {
   id: number;
@@ -29,6 +37,7 @@ export interface MythVsRealityData {
  * value; a figure that isn't available renders as "—" rather than 0. */
 export function MythVsRealityCard({ fund }: { fund: MythVsRealityData }) {
   const { min, median, max } = fund.distribution;
+  const troughValue = fund.maxDrawdown !== null ? ILLUSTRATIVE_PRINCIPAL * (1 + fund.maxDrawdown / 100) : null;
 
   return (
     <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-2)] p-6 sm:p-8">
@@ -85,6 +94,48 @@ export function MythVsRealityCard({ fund }: { fund: MythVsRealityData }) {
           </div>
         </div>
       </div>
+
+      {fund.maxDrawdown !== null && (
+        <div className="mt-6 rounded-lg border border-[var(--border-subtle)] bg-white/5 p-4 sm:p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-white/50">In Rupee Terms</p>
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <div className="text-xs text-white/50">Hypothetical Investment</div>
+              <div className="font-mono tabular-nums text-white font-semibold mt-0.5">
+                {formatLakh(ILLUSTRATIVE_PRINCIPAL)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-white/50">Worst Observed Drawdown</div>
+              <div className="font-mono tabular-nums text-rose-400 font-semibold mt-0.5">
+                {formatPct(fund.maxDrawdown, 1)}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-white/50">Approx. Value at Trough</div>
+              <div className="font-mono tabular-nums text-rose-400 font-semibold mt-0.5">{formatLakh(troughValue)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-white/50">Recovery Period</div>
+              <div className="font-mono tabular-nums text-white font-semibold mt-0.5">
+                {fund.recovered === true && fund.recoveryDurationDays != null
+                  ? `${fund.recoveryDurationDays} days`
+                  : fund.recovered === false
+                    ? "Not yet recovered"
+                    : "—"}
+              </div>
+            </div>
+          </div>
+          <p className="mt-3 text-sm text-white/60">
+            A strong long-term return can coexist with significant temporary losses. ThinkFin helps you understand
+            the journey, not just the destination.
+          </p>
+          <p className="mt-2 text-[11px] text-white/40">
+            Illustrative only — assumes a lump-sum investment at the fund&rsquo;s pre-drawdown peak. Not an actual
+            investment outcome, projection, or recommendation.
+          </p>
+        </div>
+      )}
 
       <p className="mt-6 pt-6 border-t border-[var(--border-subtle)] text-sm text-white/50">
         Point-to-point returns depend entirely on the day you measure. Rolling consistency tells you what holding

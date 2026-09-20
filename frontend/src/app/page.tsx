@@ -2,6 +2,29 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { Activity, GitCompare, Layers, Waves } from "lucide-react";
 
+// The homepage's 4 "primary actions" row — plain, literal verbs (per the
+// product-upgrade brief's "answer what can I do here within seconds," not
+// the more editorial titles FEATURES below uses for the fuller cards
+// further down the page). Same 4 destinations as FEATURES; this row is
+// the fast path, FEATURES is the fuller pitch for anyone still scrolling.
+const PRIMARY_ACTIONS = [
+  { href: "/research", label: "Research a Fund" },
+  { href: "/research/compare", label: "Compare Funds" },
+  { href: "/portfolio", label: "Analyse My Portfolio" },
+  { href: "/market", label: "Explore Market Behaviour" },
+] as const;
+
+const ANALYSIS_CAPABILITIES = [
+  "Returns",
+  "Drawdowns",
+  "Recovery",
+  "Rolling Returns",
+  "Consistency",
+  "Market-Cycle Behaviour",
+  "Portfolio Overlap",
+  "Portfolio Risk",
+];
+
 import { SiteHeader } from "@/components/layout/SiteHeader";
 import { MythVsRealityCard, type MythVsRealityData } from "@/components/hero/MythVsRealityCard";
 import { PersonaCards } from "@/components/hero/PersonaCards";
@@ -141,13 +164,30 @@ export default async function Home({
             <h1 className="mt-2 font-serif text-3xl sm:text-4xl font-semibold leading-tight text-white">
               The return you&rsquo;re shown isn&rsquo;t the return you&rsquo;ll get.
             </h1>
-            <p className="mt-3 text-sm text-white/60">
-              A single point-to-point CAGR hides drawdowns, recovery time, and the real spread of outcomes. Press{" "}
+            <p className="mt-3 text-base text-white/80">
+              Go beyond returns. Understand how your mutual fund actually behaved.
+            </p>
+            <p className="mt-2 text-sm text-white/60">
+              ThinkFin is a mutual fund research engine — not a returns calculator. It analyses{" "}
+              {ANALYSIS_CAPABILITIES.join(", ")} to show you what an investor actually experienced, not just what the
+              fund earned. Press{" "}
               <kbd className="rounded border border-[var(--border-subtle)] px-1.5 py-0.5 text-[10px] font-mono text-white/50">
                 ⌘K
               </kbd>{" "}
               to search any fund or run &ldquo;X vs Y&rdquo;.
             </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {PRIMARY_ACTIONS.map((action) => (
+              <Link
+                key={action.href}
+                href={action.href}
+                className="rounded-md border border-[var(--border-subtle)] bg-[var(--surface-1)] px-4 py-2 text-sm text-white hover:border-[var(--border-hover)] hover:bg-[var(--surface-2)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--canvas)]"
+              >
+                {action.label}
+              </Link>
+            ))}
           </div>
 
           <Suspense fallback={<MythVsRealitySkeleton />}>
