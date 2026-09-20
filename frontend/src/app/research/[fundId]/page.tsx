@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/layout/SiteHeader";
 import {
   ApiError,
   getFund,
+  getFundCategoryBenchmark,
   getFundIntelligence,
   getFundMarketRegimes,
   getFundNavHistory,
@@ -14,18 +15,23 @@ import {
 } from "@/lib/api";
 import { formatDate, formatNav, formatNumber, formatPct, signColorClass } from "@/lib/format";
 import { AllocationBar } from "@/components/fund/AllocationBar";
+import { CategoryBenchmarkRow } from "@/components/fund/CategoryBenchmarkRow";
 import { Disclosure } from "@/components/fund/Disclosure";
 import { DistributionBar } from "@/components/fund/DistributionBar";
 import { HoldingsTable } from "@/components/fund/HoldingsTable";
 import { MarketRegimeTable } from "@/components/fund/MarketRegimeTable";
 import { MetricDisclosure } from "@/components/fund/MetricDisclosure";
 import { NavChart } from "@/components/fund/NavChart";
+import { ResearchStepNav } from "@/components/fund/ResearchStepNav";
+import { ResearchSummaryPanel } from "@/components/fund/ResearchSummaryPanel";
 import { RollingReturnBarChart } from "@/components/fund/RollingReturnBarChart";
 import { ScalarScaleBar } from "@/components/fund/ScalarScaleBar";
 import { StatCard } from "@/components/fund/StatCard";
 import { AiSummaryPanel } from "@/components/fund/AiSummaryPanel";
 import { StressTestPanel } from "@/components/fund/StressTestPanel";
 import {
+  cagrContextSentence,
+  drawdownContextSentence,
   interpretBeta,
   interpretDownsideCapture,
   interpretDownsideDeviation,
@@ -36,7 +42,9 @@ import {
   interpretSortino,
   interpretUpsideCapture,
   interpretVolatility,
+  volatilityContextSentence,
 } from "@/lib/metricInterpretation";
+import { buildResearchSummary } from "@/lib/researchSummary";
 import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, RiskResponse, RollingReturnsResponse } from "@/types/fund";
 import type { MarketRegimeBehaviorResponse } from "@/types/marketRegime";
 import type { StressTestResponse } from "@/types/stressTest";
@@ -77,10 +85,14 @@ export default async function FundDetailPage({
     throw err;
   }
 
-  // Portfolio is variant-independent (holdings are the same across
-  // plan/option), so it's fetched separately and renders even if the
-  // requested plan/option combination doesn't exist.
-  const portfolio = await getFundPortfolio(fundId);
+  // Portfolio and category-benchmark are both variant-independent
+  // (holdings, and this fund's own category/benchmark, don't change with
+  // plan/option), so they're fetched separately and still render even if
+  // the requested plan/option combination doesn't exist.
+  const [portfolio, categoryBenchmark] = await Promise.all([
+    getFundPortfolio(fundId),
+    getFundCategoryBenchmark(fundId).catch(() => null),
+  ]);
 
   const variantParams = { plan, option };
   let returns: ReturnsResponse | null = null;
@@ -144,7 +156,7 @@ export default async function FundDetailPage({
       <SiteHeader active="research" />
 
       <main className="px-8 py-10 max-w-5xl mx-auto space-y-8">
-        <div className="flex items-start justify-between">
+        <div id="overview" className="flex items-start justify-between scroll-mt-28">
           <div>
             <Link
               href="/research"
@@ -210,6 +222,8 @@ export default async function FundDetailPage({
           )}
         </div>
 
+        <ResearchStepNav />
+
         {variantError ? (
           <div className="rounded-lg border border-amber-900 bg-amber-950/40 p-6 text-sm text-amber-200">
             {variantError} Try{" "}
@@ -220,7 +234,7 @@ export default async function FundDetailPage({
           </div>
         ) : (
           <>
-            <section>
+            <section id="returns" className="scroll-mt-28">
               <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-1">Returns (Annualized)</h2>
               <p className="text-xs text-slate-500 mb-3">
                 Point-to-point figures — each depends on the exact day measured. See Rolling Returns below for how
@@ -237,6 +251,37 @@ export default async function FundDetailPage({
                   />
                 ))}
               </div>
+
+              <div className="mt-3">
+                <Disclosure label="What does this mean?">
+                  <p className="text-sm text-slate-400">
+                    CAGR (Compound Annual Growth Rate) is the annualised rate of return over the selected period,
+                    assuming gains are reinvested. It smooths out the actual up-and-down path into a single average
+                    figure — two funds with the same CAGR can have had very different journeys to get there.
+                  </p>
+                </Disclosure>
+              </div>
+
+              {returns!.windows["3y"]?.available && categoryBenchmark && returns!.windows["3y"].cagr_pct !== null && (
+                <div className="mt-4">
+                  <CategoryBenchmarkRow
+                    label="3-Year Return"
+                    fundValue={returns!.windows["3y"].cagr_pct}
+                    categoryValue={categoryBenchmark.avg_cagr_3y_pct}
+                    categoryLabel={fund.category}
+                    benchmarkValue={categoryBenchmark.benchmark_cagr_3y_pct}
+                    benchmarkName={categoryBenchmark.benchmark_name}
+                    formatValue={(v) => formatPct(v, 1)}
+                    interpretation={cagrContextSentence(
+                      returns!.windows["3y"].cagr_pct,
+                      categoryBenchmark.avg_cagr_3y_pct,
+                      fund.category,
+                      categoryBenchmark.benchmark_cagr_3y_pct,
+                      categoryBenchmark.benchmark_name,
+                    )}
+                  />
+                </div>
+              )}
             </section>
 
             <section>
@@ -251,7 +296,7 @@ export default async function FundDetailPage({
               </div>
             </section>
 
-            <section>
+            <section id="risk" className="scroll-mt-28">
               <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">
                 Risk &amp; Survival
                 <span className="text-slate-600 normal-case tracking-normal ml-2">
@@ -390,9 +435,30 @@ export default async function FundDetailPage({
               ) : (
                 <p className="text-sm text-slate-500">Not enough NAV history to compute risk metrics yet.</p>
               )}
+
+              {risk!.available && categoryBenchmark && (
+                <div className="mt-4">
+                  <CategoryBenchmarkRow
+                    label="Volatility"
+                    fundValue={risk!.volatility_pct!}
+                    categoryValue={categoryBenchmark.avg_volatility_pct}
+                    categoryLabel={fund.category}
+                    benchmarkValue={categoryBenchmark.benchmark_volatility_pct}
+                    benchmarkName={categoryBenchmark.benchmark_name}
+                    formatValue={(v) => `${formatNumber(v, 1)}%`}
+                    interpretation={volatilityContextSentence(
+                      risk!.volatility_pct!,
+                      categoryBenchmark.avg_volatility_pct,
+                      fund.category,
+                      categoryBenchmark.benchmark_volatility_pct,
+                      categoryBenchmark.benchmark_name,
+                    )}
+                  />
+                </div>
+              )}
             </section>
 
-            <section>
+            <section id="consistency" className="scroll-mt-28">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm uppercase tracking-wide text-slate-500">Rolling Returns</h2>
                 <div className="flex rounded-md border border-slate-800 overflow-hidden text-xs">
@@ -516,13 +582,45 @@ export default async function FundDetailPage({
                     valueClassName={drawdown!.recovered ? "" : "text-amber-400"}
                   />
                   </div>
+
+                  <Disclosure label="What does this mean?">
+                    <p className="text-sm text-slate-400">
+                      <span className="text-slate-300 font-medium">Maximum Drawdown</span> is the largest fall from a
+                      previous peak before a new peak was reached — a fund can have a strong long-term return and
+                      still have gone through a period like this along the way.
+                    </p>
+                    <p className="text-sm text-slate-400 mt-2">
+                      <span className="text-slate-300 font-medium">Recovery Period</span> is how long it took the
+                      fund&rsquo;s NAV to climb back to its pre-drawdown peak after the trough. A fund that
+                      hasn&rsquo;t recovered yet is still underwater relative to that peak.
+                    </p>
+                  </Disclosure>
+
+                  {categoryBenchmark && (
+                    <CategoryBenchmarkRow
+                      label="Maximum Drawdown"
+                      fundValue={drawdown!.max_drawdown_pct!}
+                      categoryValue={categoryBenchmark.avg_max_drawdown_pct}
+                      categoryLabel={fund.category}
+                      benchmarkValue={categoryBenchmark.benchmark_max_drawdown_pct}
+                      benchmarkName={categoryBenchmark.benchmark_name}
+                      formatValue={(v) => formatPct(v, 1)}
+                      interpretation={drawdownContextSentence(
+                        drawdown!.max_drawdown_pct!,
+                        categoryBenchmark.avg_max_drawdown_pct,
+                        fund.category,
+                        categoryBenchmark.benchmark_max_drawdown_pct,
+                        categoryBenchmark.benchmark_name,
+                      )}
+                    />
+                  )}
                 </div>
               ) : (
                 <p className="text-sm text-slate-500">Not enough NAV history to compute drawdown yet.</p>
               )}
             </section>
 
-            <section>
+            <section id="market-cycles" className="scroll-mt-28">
               <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-1">Market-Cycle Behaviour</h2>
               <p className="text-xs text-slate-600 mb-3">{marketRegimes!.methodology_note}</p>
               {marketRegimes!.regimes.length > 0 ? (
@@ -551,7 +649,7 @@ export default async function FundDetailPage({
           </>
         )}
 
-        <section>
+        <section id="portfolio-impact" className="scroll-mt-28">
           <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Portfolio DNA &amp; Concentration</h2>
           {portfolio.available ? (
             <div className="space-y-4">
@@ -606,6 +704,23 @@ export default async function FundDetailPage({
             <p className="text-sm text-slate-500">No portfolio holdings data available for this fund yet.</p>
           )}
         </section>
+
+        {!variantError && returns && drawdown && rolling && marketRegimes && (
+          <section id="summary" className="scroll-mt-28">
+            <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Research Summary</h2>
+            <ResearchSummaryPanel
+              points={buildResearchSummary({
+                category: fund.category,
+                returns,
+                drawdown,
+                rolling,
+                marketRegimes,
+                portfolio,
+                categoryBenchmark,
+              })}
+            />
+          </section>
+        )}
 
         <p className="text-xs text-slate-600 border-t border-slate-900 pt-4">
           {(returns ?? risk ?? rolling ?? drawdown ?? portfolio)?.disclaimer ??

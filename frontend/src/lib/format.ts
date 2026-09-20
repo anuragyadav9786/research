@@ -19,6 +19,14 @@ export function formatNav(value: number | null): string {
   return `₹${value.toFixed(4)}`;
 }
 
+/** Whole-rupee amounts in lakh (₹1,00,000), the unit Indian investors
+ * actually think in for a portfolio-sized number — a raw ₹ figure with
+ * five zeros reads as "count the zeros," not "understand the number." */
+export function formatLakh(value: number | null): string {
+  if (value === null || Number.isNaN(value)) return "—";
+  return `₹${(value / 100000).toFixed(2)} lakh`;
+}
+
 /** Positive-good/negative-bad color, never the sole signal (always paired
  * with a +/- sign in the text itself, per Section 23's UI principles). */
 export function signColorClass(value: number | null): string {

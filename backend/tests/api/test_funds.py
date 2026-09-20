@@ -215,6 +215,68 @@ def test_get_fund_drawdown_reports_episode(seeded_fund_id):
     assert body["trough_date"] is not None
 
 
+def test_get_fund_category_benchmark_reports_no_comparable_funds_for_a_unique_category(seeded_fund_id):
+    # Every seeded fund has a distinct category string ("Equity - Large
+    # Cap" etc.) — excluding the fund itself leaves nothing else to
+    # average, which should degrade to available: false, not an error or
+    # a fabricated zero. Benchmark figures are independent of the category
+    # fan-out (this fund's own linked "Nifty 50 TRI" has plenty of
+    # history) and should still come through.
+    response = client.get(f"/api/funds/{seeded_fund_id}/category-benchmark")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["available"] is False
+    assert body["reason"] == "no_comparable_funds"
+    assert body["funds_included"] == 0
+    assert body["avg_max_drawdown_pct"] is None
+    assert body["benchmark_name"] == "Nifty 50 TRI (Sample Series)"
+    assert body["benchmark_max_drawdown_pct"] is not None
+
+
+def test_get_fund_category_benchmark_unknown_fund_returns_404():
+    response = client.get("/api/funds/999999999/category-benchmark")
+    assert response.status_code == 404
+
+
+def test_category_analytics_service_averages_across_comparable_funds():
+    # The three equity sample funds ("Equity - Large Cap"/"Mid Cap"/"Flexi
+    # Cap") all contain "Equity" — a real, if broader, category filter
+    # match — unlike any single fund's own exact category string, which
+    # is unique in this seed dataset (see the 404 test above). The
+    # in-memory category override (never committed) lets this exercise
+    # compute_fund_context's full category+benchmark path against a real
+    # Scheme, rather than only the private category-averaging helper.
+    from app.repositories import fund_repository
+    from app.services import fund_analytics_service
+    from app.services.category_analytics_service import compute_fund_context
+
+    db = SessionLocal()
+    try:
+        bluechip = db.query(Scheme).filter(Scheme.name == "Northbridge Bluechip Equity Fund").first()
+        midcap = db.query(Scheme).filter(Scheme.name == "Meridian Midcap Opportunities Fund").first()
+        flexicap = db.query(Scheme).filter(Scheme.name == "Northbridge Flexi Cap Fund").first()
+        assert bluechip and midcap and flexicap, "requires Phase 2 seed data to be loaded"
+
+        risk_free_rate = get_settings().risk_free_rate
+        bluechip.category = "Equity"  # in-memory only, never committed
+        result = compute_fund_context(db, bluechip, risk_free_rate_annual=risk_free_rate)
+        assert result["available"] is True
+        assert result["funds_included"] == 2
+        assert result["benchmark_name"] == "Nifty 50 TRI (Sample Series)"
+        assert result["benchmark_max_drawdown_pct"] is not None
+
+        expected_drawdowns = []
+        for scheme in (midcap, flexicap):
+            variant = fund_repository.get_default_variant(db, scheme.id)
+            nav = fund_repository.get_nav_series(db, variant.id)
+            expected_drawdowns.append(fund_analytics_service.compute_drawdown(nav)["max_drawdown_pct"])
+
+        assert result["avg_max_drawdown_pct"] == pytest.approx(sum(expected_drawdowns) / 2, abs=1e-3)
+    finally:
+        db.rollback()
+        db.close()
+
+
 def test_get_fund_risk_serves_precomputed_values_when_cached(seeded_fund_id):
     """Proves /risk actually reads from fund_metrics on a cache hit — by
     seeding an implausible cached value and checking it comes straight
@@ -290,4 +352,49 @@ def test_unknown_variant_returns_404(seeded_fund_id):
 
 def test_invalid_plan_query_param_returns_422(seeded_fund_id):
     response = client.get(f"/api/funds/{seeded_fund_id}/returns", params={"plan": "not-a-real-plan"})
+    assert response.status_code == 422
+
+
+def test_get_discovery_filters_lists_named_filters():
+    response = client.get("/api/funds/discover/filters")
+    assert response.status_code == 200
+    body = response.json()
+    keys = {f["key"] for f in body["filters"]}
+    assert keys == {"defensive_drawdown", "consistent_rolling", "fast_recovery", "benchmark_divergence"}
+    # Every filter states its exact criterion — never a hidden threshold.
+    assert all(f["criterion"] for f in body["filters"])
+
+
+def test_get_discovered_funds_defensive_drawdown_matches_low_drawdown_seeded_funds():
+    # Northbridge Flexi Cap (-16.0%) and Meridian Short Duration Debt
+    # (-3.0%) both clear the >= -20% bar; Northbridge Bluechip (-30.2%)
+    # and Meridian Midcap (-43.0%) don't.
+    response = client.get("/api/funds/discover", params={"filter": "defensive_drawdown"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["label"] == "Defensive Drawdown Profile"
+    names = {item["scheme_name"] for item in body["items"]}
+    assert names == {"Northbridge Flexi Cap Fund", "Meridian Short Duration Debt Fund"}
+    assert body["funds_scanned"] >= 4
+
+
+def test_get_discovered_funds_fast_recovery_matches_only_the_recovered_fund():
+    # Only Northbridge Flexi Cap Fund has recovered=True in the seed data
+    # (140 days, under the 180-day bar); the other three haven't recovered
+    # from their own largest drawdown at all.
+    response = client.get("/api/funds/discover", params={"filter": "fast_recovery"})
+    assert response.status_code == 200
+    body = response.json()
+    names = [item["scheme_name"] for item in body["items"]]
+    assert names == ["Northbridge Flexi Cap Fund"]
+    assert body["items"][0]["metric_value"] == 140
+
+
+def test_get_discovered_funds_unknown_filter_returns_404():
+    response = client.get("/api/funds/discover", params={"filter": "not_a_real_filter"})
+    assert response.status_code == 404
+
+
+def test_get_discovered_funds_missing_filter_param_returns_422():
+    response = client.get("/api/funds/discover")
     assert response.status_code == 422

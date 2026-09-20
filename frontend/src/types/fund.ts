@@ -126,6 +126,49 @@ export interface DrawdownResponse {
   disclaimer: string;
 }
 
+export interface CategoryBenchmarkResponse {
+  available: boolean;
+  reason: string | null;
+  category: string;
+  funds_included: number;
+  avg_cagr_3y_pct: number | null;
+  avg_max_drawdown_pct: number | null;
+  avg_volatility_pct: number | null;
+  benchmark_name: string | null;
+  benchmark_cagr_3y_pct: number | null;
+  benchmark_max_drawdown_pct: number | null;
+  benchmark_volatility_pct: number | null;
+  disclaimer: string;
+}
+
+export interface DiscoveryFilterSummary {
+  key: string;
+  label: string;
+  criterion: string;
+}
+
+export interface DiscoveryFiltersResponse {
+  filters: DiscoveryFilterSummary[];
+}
+
+export interface DiscoveryFundEntry {
+  id: number;
+  scheme_name: string;
+  category: string;
+  amc_name: string;
+  metric_label: string;
+  metric_value: number;
+}
+
+export interface DiscoverFundsResponse {
+  filter: string;
+  label: string;
+  criterion: string;
+  funds_scanned: number;
+  items: DiscoveryFundEntry[];
+  disclaimer: string;
+}
+
 export interface NavPoint {
   date: string;
   value: number;

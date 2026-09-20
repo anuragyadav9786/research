@@ -5,6 +5,8 @@ const FOOTER_LINKS = [
   { href: "/research/compare", label: "Compare" },
   { href: "/portfolio", label: "Portfolio" },
   { href: "/market", label: "Market Pulse" },
+  { href: "/methodology", label: "Data & Methodology" },
+  { href: "/why-thinkfin", label: "Why ThinkFin?" },
 ] as const;
 
 const LINK_CLASS =

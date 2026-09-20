@@ -139,6 +139,75 @@ class DrawdownResponse(BaseModel):
     disclaimer: str = DISCLAIMER
 
 
+class CategoryBenchmarkResponse(BaseModel):
+    """Fund -> Category -> Benchmark context for one fund (product-upgrade
+    brief Section 5) — e.g. "this fund's -31.2% max drawdown vs. its
+    category's -28.4% average vs. its own benchmark index's -30.1%."
+    Category figures are computed live across every same-category fund
+    with enough NAV history (see category_analytics_service.py for why
+    this can't be precomputed/cached server-side yet); benchmark figures
+    come from the fund's own linked index series (benchmark_history) via
+    the same drawdown/returns/risk analytics used everywhere else — not a
+    stand-in index fund, the fund's actual named benchmark. Never a
+    ranking or score: the same figure, three ways, for a neutral fund-vs-
+    context reading."""
+
+    available: bool
+    reason: str | None
+    category: str
+    funds_included: int
+    avg_cagr_3y_pct: float | None
+    avg_max_drawdown_pct: float | None
+    avg_volatility_pct: float | None
+    benchmark_name: str | None
+    benchmark_cagr_3y_pct: float | None
+    benchmark_max_drawdown_pct: float | None
+    benchmark_volatility_pct: float | None
+    disclaimer: str = DISCLAIMER
+
+
+class DiscoveryFilterSummary(BaseModel):
+    """One named research filter's catalog entry — key, display label, and
+    its exact stated definition. `criterion` is shown to the reader
+    verbatim, never hidden, per Section 8's "let users investigate why a
+    fund appears here" and "research filters, not rankings" rules."""
+
+    key: str
+    label: str
+    criterion: str
+
+
+class DiscoveryFiltersResponse(BaseModel):
+    filters: list[DiscoveryFilterSummary]
+
+
+class DiscoveryFundEntry(BaseModel):
+    id: int
+    scheme_name: str
+    category: str
+    amc_name: str
+    # The actual value that qualified this fund for the filter — e.g. its
+    # real max-drawdown percentage, not just a pass/fail flag — so a
+    # reader can see exactly why it's here (Section 8's "investigate why").
+    metric_label: str
+    metric_value: float
+
+
+class DiscoverFundsResponse(BaseModel):
+    """Funds matching one named research filter (Section 8) — never a
+    ranking or "Top N" list. `funds_scanned` is the real number of funds
+    checked against this filter (see discovery_service.py's SCAN_CAP), not
+    the size of the whole fund universe — an honest count of what this
+    result actually covers, not an implied census."""
+
+    filter: str
+    label: str
+    criterion: str
+    funds_scanned: int
+    items: list[DiscoveryFundEntry]
+    disclaimer: str = DISCLAIMER
+
+
 class NavPoint(BaseModel):
     date: date
     value: float

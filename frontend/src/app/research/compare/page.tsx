@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { SiteHeader } from "@/components/layout/SiteHeader";
+import { Disclosure } from "@/components/fund/Disclosure";
 import { SyncedRollingComparison } from "@/components/fund/SyncedRollingComparison";
 import { ApiError, getFundIntelligence, getFundOverlap, listAllFunds } from "@/lib/api";
 import { formatDate, formatNumber, formatPct } from "@/lib/format";
@@ -23,7 +24,7 @@ const CAGR_WINDOW_LABELS: Record<string, string> = { "1y": "1Y CAGR", "3y": "3Y 
  * than a tag should claim. */
 function DefenseTag() {
   return (
-    <span className="ml-2 inline-flex items-center rounded-full bg-emerald-900/60 text-emerald-300 text-[10px] px-2 py-0.5 whitespace-nowrap">
+    <span className="inline-flex items-center rounded-full bg-emerald-900/60 text-emerald-300 text-[10px] px-2 py-0.5">
       Defends better
     </span>
   );
@@ -51,14 +52,18 @@ function HeadToHeadRow({
   const showTag = valueA !== null && valueB !== null;
   return (
     <tr className="border-b border-slate-900">
-      <td className="px-4 py-3 text-sm text-slate-400">{label}</td>
-      <td className={`px-4 py-3 text-sm text-right font-mono tabular-nums ${leader === "a" ? "text-emerald-400 font-semibold" : "text-slate-200"}`}>
-        {valueA !== null ? formatValue(valueA) : "N/A"}
-        {showTag && defenseWinner === "a" && <DefenseTag />}
+      <td className="px-2 sm:px-4 py-3 text-sm text-slate-400 break-words">{label}</td>
+      <td className={`px-2 sm:px-4 py-3 text-sm text-right font-mono tabular-nums ${leader === "a" ? "text-emerald-400 font-semibold" : "text-slate-200"}`}>
+        <div className="flex flex-col items-end gap-1">
+          <span>{valueA !== null ? formatValue(valueA) : "N/A"}</span>
+          {showTag && defenseWinner === "a" && <DefenseTag />}
+        </div>
       </td>
-      <td className={`px-4 py-3 text-sm text-right font-mono tabular-nums ${leader === "b" ? "text-emerald-400 font-semibold" : "text-slate-200"}`}>
-        {valueB !== null ? formatValue(valueB) : "N/A"}
-        {showTag && defenseWinner === "b" && <DefenseTag />}
+      <td className={`px-2 sm:px-4 py-3 text-sm text-right font-mono tabular-nums ${leader === "b" ? "text-emerald-400 font-semibold" : "text-slate-200"}`}>
+        <div className="flex flex-col items-end gap-1">
+          <span>{valueB !== null ? formatValue(valueB) : "N/A"}</span>
+          {showTag && defenseWinner === "b" && <DefenseTag />}
+        </div>
       </td>
     </tr>
   );
@@ -108,16 +113,16 @@ function HeadToHeadPerformance({
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-slate-800">
-        <table className="w-full">
+        <table className="w-full table-fixed">
           <thead>
             <tr className="sticky top-16 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-4 py-3 font-medium">Head-to-Head Performance</th>
-              <th className="px-4 py-3 font-medium text-right">
+              <th className="px-2 sm:px-4 py-3 font-medium w-2/5 sm:w-auto break-words">Head-to-Head Performance</th>
+              <th className="px-2 sm:px-4 py-3 font-medium text-right break-words">
                 <Link href={`/research/${fundA.id}`} className="text-indigo-400 hover:text-indigo-300">
                   {fundA.scheme_name}
                 </Link>
               </th>
-              <th className="px-4 py-3 font-medium text-right">
+              <th className="px-2 sm:px-4 py-3 font-medium text-right break-words">
                 <Link href={`/research/${fundB.id}`} className="text-indigo-400 hover:text-indigo-300">
                   {fundB.scheme_name}
                 </Link>
@@ -301,6 +306,29 @@ export default async function CompareFundsPage({
                 </div>
               </div>
             </div>
+
+            <p className="text-sm text-slate-300">
+              <Link href={`/research/${overlap.fund_a.id}`} className="text-indigo-400 hover:text-indigo-300">
+                {overlap.fund_a.scheme_name}
+              </Link>{" "}
+              ↔{" "}
+              <Link href={`/research/${overlap.fund_b.id}`} className="text-indigo-400 hover:text-indigo-300">
+                {overlap.fund_b.scheme_name}
+              </Link>
+              : {formatNumber(overlap.weighted_overlap_pct, 1)}% overlap.{" "}
+              {overlap.common_securities_count > 0
+                ? `They share ${overlap.common_securities_count} underlying holding${overlap.common_securities_count === 1 ? "" : "s"}, weighted by how much of each fund's disclosed portfolio those holdings represent.`
+                : "They share no disclosed holdings in common."}
+            </p>
+
+            <Disclosure label="What does this mean?">
+              <p className="text-sm text-slate-400">
+                Portfolio Overlap measures how much of two funds&rsquo; underlying holdings are the same companies,
+                weighted by position size in each fund. High overlap means holding both funds gives you less real
+                diversification than owning two different funds would suggest — you&rsquo;re more exposed to the
+                same set of companies than the fund count implies.
+              </p>
+            </Disclosure>
 
             <p className="text-xs text-slate-500">
               <Link href={`/research/${overlap.fund_a.id}`} className="text-indigo-500 hover:text-indigo-600">

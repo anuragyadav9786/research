@@ -31,6 +31,9 @@ from app.repositories import fund_repository, market_regime_repository, portfoli
 from data_pipeline.orchestration.lazy_nav_backfill import ensure_nav_history
 from data_pipeline.orchestration.precompute_metrics import RISK_OPTIONAL_FIELDS, RISK_REQUIRED_FIELDS
 from app.schemas.funds import (
+    CategoryBenchmarkResponse,
+    DiscoverFundsResponse,
+    DiscoveryFiltersResponse,
     DrawdownResponse,
     FundDetail,
     FundListResponse,
@@ -50,6 +53,8 @@ from app.schemas.portfolio import PortfolioResponse
 from app.schemas.stress_test import StressTestResponse
 from app.services import (
     ai_explanation_service,
+    category_analytics_service,
+    discovery_service,
     fund_analytics_service,
     market_regime_service,
     overlap_service,
@@ -186,6 +191,29 @@ def count_funds(
     return {"count": fund_repository.count_schemes(db, search=search, category=category, amc_name=amc)}
 
 
+@router.get("/discover/filters", response_model=DiscoveryFiltersResponse)
+def get_discovery_filters() -> dict:
+    """The catalog of named research filters (product-upgrade brief
+    Section 8) — each with its exact, fixed definition, never a hidden
+    threshold or a ranking."""
+    return {"filters": discovery_service.list_filters()}
+
+
+@router.get("/discover", response_model=DiscoverFundsResponse)
+def get_discovered_funds(
+    filter: str = Query(..., description="A filter key from GET /api/funds/discover/filters"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Funds matching one named research filter, live-computed and capped
+    for cost (see discovery_service.py) — an "Explore Research" module,
+    not a ranking. 404s on an unrecognized filter key rather than
+    silently returning an empty result."""
+    result = discovery_service.discover_funds(db, filter)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Unknown discovery filter: {filter}")
+    return result
+
+
 @router.get("/{fund_id}", response_model=FundDetail)
 def get_fund(fund_id: int, db: Session = Depends(get_db)) -> FundDetail:
     scheme = _resolve_scheme(db, fund_id)
@@ -289,6 +317,22 @@ def get_fund_drawdown(
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
     return fund_analytics_service.compute_drawdown(nav)
+
+
+@router.get("/{fund_id}/category-benchmark", response_model=CategoryBenchmarkResponse)
+def get_fund_category_benchmark(fund_id: int, db: Session = Depends(get_db)) -> dict:
+    """Fund vs. category-average vs. own-benchmark CAGR/drawdown/volatility
+    — the "Fund → Category → Benchmark" context layer (product-upgrade
+    brief Section 5). Category figures are live-computed across same-
+    category funds that already have NAV history (see
+    category_analytics_service.py for why this can't come from a cache);
+    never triggers a live NAV backfill itself, so a category full of not-
+    yet-backfilled funds degrades to `available: false` rather than a slow
+    request. Benchmark figures come from this fund's own linked index."""
+    scheme = _resolve_scheme(db, fund_id)
+    return category_analytics_service.compute_fund_context(
+        db, scheme, risk_free_rate_annual=get_settings().risk_free_rate
+    )
 
 
 @router.get("/{fund_id}/market-regimes", response_model=MarketRegimeBehaviorResponse)
