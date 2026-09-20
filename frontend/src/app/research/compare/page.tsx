@@ -24,7 +24,7 @@ const CAGR_WINDOW_LABELS: Record<string, string> = { "1y": "1Y CAGR", "3y": "3Y 
  * than a tag should claim. */
 function DefenseTag() {
   return (
-    <span className="ml-2 inline-flex items-center rounded-full bg-emerald-900/60 text-emerald-300 text-[10px] px-2 py-0.5 whitespace-nowrap">
+    <span className="inline-flex items-center rounded-full bg-emerald-900/60 text-emerald-300 text-[10px] px-2 py-0.5">
       Defends better
     </span>
   );
@@ -52,14 +52,18 @@ function HeadToHeadRow({
   const showTag = valueA !== null && valueB !== null;
   return (
     <tr className="border-b border-slate-900">
-      <td className="px-4 py-3 text-sm text-slate-400">{label}</td>
-      <td className={`px-4 py-3 text-sm text-right font-mono tabular-nums ${leader === "a" ? "text-emerald-400 font-semibold" : "text-slate-200"}`}>
-        {valueA !== null ? formatValue(valueA) : "N/A"}
-        {showTag && defenseWinner === "a" && <DefenseTag />}
+      <td className="px-2 sm:px-4 py-3 text-sm text-slate-400 break-words">{label}</td>
+      <td className={`px-2 sm:px-4 py-3 text-sm text-right font-mono tabular-nums ${leader === "a" ? "text-emerald-400 font-semibold" : "text-slate-200"}`}>
+        <div className="flex flex-col items-end gap-1">
+          <span>{valueA !== null ? formatValue(valueA) : "N/A"}</span>
+          {showTag && defenseWinner === "a" && <DefenseTag />}
+        </div>
       </td>
-      <td className={`px-4 py-3 text-sm text-right font-mono tabular-nums ${leader === "b" ? "text-emerald-400 font-semibold" : "text-slate-200"}`}>
-        {valueB !== null ? formatValue(valueB) : "N/A"}
-        {showTag && defenseWinner === "b" && <DefenseTag />}
+      <td className={`px-2 sm:px-4 py-3 text-sm text-right font-mono tabular-nums ${leader === "b" ? "text-emerald-400 font-semibold" : "text-slate-200"}`}>
+        <div className="flex flex-col items-end gap-1">
+          <span>{valueB !== null ? formatValue(valueB) : "N/A"}</span>
+          {showTag && defenseWinner === "b" && <DefenseTag />}
+        </div>
       </td>
     </tr>
   );
@@ -109,16 +113,16 @@ function HeadToHeadPerformance({
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-slate-800">
-        <table className="w-full">
+        <table className="w-full table-fixed">
           <thead>
             <tr className="sticky top-16 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800 text-left text-xs uppercase tracking-wide text-slate-500">
-              <th className="px-4 py-3 font-medium">Head-to-Head Performance</th>
-              <th className="px-4 py-3 font-medium text-right">
+              <th className="px-2 sm:px-4 py-3 font-medium w-2/5 sm:w-auto break-words">Head-to-Head Performance</th>
+              <th className="px-2 sm:px-4 py-3 font-medium text-right break-words">
                 <Link href={`/research/${fundA.id}`} className="text-indigo-400 hover:text-indigo-300">
                   {fundA.scheme_name}
                 </Link>
               </th>
-              <th className="px-4 py-3 font-medium text-right">
+              <th className="px-2 sm:px-4 py-3 font-medium text-right break-words">
                 <Link href={`/research/${fundB.id}`} className="text-indigo-400 hover:text-indigo-300">
                   {fundB.scheme_name}
                 </Link>
