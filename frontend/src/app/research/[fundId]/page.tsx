@@ -22,6 +22,8 @@ import { HoldingsTable } from "@/components/fund/HoldingsTable";
 import { MarketRegimeTable } from "@/components/fund/MarketRegimeTable";
 import { MetricDisclosure } from "@/components/fund/MetricDisclosure";
 import { NavChart } from "@/components/fund/NavChart";
+import { ResearchStepNav } from "@/components/fund/ResearchStepNav";
+import { ResearchSummaryPanel } from "@/components/fund/ResearchSummaryPanel";
 import { RollingReturnBarChart } from "@/components/fund/RollingReturnBarChart";
 import { ScalarScaleBar } from "@/components/fund/ScalarScaleBar";
 import { StatCard } from "@/components/fund/StatCard";
@@ -42,6 +44,7 @@ import {
   interpretVolatility,
   volatilityContextSentence,
 } from "@/lib/metricInterpretation";
+import { buildResearchSummary } from "@/lib/researchSummary";
 import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, RiskResponse, RollingReturnsResponse } from "@/types/fund";
 import type { MarketRegimeBehaviorResponse } from "@/types/marketRegime";
 import type { StressTestResponse } from "@/types/stressTest";
@@ -153,7 +156,7 @@ export default async function FundDetailPage({
       <SiteHeader active="research" />
 
       <main className="px-8 py-10 max-w-5xl mx-auto space-y-8">
-        <div className="flex items-start justify-between">
+        <div id="overview" className="flex items-start justify-between scroll-mt-28">
           <div>
             <Link
               href="/research"
@@ -219,6 +222,8 @@ export default async function FundDetailPage({
           )}
         </div>
 
+        <ResearchStepNav />
+
         {variantError ? (
           <div className="rounded-lg border border-amber-900 bg-amber-950/40 p-6 text-sm text-amber-200">
             {variantError} Try{" "}
@@ -229,7 +234,7 @@ export default async function FundDetailPage({
           </div>
         ) : (
           <>
-            <section>
+            <section id="returns" className="scroll-mt-28">
               <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-1">Returns (Annualized)</h2>
               <p className="text-xs text-slate-500 mb-3">
                 Point-to-point figures — each depends on the exact day measured. See Rolling Returns below for how
@@ -291,7 +296,7 @@ export default async function FundDetailPage({
               </div>
             </section>
 
-            <section>
+            <section id="risk" className="scroll-mt-28">
               <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">
                 Risk &amp; Survival
                 <span className="text-slate-600 normal-case tracking-normal ml-2">
@@ -453,7 +458,7 @@ export default async function FundDetailPage({
               )}
             </section>
 
-            <section>
+            <section id="consistency" className="scroll-mt-28">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm uppercase tracking-wide text-slate-500">Rolling Returns</h2>
                 <div className="flex rounded-md border border-slate-800 overflow-hidden text-xs">
@@ -615,7 +620,7 @@ export default async function FundDetailPage({
               )}
             </section>
 
-            <section>
+            <section id="market-cycles" className="scroll-mt-28">
               <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-1">Market-Cycle Behaviour</h2>
               <p className="text-xs text-slate-600 mb-3">{marketRegimes!.methodology_note}</p>
               {marketRegimes!.regimes.length > 0 ? (
@@ -644,7 +649,7 @@ export default async function FundDetailPage({
           </>
         )}
 
-        <section>
+        <section id="portfolio-impact" className="scroll-mt-28">
           <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Portfolio DNA &amp; Concentration</h2>
           {portfolio.available ? (
             <div className="space-y-4">
@@ -699,6 +704,23 @@ export default async function FundDetailPage({
             <p className="text-sm text-slate-500">No portfolio holdings data available for this fund yet.</p>
           )}
         </section>
+
+        {!variantError && returns && drawdown && rolling && marketRegimes && (
+          <section id="summary" className="scroll-mt-28">
+            <h2 className="text-sm uppercase tracking-wide text-slate-500 mb-3">Research Summary</h2>
+            <ResearchSummaryPanel
+              points={buildResearchSummary({
+                category: fund.category,
+                returns,
+                drawdown,
+                rolling,
+                marketRegimes,
+                portfolio,
+                categoryBenchmark,
+              })}
+            />
+          </section>
+        )}
 
         <p className="text-xs text-slate-600 border-t border-slate-900 pt-4">
           {(returns ?? risk ?? rolling ?? drawdown ?? portfolio)?.disclaimer ??
