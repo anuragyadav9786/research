@@ -353,3 +353,48 @@ def test_unknown_variant_returns_404(seeded_fund_id):
 def test_invalid_plan_query_param_returns_422(seeded_fund_id):
     response = client.get(f"/api/funds/{seeded_fund_id}/returns", params={"plan": "not-a-real-plan"})
     assert response.status_code == 422
+
+
+def test_get_discovery_filters_lists_named_filters():
+    response = client.get("/api/funds/discover/filters")
+    assert response.status_code == 200
+    body = response.json()
+    keys = {f["key"] for f in body["filters"]}
+    assert keys == {"defensive_drawdown", "consistent_rolling", "fast_recovery", "benchmark_divergence"}
+    # Every filter states its exact criterion — never a hidden threshold.
+    assert all(f["criterion"] for f in body["filters"])
+
+
+def test_get_discovered_funds_defensive_drawdown_matches_low_drawdown_seeded_funds():
+    # Northbridge Flexi Cap (-16.0%) and Meridian Short Duration Debt
+    # (-3.0%) both clear the >= -20% bar; Northbridge Bluechip (-30.2%)
+    # and Meridian Midcap (-43.0%) don't.
+    response = client.get("/api/funds/discover", params={"filter": "defensive_drawdown"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["label"] == "Defensive Drawdown Profile"
+    names = {item["scheme_name"] for item in body["items"]}
+    assert names == {"Northbridge Flexi Cap Fund", "Meridian Short Duration Debt Fund"}
+    assert body["funds_scanned"] >= 4
+
+
+def test_get_discovered_funds_fast_recovery_matches_only_the_recovered_fund():
+    # Only Northbridge Flexi Cap Fund has recovered=True in the seed data
+    # (140 days, under the 180-day bar); the other three haven't recovered
+    # from their own largest drawdown at all.
+    response = client.get("/api/funds/discover", params={"filter": "fast_recovery"})
+    assert response.status_code == 200
+    body = response.json()
+    names = [item["scheme_name"] for item in body["items"]]
+    assert names == ["Northbridge Flexi Cap Fund"]
+    assert body["items"][0]["metric_value"] == 140
+
+
+def test_get_discovered_funds_unknown_filter_returns_404():
+    response = client.get("/api/funds/discover", params={"filter": "not_a_real_filter"})
+    assert response.status_code == 404
+
+
+def test_get_discovered_funds_missing_filter_param_returns_422():
+    response = client.get("/api/funds/discover")
+    assert response.status_code == 422

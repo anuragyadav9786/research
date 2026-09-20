@@ -166,6 +166,48 @@ class CategoryBenchmarkResponse(BaseModel):
     disclaimer: str = DISCLAIMER
 
 
+class DiscoveryFilterSummary(BaseModel):
+    """One named research filter's catalog entry — key, display label, and
+    its exact stated definition. `criterion` is shown to the reader
+    verbatim, never hidden, per Section 8's "let users investigate why a
+    fund appears here" and "research filters, not rankings" rules."""
+
+    key: str
+    label: str
+    criterion: str
+
+
+class DiscoveryFiltersResponse(BaseModel):
+    filters: list[DiscoveryFilterSummary]
+
+
+class DiscoveryFundEntry(BaseModel):
+    id: int
+    scheme_name: str
+    category: str
+    amc_name: str
+    # The actual value that qualified this fund for the filter — e.g. its
+    # real max-drawdown percentage, not just a pass/fail flag — so a
+    # reader can see exactly why it's here (Section 8's "investigate why").
+    metric_label: str
+    metric_value: float
+
+
+class DiscoverFundsResponse(BaseModel):
+    """Funds matching one named research filter (Section 8) — never a
+    ranking or "Top N" list. `funds_scanned` is the real number of funds
+    checked against this filter (see discovery_service.py's SCAN_CAP), not
+    the size of the whole fund universe — an honest count of what this
+    result actually covers, not an implied census."""
+
+    filter: str
+    label: str
+    criterion: str
+    funds_scanned: int
+    items: list[DiscoveryFundEntry]
+    disclaimer: str = DISCLAIMER
+
+
 class NavPoint(BaseModel):
     date: date
     value: float

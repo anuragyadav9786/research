@@ -141,6 +141,34 @@ export interface CategoryBenchmarkResponse {
   disclaimer: string;
 }
 
+export interface DiscoveryFilterSummary {
+  key: string;
+  label: string;
+  criterion: string;
+}
+
+export interface DiscoveryFiltersResponse {
+  filters: DiscoveryFilterSummary[];
+}
+
+export interface DiscoveryFundEntry {
+  id: number;
+  scheme_name: string;
+  category: string;
+  amc_name: string;
+  metric_label: string;
+  metric_value: number;
+}
+
+export interface DiscoverFundsResponse {
+  filter: string;
+  label: string;
+  criterion: string;
+  funds_scanned: number;
+  items: DiscoveryFundEntry[];
+  disclaimer: string;
+}
+
 export interface NavPoint {
   date: string;
   value: number;

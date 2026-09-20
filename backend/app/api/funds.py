@@ -32,6 +32,8 @@ from data_pipeline.orchestration.lazy_nav_backfill import ensure_nav_history
 from data_pipeline.orchestration.precompute_metrics import RISK_OPTIONAL_FIELDS, RISK_REQUIRED_FIELDS
 from app.schemas.funds import (
     CategoryBenchmarkResponse,
+    DiscoverFundsResponse,
+    DiscoveryFiltersResponse,
     DrawdownResponse,
     FundDetail,
     FundListResponse,
@@ -52,6 +54,7 @@ from app.schemas.stress_test import StressTestResponse
 from app.services import (
     ai_explanation_service,
     category_analytics_service,
+    discovery_service,
     fund_analytics_service,
     market_regime_service,
     overlap_service,
@@ -186,6 +189,29 @@ def count_funds(
     """A lightweight total count — e.g. the dashboard's "Funds Covered"
     tile — without downloading every fund just to read len(list)."""
     return {"count": fund_repository.count_schemes(db, search=search, category=category, amc_name=amc)}
+
+
+@router.get("/discover/filters", response_model=DiscoveryFiltersResponse)
+def get_discovery_filters() -> dict:
+    """The catalog of named research filters (product-upgrade brief
+    Section 8) — each with its exact, fixed definition, never a hidden
+    threshold or a ranking."""
+    return {"filters": discovery_service.list_filters()}
+
+
+@router.get("/discover", response_model=DiscoverFundsResponse)
+def get_discovered_funds(
+    filter: str = Query(..., description="A filter key from GET /api/funds/discover/filters"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Funds matching one named research filter, live-computed and capped
+    for cost (see discovery_service.py) — an "Explore Research" module,
+    not a ranking. 404s on an unrecognized filter key rather than
+    silently returning an empty result."""
+    result = discovery_service.discover_funds(db, filter)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Unknown discovery filter: {filter}")
+    return result
 
 
 @router.get("/{fund_id}", response_model=FundDetail)

@@ -1,5 +1,7 @@
 import type {
   CategoryBenchmarkResponse,
+  DiscoverFundsResponse,
+  DiscoveryFiltersResponse,
   DrawdownResponse,
   FundDetail,
   FundListResponse,
@@ -146,6 +148,14 @@ export function getFundDrawdown(fundId: number, params: VariantParams = {}): Pro
 
 export function getFundCategoryBenchmark(fundId: number): Promise<CategoryBenchmarkResponse> {
   return apiGet<CategoryBenchmarkResponse>(`/api/funds/${fundId}/category-benchmark`);
+}
+
+export function getDiscoveryFilters(): Promise<DiscoveryFiltersResponse> {
+  return apiGet<DiscoveryFiltersResponse>("/api/funds/discover/filters");
+}
+
+export function getDiscoveredFunds(filterKey: string): Promise<DiscoverFundsResponse> {
+  return apiGet<DiscoverFundsResponse>("/api/funds/discover", { filter: filterKey });
 }
 
 export function getFundPortfolio(fundId: number): Promise<PortfolioResponse> {
