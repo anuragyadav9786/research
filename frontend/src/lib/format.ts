@@ -14,6 +14,13 @@ export function formatDate(value: string | null): string {
   return new Date(value).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
 }
 
+/** Month + year only — "Aug 2025" — for dates that should read as an
+ * approximate period, not an exact day (e.g. "no NAV history before…"). */
+export function formatMonthYear(value: string | null): string {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-IN", { year: "numeric", month: "short" });
+}
+
 export function formatNav(value: number | null): string {
   if (value === null) return "—";
   return `₹${value.toFixed(4)}`;

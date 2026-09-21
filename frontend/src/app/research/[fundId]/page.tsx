@@ -13,7 +13,7 @@ import {
   getFundRollingReturns,
   getFundStressTest,
 } from "@/lib/api";
-import { formatDate, formatNav, formatNumber, formatPct, signColorClass } from "@/lib/format";
+import { formatDate, formatMonthYear, formatNav, formatNumber, formatPct, signColorClass } from "@/lib/format";
 import { AllocationBar } from "@/components/fund/AllocationBar";
 import { CategoryBenchmarkRow } from "@/components/fund/CategoryBenchmarkRow";
 import { Disclosure } from "@/components/fund/Disclosure";
@@ -45,7 +45,7 @@ import {
   volatilityContextSentence,
 } from "@/lib/metricInterpretation";
 import { buildResearchSummary } from "@/lib/researchSummary";
-import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, RiskResponse, RollingReturnsResponse } from "@/types/fund";
+import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, ReturnWindow, RiskResponse, RollingReturnsResponse } from "@/types/fund";
 import type { MarketRegimeBehaviorResponse } from "@/types/marketRegime";
 import type { StressTestResponse } from "@/types/stressTest";
 
@@ -56,7 +56,30 @@ const HHI_LABELS: Record<string, string> = {
 };
 
 const RETURN_WINDOW_LABELS: Record<string, string> = { "1y": "1Y", "3y": "3Y", "5y": "5Y", "7y": "7Y", "10y": "10Y" };
+const RETURN_WINDOW_PERIOD_NAMES: Record<string, string> = {
+  "1y": "1-year", "3y": "3-year", "5y": "5-year", "7y": "7-year", "10y": "10-year",
+};
 const ROLLING_WINDOW_OPTIONS = [1, 3, 5];
+
+/** A return window is unavailable for one of two different reasons, and
+ * conflating them is misleading: a scheme that's too young to have a
+ * 10-year return is a different situation from an established scheme
+ * whose 10-year NAV history genuinely has gaps in our data. `reason` is
+ * set server-side (fund_analytics_service.compute_returns) — this just
+ * turns it into investor-facing copy, never a color or icon alone. */
+function returnWindowHint(w: ReturnWindow): string | undefined {
+  if (w.available) return undefined;
+  if (w.reason === "scheme_too_young" && w.earliest_nav_date) {
+    return `No NAV history before ${formatMonthYear(w.earliest_nav_date)}`;
+  }
+  return "Insufficient NAV history";
+}
+
+function returnWindowAriaLabel(periodKey: string, w: ReturnWindow): string | undefined {
+  if (w.available) return undefined;
+  const period = RETURN_WINDOW_PERIOD_NAMES[periodKey] ?? periodKey;
+  return `${period} return not available. ${returnWindowHint(w)}.`;
+}
 
 const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
@@ -245,9 +268,10 @@ export default async function FundDetailPage({
                   <StatCard
                     key={key}
                     label={RETURN_WINDOW_LABELS[key] ?? key}
-                    value={w.available ? formatPct(w.cagr_pct) : "N/A"}
+                    value={w.available ? formatPct(w.cagr_pct) : "Not available"}
                     valueClassName={w.available ? signColorClass(w.cagr_pct) : "text-slate-600"}
-                    hint={w.available ? undefined : "Not enough NAV history yet"}
+                    hint={returnWindowHint(w)}
+                    ariaLabel={returnWindowAriaLabel(key, w)}
                   />
                 ))}
               </div>
@@ -258,6 +282,13 @@ export default async function FundDetailPage({
                     CAGR (Compound Annual Growth Rate) is the annualised rate of return over the selected period,
                     assuming gains are reinvested. It smooths out the actual up-and-down path into a single average
                     figure — two funds with the same CAGR can have had very different journeys to get there.
+                  </p>
+                  <p className="text-sm text-slate-400 mt-2">
+                    Longer-period returns are shown only when there&rsquo;s enough NAV history to compute them. For a
+                    newly launched scheme, the return is marked &ldquo;Not available&rdquo; and we show the earliest
+                    NAV date we have on file instead. For an established scheme where our own data for that window is
+                    incomplete, it&rsquo;s marked &ldquo;Not available — Insufficient NAV history&rdquo; instead — a
+                    gap in our records, not a reflection of how long the scheme has existed.
                   </p>
                 </Disclosure>
               </div>

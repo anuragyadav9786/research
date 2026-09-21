@@ -51,6 +51,18 @@ class ReturnWindow(BaseModel):
     start_date: date | None
     end_date: date | None
     reason: str | None
+    earliest_nav_date: date | None = Field(
+        None,
+        description=(
+            "Only set when reason='scheme_too_young': the earliest NAV date "
+            "in this variant's NAV history, once a complete mfapi.in backfill "
+            "confirms there's nothing earlier to find. This is a real, "
+            "ingested data point, not a verified legal launch/inception "
+            "date — a scheme's own NFO period can predate its first NAV by a "
+            "few days — so callers should present it as 'no NAV history "
+            "before X', never as 'scheme launched on X'."
+        ),
+    )
 
 
 class ReturnsResponse(BaseModel):
