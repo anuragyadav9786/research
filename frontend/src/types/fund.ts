@@ -41,6 +41,10 @@ export interface ReturnWindow {
   start_date: string | null;
   end_date: string | null;
   reason: string | null;
+  /** Only set when reason === "scheme_too_young" — see the matching field
+   * in backend/app/schemas/funds.py for why this is never presented as a
+   * verified launch/inception date. */
+  earliest_nav_date: string | null;
 }
 
 export interface ReturnsResponse {

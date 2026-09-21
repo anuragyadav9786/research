@@ -230,7 +230,7 @@ def get_fund_returns(
     scheme = _resolve_scheme(db, fund_id)
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
-    return fund_analytics_service.compute_returns(nav)
+    return fund_analytics_service.compute_returns(nav, variant.nav_history_backfilled_at is not None)
 
 
 @router.get("/{fund_id}/nav-history", response_model=NavHistoryResponse)
@@ -415,7 +415,7 @@ def get_fund_ai_summary(
     benchmark = _benchmark_series(db, scheme)
     risk_free_rate = get_settings().risk_free_rate
 
-    returns = fund_analytics_service.compute_returns(nav)
+    returns = fund_analytics_service.compute_returns(nav, variant.nav_history_backfilled_at is not None)
     risk = fund_analytics_service.compute_risk(nav, benchmark, risk_free_rate)
     drawdown = fund_analytics_service.compute_drawdown(nav)
     rolling = fund_analytics_service.compute_rolling_returns(nav, benchmark, 3.0)
@@ -512,7 +512,7 @@ def get_fund_intelligence(
     return {
         "fund": _fund_detail(db, scheme),
         "variant": _variant_summary(db, variant),
-        "returns": fund_analytics_service.compute_returns(nav),
+        "returns": fund_analytics_service.compute_returns(nav, variant.nav_history_backfilled_at is not None),
         "risk": fund_analytics_service.compute_risk(nav, benchmark, risk_free_rate),
         "rolling_3y": fund_analytics_service.compute_rolling_returns(nav, benchmark, 3.0),
         "drawdown": fund_analytics_service.compute_drawdown(nav),

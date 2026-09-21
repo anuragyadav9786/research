@@ -53,33 +53,53 @@ def _to_date(value) -> date | None:
     return pd.Timestamp(value).date()
 
 
-def compute_returns(nav: pd.Series) -> dict:
+def compute_returns(nav: pd.Series, nav_history_backfilled: bool = False) -> dict:
+    """`nav_history_backfilled` should reflect whether this variant's full
+    NAV history has already been pulled from mfapi.in
+    (SchemeVariant.nav_history_backfilled_at is set) — see
+    lazy_nav_backfill.py. It's what lets an unavailable window be reported
+    as "scheme_too_young" (we've confirmed there's no earlier NAV to find)
+    rather than the more conservative "insufficient_history" (we haven't
+    finished checking, so we can't yet tell the two apart). Callers that
+    don't have a variant on hand (category/discovery aggregates) can omit
+    it — every unavailable window then reads "insufficient_history", the
+    same behaviour this function always had.
+
+    Note "scheme_too_young" is never a fabricated legal launch date — see
+    ReturnWindow.earliest_nav_date's docstring in app/schemas/funds.py."""
     if nav.empty:
         return {
             "as_of_date": None,
             "windows": {
                 label: {"available": False, "cagr_pct": None, "start_date": None, "end_date": None,
-                        "reason": "no_nav_history"}
+                        "reason": "no_nav_history", "earliest_nav_date": None}
                 for label in RETURN_WINDOWS_YEARS
             },
         }
 
     end_date = nav.index[-1]
+    earliest_nav_date = nav.index[0]
     windows = {}
     for label, years in RETURN_WINDOWS_YEARS.items():
         target_start = end_date - pd.Timedelta(days=round(years * 365.25))
-        if target_start < nav.index[0]:
-            windows[label] = {
-                "available": False, "cagr_pct": None, "start_date": None, "end_date": None,
-                "reason": "insufficient_history",
-            }
+        if target_start < earliest_nav_date:
+            if nav_history_backfilled:
+                windows[label] = {
+                    "available": False, "cagr_pct": None, "start_date": None, "end_date": None,
+                    "reason": "scheme_too_young", "earliest_nav_date": _to_date(earliest_nav_date),
+                }
+            else:
+                windows[label] = {
+                    "available": False, "cagr_pct": None, "start_date": None, "end_date": None,
+                    "reason": "insufficient_history", "earliest_nav_date": None,
+                }
             continue
         window_nav = nav.loc[target_start:end_date]
         cagr_value = cagr_for_window(nav, target_start, end_date)
         if cagr_value is None:
             windows[label] = {
                 "available": False, "cagr_pct": None, "start_date": None, "end_date": None,
-                "reason": "insufficient_history",
+                "reason": "insufficient_history", "earliest_nav_date": None,
             }
         else:
             windows[label] = {
@@ -88,6 +108,7 @@ def compute_returns(nav: pd.Series) -> dict:
                 "start_date": _to_date(window_nav.index[0]),
                 "end_date": _to_date(end_date),
                 "reason": None,
+                "earliest_nav_date": None,
             }
 
     return {"as_of_date": _to_date(end_date), "windows": windows}
