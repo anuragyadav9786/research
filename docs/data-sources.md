@@ -184,16 +184,21 @@ reuses the same `benchmark_history` rows — never refetched or duplicated
 per fund. A later view that needs a wider range (older or newer) fetches
 only the missing sub-range, never the whole history again.
 
-**Off by default** (`Settings.benchmark_nse_provider_enabled = false`):
-this open decision (previously "open decision #3" below) is deliberately
-not force-resolved by this change. `nse.py`'s request/response shape
-follows the endpoint niftyindices.com's own site uses, but — like every
-external source in this pipeline — could not be verified against a live
-response from this environment (no outbound network access at all; see
-`nse.py`'s module docstring). Until someone with real network access
-confirms it against the live endpoint, the platform correctly shows
-"Data unavailable" for every benchmark rather than fetching from an
-unconfirmed source. Flip the flag once confirmed.
+**Enabled** (`Settings.benchmark_nse_provider_enabled = true`), with one
+open caveat: `nse.py`'s request/response shape follows the endpoint
+niftyindices.com's own site uses, but — like every external source in
+this pipeline — has not been confirmed against a live response, because
+every environment this has been developed in so far has had no outbound
+network access at all (an explicit 403 organization-policy denial on
+`niftyindices.com`, confirmed and not retried, per that environment's own
+proxy rules — not a transient failure). This was a deliberate choice to
+enable it anyway rather than leave it off indefinitely: a shape mismatch
+fails a fetch attempt closed (`benchmark_validation.py` rejects anything
+malformed), so the worst case while unconfirmed is "Data unavailable" —
+never a wrong number. Still needs confirming against the live endpoint
+from an environment with real network access; set the flag back to
+`false` if niftyindices.com's terms turn out not to permit this kind of
+automated fetch.
 
 **Fund → benchmark mapping**: `Scheme.benchmark_id` remains the current
 pointer (unchanged); `fund_benchmark_history` additionally supports a

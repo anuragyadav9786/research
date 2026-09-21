@@ -10,17 +10,22 @@ a fund's total return against a benchmark that silently excludes dividends,
 which is exactly the "never compare TRI against a price index without
 explicitly handling the distinction" rule this engine exists to uphold.
 
-IMPORTANT — unverified in this environment: this sandbox has no outbound
-network access at all (confirmed; see data_pipeline/sources/mfapi/client.py's
-docstring for the equivalent situation there, verified instead via a live
-CI run this session had no way to reproduce). Unlike that client, the
-request/response shape below has NOT been confirmed against a live
-response in any environment during this change — it follows the endpoint
-niftyindices.com's own historical-data page uses (widely documented in
-open-source Indian-market tooling), but is shipped disabled by default
-(Settings.benchmark_nse_provider_enabled = False) until someone with real
-network access confirms it against the live endpoint and flips the flag.
-See docs/data-sources.md open decision #3.
+IMPORTANT — unverified against a live response: this sandbox has no
+outbound network access at all (confirmed via an explicit 403
+organization-policy denial on niftyindices.com — not a transient
+failure; see data_pipeline/sources/mfapi/client.py's docstring for the
+equivalent situation there, verified instead via a live CI run this
+environment has no way to reproduce). The request/response shape below
+follows the endpoint niftyindices.com's own historical-data page uses
+(widely documented in open-source Indian-market tooling), but has NOT
+been confirmed against a live response from any environment. It is
+nonetheless enabled by default (Settings.benchmark_nse_provider_enabled
+= True): validate_benchmark_points rejects anything malformed, and a
+shape mismatch here fails a fetch attempt closed (falls back to cache or
+"Data unavailable"), never returns a fabricated value — so shipping it
+enabled-but-unconfirmed does not risk showing a wrong number, only a
+missing one until someone with real network access confirms this against
+the live endpoint. See docs/data-sources.md section 4.
 
 Expected request:
     POST https://www.niftyindices.com/Backpage.aspx/getHistoricaldatatabletoString

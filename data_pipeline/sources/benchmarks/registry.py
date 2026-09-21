@@ -7,12 +7,13 @@ no client implemented here: none of the three offers a confirmed, free,
 key-less historical-data endpoint the way NSE's public index-history page
 does, and this project's own rule is to mark such a benchmark unavailable
 rather than build a fragile scrape or fabricate one (docs/data-sources.md
-open decision #3). Add a real client under this package and register it
-here once a legitimate source is confirmed for one of them.
+section 4). Add a real client under this package and register it here
+once a legitimate source is confirmed for one of them.
 
-NSE itself ships registered but disabled by default
-(Settings.benchmark_nse_provider_enabled) — see nse.py's module docstring
-for why: its request/response shape is unverified in this environment.
+NSE is enabled by default (Settings.benchmark_nse_provider_enabled) —
+see nse.py's module docstring for the important caveat: its
+request/response shape has not yet been confirmed against a live
+response from any environment with real network access.
 """
 from __future__ import annotations
 

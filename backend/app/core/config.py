@@ -43,15 +43,20 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     ai_explanation_model: str = "claude-sonnet-5"
 
-    # Benchmark Data Engine — NSE (niftyindices.com) provider. Off by
-    # default: its request/response shape is architecturally complete but
-    # unverified against a live response in this environment (see
-    # data_pipeline/sources/benchmarks/nse.py's module docstring and
-    # docs/data-sources.md open decision #3). Flip to true only after
-    # confirming it against the real endpoint from an environment with
-    # outbound network access. While off, benchmark lookups correctly
-    # degrade to "Data unavailable" rather than ever fabricating a value.
-    benchmark_nse_provider_enabled: bool = False
+    # Benchmark Data Engine — NSE (niftyindices.com) provider. Enabled by
+    # request; its request/response shape (data_pipeline/sources/
+    # benchmarks/nse.py) was NOT verified against a live response before
+    # this was turned on — the sandbox that shipped it had no outbound
+    # network access at all (confirmed via an explicit 403
+    # organization-policy denial on niftyindices.com, not a transient
+    # failure). This is a deliberate, informed choice, not an oversight:
+    # nse.py's validation (data_pipeline/validation/benchmark_validation.py)
+    # rejects anything malformed, and a shape mismatch fails a fetch
+    # attempt closed — the UI still only ever shows "Data unavailable" or
+    # a real number, never a fabricated one. Still needs confirming
+    # against the live endpoint from an environment with real network
+    # access. See docs/data-sources.md section 4.
+    benchmark_nse_provider_enabled: bool = True
 
 
 @lru_cache
