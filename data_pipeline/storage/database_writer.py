@@ -8,8 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.models.timeseries import DataSource, NavHistory
+from app.models.timeseries import BenchmarkHistory, DataSource, NavHistory
 from data_pipeline.normalization.scheme_mapping import MappedNavRecord
+from data_pipeline.validation.benchmark_validation import ValidatedBenchmarkPoint
 
 
 def get_or_create_data_source(db: Session, name: str, url: str, source_type: str) -> DataSource:
@@ -35,12 +36,13 @@ def get_or_create_data_source(db: Session, name: str, url: str, source_type: str
 _INSERT_BATCH_SIZE = 5000
 
 
-def _insert_nav_rows(db: Session, rows: list[dict]) -> int:
-    """Shared batched-upsert core behind write_nav_records and
-    write_nav_points. Uses INSERT ... ON CONFLICT DO NOTHING against the
-    existing uq_nav_variant_date constraint, so re-running for a date
-    already stored is a safe no-op rather than a unique-constraint error.
-    Returns the number of rows actually inserted (conflicts don't count).
+def _batched_upsert(db: Session, model, rows: list[dict], constraint: str) -> int:
+    """Shared batched-upsert core behind write_nav_records, write_nav_points
+    and write_benchmark_points. Uses INSERT ... ON CONFLICT DO NOTHING
+    against the given unique constraint, so re-running for a (variant,
+    date) or (benchmark, date) pair already stored is a safe no-op rather
+    than a unique-constraint error. Returns the number of rows actually
+    inserted (conflicts don't count).
     """
     if not rows:
         return 0
@@ -48,11 +50,15 @@ def _insert_nav_rows(db: Session, rows: list[dict]) -> int:
     inserted = 0
     for i in range(0, len(rows), _INSERT_BATCH_SIZE):
         batch = rows[i : i + _INSERT_BATCH_SIZE]
-        stmt = pg_insert(NavHistory).values(batch)
-        stmt = stmt.on_conflict_do_nothing(constraint="uq_nav_variant_date")
+        stmt = pg_insert(model).values(batch)
+        stmt = stmt.on_conflict_do_nothing(constraint=constraint)
         result = db.execute(stmt)
         inserted += result.rowcount or 0
     return inserted
+
+
+def _insert_nav_rows(db: Session, rows: list[dict]) -> int:
+    return _batched_upsert(db, NavHistory, rows, constraint="uq_nav_variant_date")
 
 
 def write_nav_records(db: Session, source: DataSource, mapped: list[MappedNavRecord]) -> int:
@@ -89,3 +95,20 @@ def write_nav_points(
         for d, nav in points
     ]
     return _insert_nav_rows(db, rows)
+
+
+def write_benchmark_points(
+    db: Session, source: DataSource, benchmark_id: int, points: list[ValidatedBenchmarkPoint]
+) -> int:
+    """Upsert price rows for a single benchmark — shared across every
+    scheme that uses it, never written per-fund (see BenchmarkHistory's
+    docstring). Used by
+    data_pipeline/orchestration/lazy_benchmark_backfill.py. Same
+    ON CONFLICT DO NOTHING mechanics as write_nav_points, against
+    uq_benchmark_date, so re-fetching a date already stored is a no-op.
+    """
+    rows = [
+        {"benchmark_id": benchmark_id, "date": p.price_date, "value": p.value, "source_id": source.id}
+        for p in points
+    ]
+    return _batched_upsert(db, BenchmarkHistory, rows, constraint="uq_benchmark_date")

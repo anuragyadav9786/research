@@ -29,11 +29,15 @@ fund's own correct benchmark series on hand).
 """
 from __future__ import annotations
 
+from datetime import date
+
+import pandas as pd
 from sqlalchemy.orm import Session
 
-from app.models.reference import Scheme
+from app.models.reference import Benchmark, Scheme
 from app.repositories import fund_repository
 from app.services import fund_analytics_service
+from data_pipeline.orchestration.lazy_benchmark_backfill import ensure_benchmark_history
 
 # Caps the live fan-out so one pathologically large category can't turn a
 # single request into hundreds of NAV-history reads + analytics runs. A
@@ -106,33 +110,67 @@ def _category_averages(db: Session, category: str, exclude_scheme_id: int, risk_
     }
 
 
-def _benchmark_figures(db: Session, scheme: Scheme, risk_free_rate_annual: float) -> dict:
-    if scheme.benchmark_id is None:
-        return {"benchmark_name": None, "benchmark_cagr_3y_pct": None, "benchmark_max_drawdown_pct": None, "benchmark_volatility_pct": None}
+_EMPTY_BENCHMARK_FIGURES = {
+    "benchmark_name": None,
+    "benchmark_cagr_3y_pct": None,
+    "benchmark_max_drawdown_pct": None,
+    "benchmark_volatility_pct": None,
+}
 
-    benchmark_series = fund_repository.get_benchmark_series(db, scheme.benchmark_id)
+
+def _benchmark_figures(db: Session, scheme: Scheme, fund_nav: pd.Series, risk_free_rate_annual: float) -> dict:
+    """Fund's own benchmark, run through the exact same
+    compute_returns/compute_drawdown/compute_risk functions used for the
+    fund and category figures — see this module's docstring. Lazily
+    ensures (Section 6) the benchmark's price history covers `fund_nav`'s
+    own date range before reading it, same as the fund detail page's other
+    benchmark-consuming endpoints (app/api/funds.py's _benchmark_series).
+
+    `benchmark_reason` distinguishes *why* a figure is missing (Section
+    13): "no_benchmark_mapped" (scheme has no known benchmark at all),
+    "data_unavailable" (benchmark identified, but no provider could
+    fetch/hasn't fetched its price history), or "insufficient_history"
+    (data exists but not enough of it for this window) — never just a
+    flat null the UI can't explain.
+    """
+    benchmark_id = fund_repository.get_effective_benchmark_id(db, scheme)
+    if benchmark_id is None:
+        return {**_EMPTY_BENCHMARK_FIGURES, "benchmark_reason": "no_benchmark_mapped"}
+
+    benchmark = db.get(Benchmark, benchmark_id)
+    benchmark_name = benchmark.name if benchmark else None
+
+    if benchmark is not None and not fund_nav.empty:
+        start = fund_nav.index.min().date()
+        end = min(fund_nav.index.max().date(), date.today())
+        ensure_benchmark_history(db, benchmark, start, end)
+
+    benchmark_series = fund_repository.get_benchmark_series(db, benchmark_id)
     if benchmark_series.empty:
-        return {
-            "benchmark_name": scheme.benchmark.name if scheme.benchmark else None,
-            "benchmark_cagr_3y_pct": None,
-            "benchmark_max_drawdown_pct": None,
-            "benchmark_volatility_pct": None,
-        }
+        return {**_EMPTY_BENCHMARK_FIGURES, "benchmark_name": benchmark_name, "benchmark_reason": "data_unavailable"}
 
     returns = fund_analytics_service.compute_returns(benchmark_series)
     window_3y = returns["windows"].get("3y")
     drawdown = fund_analytics_service.compute_drawdown(benchmark_series)
     risk = fund_analytics_service.compute_risk(benchmark_series, None, risk_free_rate_annual)
 
+    cagr_3y = window_3y["cagr_pct"] if window_3y and window_3y["available"] else None
+    max_drawdown = drawdown["max_drawdown_pct"] if drawdown["available"] else None
+    volatility = risk["volatility_pct"] if risk["available"] else None
+    reason = None if any(v is not None for v in (cagr_3y, max_drawdown, volatility)) else "insufficient_history"
+
     return {
-        "benchmark_name": scheme.benchmark.name if scheme.benchmark else None,
-        "benchmark_cagr_3y_pct": window_3y["cagr_pct"] if window_3y and window_3y["available"] else None,
-        "benchmark_max_drawdown_pct": drawdown["max_drawdown_pct"] if drawdown["available"] else None,
-        "benchmark_volatility_pct": risk["volatility_pct"] if risk["available"] else None,
+        "benchmark_name": benchmark_name,
+        "benchmark_cagr_3y_pct": cagr_3y,
+        "benchmark_max_drawdown_pct": max_drawdown,
+        "benchmark_volatility_pct": volatility,
+        "benchmark_reason": reason,
     }
 
 
 def compute_fund_context(db: Session, scheme: Scheme, risk_free_rate_annual: float) -> dict:
     category = _category_averages(db, scheme.category, exclude_scheme_id=scheme.id, risk_free_rate_annual=risk_free_rate_annual)
-    benchmark = _benchmark_figures(db, scheme, risk_free_rate_annual)
+    variant = fund_repository.get_default_variant(db, scheme.id)
+    fund_nav = fund_repository.get_nav_series(db, variant.id) if variant is not None else pd.Series(dtype=float)
+    benchmark = _benchmark_figures(db, scheme, fund_nav, risk_free_rate_annual)
     return {**category, **benchmark}

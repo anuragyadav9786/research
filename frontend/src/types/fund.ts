@@ -142,6 +142,8 @@ export interface CategoryBenchmarkResponse {
   benchmark_cagr_3y_pct: number | null;
   benchmark_max_drawdown_pct: number | null;
   benchmark_volatility_pct: number | null;
+  /** "no_benchmark_mapped" | "data_unavailable" | "insufficient_history" | null */
+  benchmark_reason: string | null;
   disclaimer: string;
 }
 

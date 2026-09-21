@@ -14,7 +14,7 @@ import pandas as pd
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.reference import AMC, Benchmark, FundFamily, Scheme, SchemeVariant
+from app.models.reference import AMC, Benchmark, FundBenchmarkHistory, FundFamily, Scheme, SchemeVariant
 from app.models.timeseries import BenchmarkHistory, FundMetric, NavHistory
 
 # How tolerant fuzzy fund-name search is to typos: word_similarity() (from
@@ -168,6 +168,65 @@ def get_benchmark_series(db: Session, benchmark_id: int) -> pd.Series:
     series = pd.Series({d: float(v) for d, v in rows})
     series.index = pd.to_datetime(series.index)
     return series.sort_index()
+
+
+def get_benchmark_date_range(db: Session, benchmark_id: int) -> tuple[date | None, date | None]:
+    """(earliest, latest) date already stored for this benchmark — a cheap
+    aggregate over the (benchmark_id, date) unique index, used by
+    lazy_benchmark_backfill.py to compute exactly which sub-range (if any)
+    is missing, without loading the whole series just to check coverage.
+    """
+    row = (
+        db.query(func.min(BenchmarkHistory.date), func.max(BenchmarkHistory.date))
+        .filter(BenchmarkHistory.benchmark_id == benchmark_id)
+        .one()
+    )
+    return row[0], row[1]
+
+
+def get_effective_benchmark_id(db: Session, scheme: Scheme, as_of: date | None = None) -> int | None:
+    """The benchmark that applied to `scheme` as of `as_of` (default:
+    today) — the fund/scheme -> benchmark mapping the benchmark engine
+    reads from, checked in this order:
+
+    1. fund_benchmark_history: the row covering `as_of`
+       (start_date <= as_of OR start_date IS NULL) AND
+       (end_date >= as_of OR end_date IS NULL). This is what lets a
+       scheme's benchmark assignment change over time (Section 4) — a
+       fund whose benchmark changed on 01-Jan-2024 shows its old benchmark
+       for pre-2024 analysis and its new one after, rather than applying
+       the current benchmark retroactively.
+    2. scheme.benchmark_id, if no fund_benchmark_history rows exist at all
+       for this scheme — the legacy pointer, reused as-is rather than
+       requiring a mapping row for every scheme before this engine can do
+       anything (Section 4: "if benchmark mapping already exists in the
+       current fund metadata, reuse it").
+
+    Returns None if neither source has an answer — a scheme with no known
+    benchmark, surfaced by the caller as "Benchmark unavailable"
+    (Section 13-C), never guessed from its category.
+    """
+    as_of = as_of or date.today()
+    mapping = (
+        db.query(FundBenchmarkHistory)
+        .filter(
+            FundBenchmarkHistory.scheme_id == scheme.id,
+            or_(FundBenchmarkHistory.start_date.is_(None), FundBenchmarkHistory.start_date <= as_of),
+            or_(FundBenchmarkHistory.end_date.is_(None), FundBenchmarkHistory.end_date >= as_of),
+        )
+        .order_by(FundBenchmarkHistory.start_date.desc().nulls_last())
+        .first()
+    )
+    if mapping is not None:
+        return mapping.benchmark_id
+
+    has_any_mapping = (
+        db.query(FundBenchmarkHistory.id).filter(FundBenchmarkHistory.scheme_id == scheme.id).first()
+        is not None
+    )
+    if has_any_mapping:
+        return None  # a mapping history exists, but nothing covers `as_of` — honestly unknown, not a fallback
+    return scheme.benchmark_id
 
 
 def get_cached_metrics(

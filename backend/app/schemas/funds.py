@@ -175,6 +175,13 @@ class CategoryBenchmarkResponse(BaseModel):
     benchmark_cagr_3y_pct: float | None
     benchmark_max_drawdown_pct: float | None
     benchmark_volatility_pct: float | None
+    # Why the benchmark figures above are null, distinct from `reason`
+    # (which explains the category average): "no_benchmark_mapped" (this
+    # scheme has no known benchmark), "data_unavailable" (a benchmark is
+    # identified but its price history couldn't be fetched), or
+    # "insufficient_history" (price history exists but not enough of it
+    # for this window). None when the benchmark figures are populated.
+    benchmark_reason: str | None = None
     disclaimer: str = DISCLAIMER
 
 

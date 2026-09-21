@@ -43,6 +43,23 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     ai_explanation_model: str = "claude-sonnet-5"
 
+    # Benchmark Data Engine — NSE (nseindia.com) provider. Enabled by
+    # request; its response *shape* (data_pipeline/sources/benchmarks/
+    # nse.py) is confirmed against a real captured sample, but the request
+    # side (session handshake, headers, query params) was NOT verified
+    # against a live round trip before this was turned on — the sandbox
+    # that shipped it had no outbound network access at all (confirmed via
+    # an explicit 403 organization-policy denial on nseindia.com, not a
+    # transient failure). This is a deliberate, informed choice, not an
+    # oversight: nse.py's validation
+    # (data_pipeline/validation/benchmark_validation.py) rejects anything
+    # malformed, and a failed/malformed fetch fails closed — the UI still
+    # only ever shows "Data unavailable" or a real number, never a
+    # fabricated one. Still needs confirming end-to-end from an
+    # environment with real network access. See docs/data-sources.md
+    # section 4.
+    benchmark_nse_provider_enabled: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:

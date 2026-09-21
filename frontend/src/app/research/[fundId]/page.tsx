@@ -302,6 +302,7 @@ export default async function FundDetailPage({
                     categoryLabel={fund.category}
                     benchmarkValue={categoryBenchmark.benchmark_cagr_3y_pct}
                     benchmarkName={categoryBenchmark.benchmark_name}
+                    benchmarkReason={categoryBenchmark.benchmark_reason}
                     formatValue={(v) => formatPct(v, 1)}
                     interpretation={cagrContextSentence(
                       returns!.windows["3y"].cagr_pct,
@@ -476,6 +477,7 @@ export default async function FundDetailPage({
                     categoryLabel={fund.category}
                     benchmarkValue={categoryBenchmark.benchmark_volatility_pct}
                     benchmarkName={categoryBenchmark.benchmark_name}
+                    benchmarkReason={categoryBenchmark.benchmark_reason}
                     formatValue={(v) => `${formatNumber(v, 1)}%`}
                     interpretation={volatilityContextSentence(
                       risk!.volatility_pct!,
@@ -635,6 +637,7 @@ export default async function FundDetailPage({
                       categoryLabel={fund.category}
                       benchmarkValue={categoryBenchmark.benchmark_max_drawdown_pct}
                       benchmarkName={categoryBenchmark.benchmark_name}
+                      benchmarkReason={categoryBenchmark.benchmark_reason}
                       formatValue={(v) => formatPct(v, 1)}
                       interpretation={drawdownContextSentence(
                         drawdown!.max_drawdown_pct!,
