@@ -10,10 +10,13 @@ rather than build a fragile scrape or fabricate one (docs/data-sources.md
 section 4). Add a real client under this package and register it here
 once a legitimate source is confirmed for one of them.
 
-NSE is enabled by default (Settings.benchmark_nse_provider_enabled) —
-see nse.py's module docstring for the important caveat: its
-request/response shape has not yet been confirmed against a live
-response from any environment with real network access.
+NSE is enabled by default (Settings.benchmark_nse_provider_enabled) and
+its response PARSING is now confirmed against a real captured response
+(see nse.py's module docstring). It serves both price and TRI index
+variants through one endpoint, keyed by which symbol is queried — so
+getting the right series for a TRI benchmark depends on that benchmark's
+`symbol` actually naming the TRI variant (e.g. "NIFTY 50 TRI"), not on
+this registry.
 """
 from __future__ import annotations
 

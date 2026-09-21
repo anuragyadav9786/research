@@ -1,8 +1,10 @@
 """Tests for the NSE benchmark provider's HTTP client, using a mocked
 transport — no real network access (this sandbox has no outbound internet
-access at all; see nse.py's module docstring for why the live
-request/response shape is unverified rather than confirmed, unlike
-mfapi.in's client)."""
+access at all). Unlike the module's earlier version, the response shape
+used here is a REAL captured sample from
+GET https://www.nseindia.com/api/historicalOR/indicesHistory — see
+nse.py's module docstring — not a guess; only the session-handshake/
+request mechanics remain a best-effort simulation."""
 from datetime import date
 
 import httpx
@@ -11,85 +13,126 @@ import pytest
 from data_pipeline.sources.benchmarks.base import BenchmarkProviderError
 from data_pipeline.sources.benchmarks.nse import NSEProvider
 
+REAL_SAMPLE_RESPONSE = {
+    "data": {
+        "indexCloseOnlineRecords": [
+            {
+                "EOD_OPEN_INDEX_VAL": 10881.7,
+                "EOD_HIGH_INDEX_VAL": 10923.6,
+                "EOD_LOW_INDEX_VAL": 10807.1,
+                "EOD_CLOSE_INDEX_VAL": 10910.1,
+                "EOD_PREV_CLOSE": 10862.55,
+                "EOD_TIMESTAMP": "01-Jan-2019",
+            },
+            {
+                "EOD_OPEN_INDEX_VAL": 10868.85,
+                "EOD_HIGH_INDEX_VAL": 10895.35,
+                "EOD_LOW_INDEX_VAL": 10780.0,
+                "EOD_CLOSE_INDEX_VAL": 10792.5,
+                "EOD_PREV_CLOSE": 10910.1,
+                "EOD_TIMESTAMP": "02-Jan-2019",
+            },
+        ]
+    }
+}
 
-def _patch_post(monkeypatch, handler):
+
+def _patch_client(monkeypatch, history_handler):
+    """Replaces httpx.Client with one wired to a MockTransport, routing
+    the session-handshake GET (to the bare domain) separately from the
+    history-data GET (to /api/historicalOR/indicesHistory) — mirrors the
+    two real requests NSEProvider.fetch_range makes."""
     calls = []
 
-    def fake_post(url, json, timeout, headers):
-        calls.append(json)
-        transport = httpx.MockTransport(handler)
-        return httpx.Client(transport=transport).post(url, json=json)
+    def route(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        if "/api/historicalOR/indicesHistory" in str(request.url):
+            return history_handler(request)
+        return httpx.Response(200, text="<html>ok</html>")  # the handshake GET
 
-    monkeypatch.setattr(httpx, "post", fake_post)
+    real_client_cls = httpx.Client
+
+    def client_factory(**kwargs):
+        kwargs.pop("transport", None)
+        return real_client_cls(transport=httpx.MockTransport(route), **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", client_factory)
     return calls
 
 
 def test_fetch_range_returns_points_on_success(monkeypatch):
     def handler(request):
-        return httpx.Response(
-            200,
-            json={
-                "d": (
-                    '[{"HistoricalDate": "01-Jan-2025", "EOD_CLOSE_INDEX_VAL": "28000.10"}, '
-                    '{"HistoricalDate": "02-Jan-2025", "EOD_CLOSE_INDEX_VAL": "28100.50"}]'
-                )
-            },
-        )
+        return httpx.Response(200, json=REAL_SAMPLE_RESPONSE)
 
-    _patch_post(monkeypatch, handler)
-    provider = NSEProvider()
-    points = provider.fetch_range("NIFTY 100", date(2025, 1, 1), date(2025, 1, 2))
+    _patch_client(monkeypatch, handler)
+    points = NSEProvider().fetch_range("NIFTY 50", date(2019, 1, 1), date(2019, 1, 2))
 
     assert len(points) == 2
-    assert points[0].price_date == date(2025, 1, 1)
-    assert points[0].value == 28000.10
-    assert points[1].value == 28100.50
+    assert points[0].price_date == date(2019, 1, 1)
+    assert points[0].value == 10910.1
+    assert points[1].price_date == date(2019, 1, 2)
+    assert points[1].value == 10792.5
 
 
-def test_fetch_range_sends_expected_payload(monkeypatch):
+def test_fetch_range_sends_expected_query_params(monkeypatch):
     def handler(request):
-        return httpx.Response(200, json={"d": '[{"HistoricalDate": "01-Jan-2025", "EOD_CLOSE_INDEX_VAL": "1"}]'})
+        assert dict(request.url.params) == {
+            "indexType": "NIFTY 50",
+            "from": "01-01-2019",
+            "to": "31-01-2019",
+        }
+        return httpx.Response(200, json=REAL_SAMPLE_RESPONSE)
 
-    calls = _patch_post(monkeypatch, handler)
-    NSEProvider().fetch_range("NIFTY 50 TRI", date(2025, 1, 1), date(2025, 1, 31))
+    _patch_client(monkeypatch, handler)
+    NSEProvider().fetch_range("NIFTY 50", date(2019, 1, 1), date(2019, 1, 31))
 
-    assert calls[0] == {"name": "NIFTY 50 TRI", "startDate": "01-Jan-2025", "endDate": "31-Jan-2025"}
+
+def test_fetch_range_performs_session_handshake_before_history_request(monkeypatch):
+    def handler(request):
+        return httpx.Response(200, json=REAL_SAMPLE_RESPONSE)
+
+    calls = _patch_client(monkeypatch, handler)
+    NSEProvider().fetch_range("NIFTY 50", date(2019, 1, 1), date(2019, 1, 2))
+
+    assert len(calls) == 2
+    assert "/api/historicalOR/indicesHistory" not in str(calls[0].url)
+    assert "/api/historicalOR/indicesHistory" in str(calls[1].url)
 
 
 def test_fetch_range_raises_on_http_error(monkeypatch):
     def handler(request):
         return httpx.Response(404, text="not found")
 
-    _patch_post(monkeypatch, handler)
+    _patch_client(monkeypatch, handler)
     with pytest.raises(BenchmarkProviderError, match="404"):
-        NSEProvider().fetch_range("UNKNOWN INDEX", date(2025, 1, 1), date(2025, 1, 2))
+        NSEProvider().fetch_range("UNKNOWN INDEX", date(2019, 1, 1), date(2019, 1, 2))
 
 
 def test_fetch_range_raises_on_non_json_response(monkeypatch):
     def handler(request):
         return httpx.Response(200, text="<html>not json</html>")
 
-    _patch_post(monkeypatch, handler)
+    _patch_client(monkeypatch, handler)
     with pytest.raises(BenchmarkProviderError, match="non-JSON"):
-        NSEProvider().fetch_range("NIFTY 100", date(2025, 1, 1), date(2025, 1, 2))
+        NSEProvider().fetch_range("NIFTY 50", date(2019, 1, 1), date(2019, 1, 2))
 
 
 def test_fetch_range_raises_on_unexpected_shape(monkeypatch):
     def handler(request):
         return httpx.Response(200, json={"unexpected": "shape"})
 
-    _patch_post(monkeypatch, handler)
+    _patch_client(monkeypatch, handler)
     with pytest.raises(BenchmarkProviderError, match="unexpected"):
-        NSEProvider().fetch_range("NIFTY 100", date(2025, 1, 1), date(2025, 1, 2))
+        NSEProvider().fetch_range("NIFTY 50", date(2019, 1, 1), date(2019, 1, 2))
 
 
-def test_fetch_range_raises_on_empty_rows(monkeypatch):
+def test_fetch_range_raises_on_empty_records(monkeypatch):
     def handler(request):
-        return httpx.Response(200, json={"d": "[]"})
+        return httpx.Response(200, json={"data": {"indexCloseOnlineRecords": []}})
 
-    _patch_post(monkeypatch, handler)
+    _patch_client(monkeypatch, handler)
     with pytest.raises(BenchmarkProviderError, match="no historical data"):
-        NSEProvider().fetch_range("NIFTY 100", date(2025, 1, 1), date(2025, 1, 2))
+        NSEProvider().fetch_range("NIFTY 50", date(2019, 1, 1), date(2019, 1, 2))
 
 
 def test_fetch_range_skips_malformed_rows_but_keeps_valid_ones(monkeypatch):
@@ -97,21 +140,23 @@ def test_fetch_range_skips_malformed_rows_but_keeps_valid_ones(monkeypatch):
         return httpx.Response(
             200,
             json={
-                "d": (
-                    '[{"HistoricalDate": "not-a-date", "EOD_CLOSE_INDEX_VAL": "100"}, '
-                    '{"HistoricalDate": "01-Jan-2025", "EOD_CLOSE_INDEX_VAL": "not-a-number"}, '
-                    '{"HistoricalDate": "02-Jan-2025", "EOD_CLOSE_INDEX_VAL": "-5"}, '
-                    '{"HistoricalDate": "03-Jan-2025", "EOD_CLOSE_INDEX_VAL": "28000.10"}]'
-                )
+                "data": {
+                    "indexCloseOnlineRecords": [
+                        {"EOD_TIMESTAMP": "not-a-date", "EOD_CLOSE_INDEX_VAL": 100.0},
+                        {"EOD_TIMESTAMP": "01-Jan-2019", "EOD_CLOSE_INDEX_VAL": "not-a-number"},
+                        {"EOD_TIMESTAMP": "02-Jan-2019", "EOD_CLOSE_INDEX_VAL": -5.0},
+                        {"EOD_TIMESTAMP": "03-Jan-2019", "EOD_CLOSE_INDEX_VAL": 10910.1},
+                    ]
+                }
             },
         )
 
-    _patch_post(monkeypatch, handler)
-    points = NSEProvider().fetch_range("NIFTY 100", date(2025, 1, 1), date(2025, 1, 3))
+    _patch_client(monkeypatch, handler)
+    points = NSEProvider().fetch_range("NIFTY 50", date(2019, 1, 1), date(2019, 1, 3))
 
     assert len(points) == 1
-    assert points[0].price_date == date(2025, 1, 3)
-    assert points[0].value == 28000.10
+    assert points[0].price_date == date(2019, 1, 3)
+    assert points[0].value == 10910.1
 
 
 def test_fetch_range_retries_on_rate_limit_then_succeeds(monkeypatch):
@@ -121,10 +166,18 @@ def test_fetch_range_retries_on_rate_limit_then_succeeds(monkeypatch):
         attempts["n"] += 1
         if attempts["n"] == 1:
             return httpx.Response(429, text="rate limited")
-        return httpx.Response(200, json={"d": '[{"HistoricalDate": "01-Jan-2025", "EOD_CLOSE_INDEX_VAL": "1"}]'})
+        return httpx.Response(200, json=REAL_SAMPLE_RESPONSE)
 
-    _patch_post(monkeypatch, handler)
-    points = NSEProvider().fetch_range("NIFTY 100", date(2025, 1, 1), date(2025, 1, 1))
+    _patch_client(monkeypatch, handler)
+    points = NSEProvider().fetch_range("NIFTY 50", date(2019, 1, 1), date(2019, 1, 2))
 
     assert attempts["n"] == 2
-    assert len(points) == 1
+    assert len(points) == 2
+
+
+def test_served_benchmark_type_is_unset_since_it_depends_on_the_symbol_queried():
+    # This endpoint serves both price and TRI index variants depending on
+    # which index name (symbol) is queried — see nse.py's module
+    # docstring — so it deliberately doesn't declare a fixed
+    # served_benchmark_type the way a genuinely single-type provider would.
+    assert NSEProvider.served_benchmark_type is None

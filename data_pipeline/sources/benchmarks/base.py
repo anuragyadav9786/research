@@ -7,13 +7,16 @@ and the research engine never need to know which provider actually served
 a given benchmark's data — see Section 23's "research calculation
 contract" principle, applied one layer down to data fetching itself.
 
-Only NSEProvider (nse.py) is implemented, and only for TRI-family indices
-that are the actual data class mutual fund scheme benchmarks use. BSE,
-CRISIL and MSCI are registered as recognized `provider` values on the
-Benchmark model (Section 5's provider abstraction) but have no working
-client here — see registry.py's docstring for why, and
-docs/data-sources.md for the standing "licensing/availability to confirm"
-note this satisfies rather than overrides.
+Only NSEProvider (nse.py) is implemented. It serves whichever index a
+Benchmark's `symbol` names — price or TRI — through one endpoint, so it
+isn't fixed to a single `served_benchmark_type`; see nse.py's module
+docstring for how a TRI benchmark needs a TRI-named symbol (e.g. "NIFTY
+50 TRI") to actually get TRI data back. BSE, CRISIL and MSCI are
+registered as recognized `provider` values on the Benchmark model
+(Section 5's provider abstraction) but have no working client here — see
+registry.py's docstring for why, and docs/data-sources.md for the
+standing "licensing/availability to confirm" note this satisfies rather
+than overrides.
 """
 from __future__ import annotations
 
@@ -49,6 +52,15 @@ class BenchmarkProvider(ABC):
 
     #: The Benchmark.provider value this class serves, e.g. "NSE".
     name: str
+
+    #: "TRI" or "PRICE" — which of Benchmark.benchmark_type this provider's
+    #: data actually is. Checked by lazy_benchmark_backfill.py before a
+    #: fetch, so a price-only provider is never silently used to fill a
+    #: TRI benchmark's history (Section 29: "never use a price index where
+    #: a TRI benchmark is required without explicitly handling the
+    #: distinction"). None means "unknown" — treated as compatible with
+    #: any benchmark_type, since there's nothing to contradict.
+    served_benchmark_type: str | None = None
 
     @abstractmethod
     def fetch_range(self, symbol: str, start: date, end: date) -> list[BenchmarkPricePoint]:

@@ -35,7 +35,23 @@ from data_pipeline.validation.benchmark_validation import validate_benchmark_poi
 
 logger = logging.getLogger(__name__)
 
-DATA_SOURCE_URL = "https://www.niftyindices.com"
+DATA_SOURCE_URL = "https://www.nseindia.com"
+
+
+def _provider_matches_benchmark_type(provider, benchmark: Benchmark) -> bool:
+    """Refuses to use a provider whose data is a different
+    benchmark_type than what this benchmark actually needs — concretely,
+    never lets NSEProvider's price-return data fill a TRI benchmark's
+    history (Section 29's "never use a price index where a TRI benchmark
+    is required without explicitly handling the distinction", now
+    enforced rather than just documented). Either side being unset
+    (unknown) is treated as compatible — there's nothing to contradict.
+    """
+    served = provider.served_benchmark_type
+    needed = benchmark.benchmark_type
+    if served is None or needed is None:
+        return True
+    return served == needed
 
 
 @dataclass
@@ -93,6 +109,13 @@ def ensure_benchmark_history(db: Session, benchmark: Benchmark, start_date: date
     if provider is None:
         logger.info("benchmark_provider_unavailable benchmark_id=%s provider=%r", benchmark.id, benchmark.provider)
         return BenchmarkBackfillOutcome(attempted=True, success=False, reason="provider_unavailable")
+
+    if not _provider_matches_benchmark_type(provider, benchmark):
+        logger.info(
+            "benchmark_type_mismatch benchmark_id=%s needed=%r provider=%s serves=%r",
+            benchmark.id, benchmark.benchmark_type, provider.name, provider.served_benchmark_type,
+        )
+        return BenchmarkBackfillOutcome(attempted=True, success=False, reason="benchmark_type_mismatch")
 
     symbol = benchmark.symbol or benchmark.name
     source = get_or_create_data_source(

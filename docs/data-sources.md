@@ -161,19 +161,27 @@ one whose page is being viewed), so there is no identity ambiguity to
 resolve here; a scheme must already be onboarded from the live feed before
 its history can be lazily backfilled.
 
-## 4. NSE index data (real source — architecture built, live fetch unverified)
+## 4. NSE index data (real source — response shape confirmed, request mechanics unverified)
 
-**Source**: niftyindices.com's historical-index-data endpoint (used via
-`data_pipeline/sources/benchmarks/nse.py`'s `NSEProvider`), the same class
-of source as mfapi.in above — free, no API key, but not a source whose
-terms of use this project has independently confirmed.
+**Source**: NSE's own "Historical Index Data" report API,
+`GET https://www.nseindia.com/api/historicalOR/indicesHistory` (used via
+`data_pipeline/sources/benchmarks/nse.py`'s `NSEProvider`) — free, no API
+key, same class of source as mfapi.in above. Its response *shape* is
+confirmed against a real sample a user of this platform captured and
+provided directly (see `nse.py`'s module docstring) — not a guess, unlike
+an earlier version of this module that guessed at a different,
+niftyindices.com-hosted endpoint and was superseded once this one was
+confirmed.
 
-**What it is**: daily TRI (Total Returns Index) levels for the Nifty
-index family — the benchmark class mutual fund scheme benchmarks
-actually use (see `Benchmark.benchmark_type`). Plain NSE bhavcopy
-(price-only, no dividend reinvestment) is deliberately not used, since
-comparing a fund's total return against a price-only index would silently
-misstate the comparison.
+**What it is**: daily index levels — either price-return or TRI (Total
+Returns, dividend-reinvested), depending on which index name is queried
+(`indexType`). NSE publishes both as distinct named indices through this
+one endpoint (e.g. "NIFTY 50" vs. "NIFTY 50 TRI"), so `NSEProvider`
+doesn't declare a single fixed type; correctness depends on a TRI
+benchmark's `Benchmark.symbol` actually naming the TRI variant. That
+specific claim (that a TRI-named `indexType` returns real TRI values
+through this endpoint) hasn't itself been confirmed with a real sample
+yet — the response shape is confirmed, this one detail about it isn't.
 
 **Lazy, per-benchmark backfill** (`data_pipeline/orchestration/
 lazy_benchmark_backfill.py`, the benchmark-side counterpart to the mfapi.in
@@ -182,23 +190,30 @@ only the date range that fund's own NAV history needs; every other scheme
 sharing that same benchmark (`Scheme.benchmark_id` / `fund_benchmark_history`)
 reuses the same `benchmark_history` rows — never refetched or duplicated
 per fund. A later view that needs a wider range (older or newer) fetches
-only the missing sub-range, never the whole history again.
+only the missing sub-range, never the whole history again. As a defensive
+backstop for a genuinely single-type provider added later,
+`_provider_matches_benchmark_type` refuses to use a provider whose
+declared `served_benchmark_type` contradicts a benchmark's own
+`benchmark_type` — currently a no-op for `NSEProvider` itself, since it
+doesn't declare one.
 
 **Enabled** (`Settings.benchmark_nse_provider_enabled = true`), with one
-open caveat: `nse.py`'s request/response shape follows the endpoint
-niftyindices.com's own site uses, but — like every external source in
-this pipeline — has not been confirmed against a live response, because
-every environment this has been developed in so far has had no outbound
-network access at all (an explicit 403 organization-policy denial on
-`niftyindices.com`, confirmed and not retried, per that environment's own
-proxy rules — not a transient failure). This was a deliberate choice to
-enable it anyway rather than leave it off indefinitely: a shape mismatch
-fails a fetch attempt closed (`benchmark_validation.py` rejects anything
-malformed), so the worst case while unconfirmed is "Data unavailable" —
-never a wrong number. Still needs confirming against the live endpoint
-from an environment with real network access; set the flag back to
-`false` if niftyindices.com's terms turn out not to permit this kind of
-automated fetch.
+open caveat on the *request* side: `nse.py`'s session-handshake and query
+mechanics (cookie establishment, headers, `from`/`to` parameter format)
+follow the widely-documented pattern other NSE-scraping tools use, but —
+like every external source in this pipeline — have not been confirmed
+against a live round trip, because every environment this has been
+developed in so far has had no outbound network access at all (an
+explicit 403 organization-policy denial on `nseindia.com`, confirmed and
+not retried, per that environment's own proxy rules — not a transient
+failure). This was a deliberate choice to enable it anyway rather than
+leave it off indefinitely: a shape mismatch or failed request fails
+closed (`benchmark_validation.py` rejects anything malformed), so the
+worst case while unconfirmed is "Data unavailable" — never a wrong
+number. Still worth confirming end-to-end (a real request succeeding, and
+a TRI-named query actually returning TRI values) from an environment with
+real network access; set the flag back to `false` if nseindia.com's terms
+turn out not to permit this kind of automated fetch.
 
 **Fund → benchmark mapping**: `Scheme.benchmark_id` remains the current
 pointer (unchanged); `fund_benchmark_history` additionally supports a

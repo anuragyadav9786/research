@@ -65,6 +65,7 @@ def _fake_provider(points_by_range):
 
     class _Fake:
         name = "NSE"
+        served_benchmark_type = None
 
         def fetch_range(self, symbol, start, end):
             calls.append((start, end))
@@ -152,9 +153,50 @@ def test_provider_unavailable_with_no_cache_degrades_gracefully(db, benchmark, m
     assert stored.empty
 
 
+# These two tests exercise _provider_matches_benchmark_type's reusable
+# gate mechanism directly (a hypothetical fixed-type provider), not
+# NSEProvider's own behaviour — NSEProvider itself leaves
+# served_benchmark_type unset since it can serve either type depending on
+# the symbol queried (see nse.py). The gate stays in place as defensive
+# architecture for a genuinely single-type provider added later — Section
+# 29's "never use a price index where a TRI benchmark is required" rule,
+# enforced in code, not just documented.
+def test_price_only_provider_is_refused_for_a_tri_benchmark(db, benchmark, monkeypatch):
+    benchmark.benchmark_type = "TRI"
+    db.commit()
+
+    fake, calls = _fake_provider({(_START, _END): _points((_START, 100.0), (_END, 101.0))})
+    fake.served_benchmark_type = "PRICE"
+    monkeypatch.setattr(backfill_module, "get_provider", lambda name: fake)
+
+    outcome = ensure_benchmark_history(db, benchmark, _START, _END)
+
+    assert outcome.attempted is True
+    assert outcome.success is False
+    assert outcome.reason == "benchmark_type_mismatch"
+    assert calls == []  # the provider is never even called
+    stored = fund_repository.get_benchmark_series(db, benchmark.id)
+    assert stored.empty
+
+
+def test_price_provider_is_used_for_a_price_benchmark(db, benchmark, monkeypatch):
+    benchmark.benchmark_type = "PRICE"
+    db.commit()
+
+    fake, calls = _fake_provider({(_START, _END): _points((_START, 100.0), (_END, 101.0))})
+    fake.served_benchmark_type = "PRICE"
+    monkeypatch.setattr(backfill_module, "get_provider", lambda name: fake)
+
+    outcome = ensure_benchmark_history(db, benchmark, _START, _END)
+
+    assert outcome.success is True
+    assert len(calls) == 1
+
+
 def test_provider_raising_does_not_crash_and_reports_failure(db, benchmark, monkeypatch):
     class _Failing:
         name = "NSE"
+        served_benchmark_type = None
 
         def fetch_range(self, symbol, start, end):
             raise BenchmarkProviderError("simulated network failure")
