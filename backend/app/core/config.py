@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     ai_explanation_model: str = "claude-sonnet-5"
 
+    # Benchmark Data Engine — NSE (niftyindices.com) provider. Off by
+    # default: its request/response shape is architecturally complete but
+    # unverified against a live response in this environment (see
+    # data_pipeline/sources/benchmarks/nse.py's module docstring and
+    # docs/data-sources.md open decision #3). Flip to true only after
+    # confirming it against the real endpoint from an environment with
+    # outbound network access. While off, benchmark lookups correctly
+    # degrade to "Data unavailable" rather than ever fabricating a value.
+    benchmark_nse_provider_enabled: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

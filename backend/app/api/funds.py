@@ -19,6 +19,7 @@ from __future__ import annotations
 from datetime import date as _date
 from typing import Literal
 
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -26,8 +27,9 @@ from analytics.alpha_beta import beta as compute_beta
 from analytics.returns import returns_series
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.reference import Scheme, SchemeVariant
+from app.models.reference import Benchmark, Scheme, SchemeVariant
 from app.repositories import fund_repository, market_regime_repository, portfolio_repository
+from data_pipeline.orchestration.lazy_benchmark_backfill import ensure_benchmark_history
 from data_pipeline.orchestration.lazy_nav_backfill import ensure_nav_history
 from data_pipeline.orchestration.precompute_metrics import RISK_OPTIONAL_FIELDS, RISK_REQUIRED_FIELDS
 from app.schemas.funds import (
@@ -119,10 +121,27 @@ def _resolve_variant(db: Session, scheme: Scheme, plan: str, option: str) -> Sch
     return variant
 
 
-def _benchmark_series(db: Session, scheme: Scheme):
-    if scheme.benchmark_id is None:
+def _benchmark_series(db: Session, scheme: Scheme, nav: pd.Series):
+    """This fund's linked benchmark's price series, covering (at least)
+    `nav`'s own date range — lazily backfilling any missing part of that
+    range first (Section 6-9's "determine the research analysis period,
+    then check/fetch/store" flow). Returns None when no benchmark is
+    identified for this scheme at all; an identified-but-unfetchable
+    benchmark still returns whatever's cached (possibly empty), which the
+    analytics functions already treat as "not available" rather than a
+    fabricated figure — same contract every other unavailable-data path in
+    this file already uses.
+    """
+    benchmark_id = fund_repository.get_effective_benchmark_id(db, scheme)
+    if benchmark_id is None:
         return None
-    return fund_repository.get_benchmark_series(db, scheme.benchmark_id)
+    if not nav.empty:
+        benchmark = db.get(Benchmark, benchmark_id)
+        if benchmark is not None:
+            start = nav.index.min().date()
+            end = min(nav.index.max().date(), _date.today())
+            ensure_benchmark_history(db, benchmark, start, end)
+    return fund_repository.get_benchmark_series(db, benchmark_id)
 
 
 def _risk_from_cache(db: Session, variant: SchemeVariant) -> dict | None:
@@ -243,7 +262,7 @@ def get_fund_nav_history(
     scheme = _resolve_scheme(db, fund_id)
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
-    benchmark = _benchmark_series(db, scheme)
+    benchmark = _benchmark_series(db, scheme, nav)
     return {
         "variant": _variant_summary(db, variant),
         "benchmark_name": scheme.benchmark.name if scheme.benchmark else None,
@@ -267,7 +286,7 @@ def get_fund_risk(
         return cached
 
     nav = fund_repository.get_nav_series(db, variant.id)
-    benchmark = _benchmark_series(db, scheme)
+    benchmark = _benchmark_series(db, scheme, nav)
     risk_free_rate = get_settings().risk_free_rate
     return fund_analytics_service.compute_risk(nav, benchmark, risk_free_rate)
 
@@ -283,7 +302,7 @@ def get_fund_rolling_returns(
     scheme = _resolve_scheme(db, fund_id)
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
-    benchmark = _benchmark_series(db, scheme)
+    benchmark = _benchmark_series(db, scheme, nav)
     return fund_analytics_service.compute_rolling_returns(nav, benchmark, window_years)
 
 
@@ -349,7 +368,7 @@ def get_fund_market_regimes(
     scheme = _resolve_scheme(db, fund_id)
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
-    benchmark = _benchmark_series(db, scheme)
+    benchmark = _benchmark_series(db, scheme, nav)
     regimes = market_regime_repository.list_regimes(db)
     return market_regime_service.compute_regime_behavior(nav, benchmark, regimes)
 
@@ -371,7 +390,7 @@ def get_fund_stress_test(
     scheme = _resolve_scheme(db, fund_id)
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
-    benchmark = _benchmark_series(db, scheme)
+    benchmark = _benchmark_series(db, scheme, nav)
 
     fund_beta = None
     if benchmark is not None and not benchmark.empty:
@@ -412,7 +431,7 @@ def get_fund_ai_summary(
     scheme = _resolve_scheme(db, fund_id)
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
-    benchmark = _benchmark_series(db, scheme)
+    benchmark = _benchmark_series(db, scheme, nav)
     risk_free_rate = get_settings().risk_free_rate
 
     returns = fund_analytics_service.compute_returns(nav, variant.nav_history_backfilled_at is not None)
@@ -506,7 +525,7 @@ def get_fund_intelligence(
     scheme = _resolve_scheme(db, fund_id)
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
-    benchmark = _benchmark_series(db, scheme)
+    benchmark = _benchmark_series(db, scheme, nav)
     risk_free_rate = get_settings().risk_free_rate
 
     return {

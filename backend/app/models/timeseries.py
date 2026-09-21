@@ -56,6 +56,13 @@ class NavHistory(Base):
 
 
 class BenchmarkHistory(Base):
+    """One benchmark's daily price series — shared across every scheme that
+    uses it (see Scheme.benchmark_id / FundBenchmarkHistory), never stored
+    per-fund. This is the "benchmark_prices" table in the benchmark-engine
+    design: intentionally just (benchmark_id, date, value) — no OHLC —
+    since that's all the research engine's return/risk calculations need.
+    """
+
     __tablename__ = "benchmark_history"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -63,8 +70,15 @@ class BenchmarkHistory(Base):
     date: Mapped[date] = mapped_column(Date, nullable=False)
     value: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
     source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    __table_args__ = (UniqueConstraint("benchmark_id", "date", name="uq_benchmark_date"),)
+    __table_args__ = (
+        # UNIQUE(benchmark_id, date) also serves as the benchmark_id+date
+        # index the research engine's range reads need — no separate index
+        # required (Postgres backs a unique constraint with one already).
+        UniqueConstraint("benchmark_id", "date", name="uq_benchmark_date"),
+        CheckConstraint("value > 0", name="ck_benchmark_value_positive"),
+    )
 
 
 class PortfolioSnapshot(Base):

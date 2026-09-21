@@ -161,10 +161,53 @@ one whose page is being viewed), so there is no identity ambiguity to
 resolve here; a scheme must already be onboarded from the live feed before
 its history can be lazily backfilled.
 
-## 3. Planned sources (not yet built)
+## 4. NSE index data (real source — architecture built, live fetch unverified)
+
+**Source**: niftyindices.com's historical-index-data endpoint (used via
+`data_pipeline/sources/benchmarks/nse.py`'s `NSEProvider`), the same class
+of source as mfapi.in above — free, no API key, but not a source whose
+terms of use this project has independently confirmed.
+
+**What it is**: daily TRI (Total Returns Index) levels for the Nifty
+index family — the benchmark class mutual fund scheme benchmarks
+actually use (see `Benchmark.benchmark_type`). Plain NSE bhavcopy
+(price-only, no dividend reinvestment) is deliberately not used, since
+comparing a fund's total return against a price-only index would silently
+misstate the comparison.
+
+**Lazy, per-benchmark backfill** (`data_pipeline/orchestration/
+lazy_benchmark_backfill.py`, the benchmark-side counterpart to the mfapi.in
+flow above): the first fund view for a given benchmark fetches and stores
+only the date range that fund's own NAV history needs; every other scheme
+sharing that same benchmark (`Scheme.benchmark_id` / `fund_benchmark_history`)
+reuses the same `benchmark_history` rows — never refetched or duplicated
+per fund. A later view that needs a wider range (older or newer) fetches
+only the missing sub-range, never the whole history again.
+
+**Off by default** (`Settings.benchmark_nse_provider_enabled = false`):
+this open decision (previously "open decision #3" below) is deliberately
+not force-resolved by this change. `nse.py`'s request/response shape
+follows the endpoint niftyindices.com's own site uses, but — like every
+external source in this pipeline — could not be verified against a live
+response from this environment (no outbound network access at all; see
+`nse.py`'s module docstring). Until someone with real network access
+confirms it against the live endpoint, the platform correctly shows
+"Data unavailable" for every benchmark rather than fetching from an
+unconfirmed source. Flip the flag once confirmed.
+
+**Fund → benchmark mapping**: `Scheme.benchmark_id` remains the current
+pointer (unchanged); `fund_benchmark_history` additionally supports a
+scheme's benchmark changing over time (`start_date`/`end_date` per
+assignment — see `FundBenchmarkHistory`'s docstring), mirroring
+`fund_manager_history`'s existing shape. No source in this pipeline
+provides real historical benchmark-change data yet, so every row so far
+has been migrated 1:1 from `scheme.benchmark_id` with `start_date = NULL`
+(unknown, never guessed) — the schema is ready for a real source, not
+pre-filled with invented dates.
+
+## 5. Planned sources (not yet built)
 
 | Source | Purpose | Status |
 |---|---|---|
 | AMC factsheets (PDF, monthly) | Portfolio holdings | Not started — needs per-AMC parsing or manual entry; see `docs/BUILD_PLAN.md` open decision #2 |
-| NSE index data | Benchmark history | Not started — licensing/availability to confirm; open decision #3 |
 | RBI 91-day T-bill rate | Risk-free rate for Sharpe/Sortino | Not started — currently a manually configured placeholder (`Settings.risk_free_rate = 0.07`); open decision #4 |

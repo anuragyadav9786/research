@@ -168,7 +168,7 @@ These need a call before scaffolding, since they shape the schema/migrations:
 
 1. **NAV source for Phase 3** — AMFI's daily NAVAll.txt bulk file vs. `mfapi.in` (wraps AMFI, easier per-scheme queries but third-party). Recommend starting with `mfapi.in` for developer speed, with an adapter boundary so swapping to raw AMFI later is a source-module change, not a rewrite.
 2. **Holdings/portfolio data source** — AMC factsheets (PDF, monthly, inconsistent formats) are the realistic free option; this will need a per-AMC parser or manual entry initially. Worth deciding scope (how many AMCs/schemes for MVP) before Phase 2 seed data.
-3. **Benchmark data source** — NSE index data availability/licensing for free use should be confirmed before Phase 3.
+3. **Benchmark data source** — NSE index data availability/licensing for free use should be confirmed before Phase 3. **Update (Phase 17):** the benchmark data engine (schema, lazy fetch/cache, provider abstraction) is built and wired end-to-end, with an `NSEProvider` implementation — but it ships disabled (`Settings.benchmark_nse_provider_enabled = false`) because this licensing/live-verification question is still genuinely open, not because the engine is incomplete. See `docs/data-sources.md` section 4.
 4. **Risk-free rate source and update cadence** for Sharpe — e.g. RBI 91-day T-bill rate, manually configured vs. ingested.
 
 None of these block starting Phase 1 (foundation has no data dependency), but 1–3 need an answer before Phase 3.
