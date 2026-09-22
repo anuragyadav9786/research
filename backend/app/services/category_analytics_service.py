@@ -126,12 +126,21 @@ def _benchmark_figures(db: Session, scheme: Scheme, fund_nav: pd.Series, risk_fr
     own date range before reading it, same as the fund detail page's other
     benchmark-consuming endpoints (app/api/funds.py's _benchmark_series).
 
-    `benchmark_reason` distinguishes *why* a figure is missing (Section
-    13): "no_benchmark_mapped" (scheme has no known benchmark at all),
-    "data_unavailable" (benchmark identified, but no provider could
-    fetch/hasn't fetched its price history), or "insufficient_history"
-    (data exists but not enough of it for this window) — never just a
-    flat null the UI can't explain.
+    `benchmark_reason` covers only the two conditions that apply
+    uniformly to every metric here — "no_benchmark_mapped" (scheme has no
+    known benchmark at all) and "data_unavailable" (benchmark identified,
+    but its price history is completely empty) — never
+    "insufficient_history", because that's a PER-METRIC condition: with a
+    non-empty series, it's entirely possible for e.g. the 3-year CAGR
+    window to come up short while drawdown/volatility (which need far
+    fewer observations — see MIN_OBSERVATIONS_FOR_RISK) succeed, so no
+    single reason can correctly describe all three at once. When the
+    series is non-empty, `benchmark_reason` is left None even if some
+    individual figures are still null; the frontend
+    (CategoryBenchmarkRow) defaults an unreasoned null value to
+    "insufficient_history" per metric, which is correct precisely because
+    it means "we have some benchmark data, just not enough for this
+    window" — never a flat null the UI can't explain.
     """
     benchmark_id = fund_repository.get_effective_benchmark_id(db, scheme)
     if benchmark_id is None:
@@ -157,14 +166,17 @@ def _benchmark_figures(db: Session, scheme: Scheme, fund_nav: pd.Series, risk_fr
     cagr_3y = window_3y["cagr_pct"] if window_3y and window_3y["available"] else None
     max_drawdown = drawdown["max_drawdown_pct"] if drawdown["available"] else None
     volatility = risk["volatility_pct"] if risk["available"] else None
-    reason = None if any(v is not None for v in (cagr_3y, max_drawdown, volatility)) else "insufficient_history"
 
     return {
         "benchmark_name": benchmark_name,
         "benchmark_cagr_3y_pct": cagr_3y,
         "benchmark_max_drawdown_pct": max_drawdown,
         "benchmark_volatility_pct": volatility,
-        "benchmark_reason": reason,
+        # None here doesn't mean "no reason" — it means "no reason that
+        # applies to every metric uniformly"; a null figure alongside a
+        # None reason is exactly the per-metric insufficient-history case
+        # the frontend fills in (see this function's docstring).
+        "benchmark_reason": None,
     }
 
 
