@@ -225,6 +225,30 @@ has been migrated 1:1 from `scheme.benchmark_id` with `start_date = NULL`
 (unknown, never guessed) — the schema is ready for a real source, not
 pre-filled with invented dates.
 
+**No real onboarded scheme gets `benchmark_id` set automatically.**
+`scheme_onboarding.py` creates every `Scheme` row from AMFI's NAVAll.txt
+with `benchmark_id` left NULL — AMFI's file carries no benchmark field,
+and neither does the `portfolio-fetcher/` holdings-disclosure pipeline
+(confirmed by reading both; it only downloads and stores raw files,
+parsing nothing). This is the dominant real-world cause of a fund page
+showing "Benchmark unavailable." Closing it is manual, by design:
+`data_pipeline/normalization/benchmark_curation.py` holds a
+`CATEGORY_BENCHMARK_MAP` (AMFI category string -> conventional benchmark)
+and a `SCHEME_BENCHMARK_OVERRIDES` (exact scheme name -> its factsheet-
+confirmed benchmark, checked first) — both start empty and are filled in
+only with sourced entries, never guessed by code
+(`get_effective_benchmark_id`'s own docstring: a benchmark is "never
+guessed from its category" by that function, and this module is the
+human-supplied input it reads, not an inference). Run
+`python -m data_pipeline.orchestration.apply_benchmark_curation` to apply
+current entries; it only fills schemes with no existing benchmark
+assignment, so it's safe to re-run as more entries are added over time.
+Only an NSE-fetchable TRI index (`provider="NSE"`, `symbol` matching the
+exact name NSE's endpoint expects) gets live-computed CAGR/drawdown/
+volatility figures today — a BSE/CRISIL/MSCI-benchmarked category (most
+debt fund categories) can still be named this way, but its figures stay
+unavailable until one of those providers is built (see section 5 below).
+
 ## 5. Planned sources (not yet built)
 
 | Source | Purpose | Status |
