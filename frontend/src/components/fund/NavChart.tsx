@@ -28,11 +28,12 @@ function rebaseTo100(points: NavPoint[]): Map<string, { rebased: number; raw: nu
 /** Custom tooltip, styled entirely with inline styles rather than Recharts'
  * contentStyle/labelStyle (which only cover the default label wrapper and
  * render illegibly on this dark theme — see RollingReturnBarChart.tsx's
- * equivalent fix). Shows both the rebased index value that positions the
- * line on the chart AND the real underlying figure (the fund's actual NAV
- * in rupees; the benchmark's actual index level) — the chart stays
- * rebased-to-100 for comparability, but hovering answers "what was this
- * actually worth," which a pure index number alone can't. */
+ * equivalent fix). Shows only the real underlying figure (the fund's
+ * actual NAV in rupees; the benchmark's actual index level) — the chart
+ * itself stays rebased-to-100 so the two lines are visually comparable
+ * despite their very different scales (a per-unit NAV vs. an index level
+ * in the thousands), but the rebased number itself isn't a meaningful
+ * standalone figure to read out on hover, so it isn't repeated here. */
 function NavChartTooltip({
   active,
   payload,
@@ -60,26 +61,14 @@ function NavChartTooltip({
       <div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 6, whiteSpace: "nowrap" }}>
         {formatDate(point.date)}
       </div>
-      {point.fund !== undefined && (
-        <div style={{ marginBottom: benchmarkLabel ? 4 : 0 }}>
-          <div style={{ color: "#818cf8" }}>
-            {fundLabel}: {point.fund.toFixed(2)} <span style={{ color: "#64748b" }}>(indexed)</span>
-          </div>
-          {point.fundNav !== undefined && (
-            <div style={{ color: "#94a3b8" }}>Actual NAV: {formatNav(point.fundNav)}</div>
-          )}
+      {point.fundNav !== undefined && (
+        <div style={{ color: "#818cf8" }}>
+          {fundLabel}: {formatNav(point.fundNav)}
         </div>
       )}
-      {benchmarkLabel && point.benchmark !== undefined && (
-        <div>
-          <div style={{ color: "#94a3b8" }}>
-            {benchmarkLabel}: {point.benchmark.toFixed(2)} <span style={{ color: "#64748b" }}>(indexed)</span>
-          </div>
-          {point.benchmarkIndex !== undefined && (
-            <div style={{ color: "#64748b" }}>
-              Actual index level: {point.benchmarkIndex.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-            </div>
-          )}
+      {benchmarkLabel && point.benchmarkIndex !== undefined && (
+        <div style={{ color: "#94a3b8" }}>
+          {benchmarkLabel}: {point.benchmarkIndex.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
         </div>
       )}
     </div>
