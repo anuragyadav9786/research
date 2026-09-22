@@ -4,8 +4,15 @@ import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { ApiError, getFundRollingReturnSeries } from "@/lib/api";
-import { formatPct } from "@/lib/format";
-import type { Option, Plan, RollingReturnSeriesResponse, RollingSeriesLookback, RollingSeriesWindow } from "@/types/fund";
+import { formatDate, formatPct } from "@/lib/format";
+import type {
+  Option,
+  Plan,
+  RollingReturnPoint,
+  RollingReturnSeriesResponse,
+  RollingSeriesLookback,
+  RollingSeriesWindow,
+} from "@/types/fund";
 
 const WINDOW_OPTIONS: { value: RollingSeriesWindow; label: string }[] = [
   { value: "1m", label: "1 Month" },
@@ -20,6 +27,45 @@ const LOOKBACK_OPTIONS: { value: RollingSeriesLookback; label: string }[] = [
   { value: "5y", label: "5 Year" },
   { value: "10y", label: "10 Year" },
 ];
+
+/** Custom tooltip content, styled entirely with inline styles rather than
+ * Recharts' contentStyle/labelStyle props — those only style the default
+ * label/item wrapper, which on a dark theme rendered illegible (dark text
+ * with no explicit background behind it). Shows the bar's actual holding
+ * period (start → end), not just the single date it happened to be keyed
+ * by, so its significance is clear at a glance rather than requiring the
+ * reader to infer it from the "Rolling window" selector above. */
+function RollingReturnTooltip({
+  active,
+  payload,
+  annualized,
+}: {
+  active?: boolean;
+  payload?: { payload: RollingReturnPoint }[];
+  annualized: boolean;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const point = payload[0].payload;
+  return (
+    <div
+      style={{
+        background: "#0f172a",
+        border: "1px solid #334155",
+        borderRadius: 6,
+        padding: "8px 10px",
+        fontSize: 12,
+      }}
+    >
+      <div style={{ color: "#e2e8f0", fontWeight: 600, marginBottom: 4, whiteSpace: "nowrap" }}>
+        {formatDate(point.start_date)} → {formatDate(point.end_date)}
+      </div>
+      <div style={{ color: point.return_pct >= 0 ? "#34d399" : "#fb7185" }}>
+        {formatPct(point.return_pct)}
+        <span style={{ color: "#94a3b8" }}>{annualized ? " (annualized)" : " (point-to-point)"}</span>
+      </div>
+    </div>
+  );
+}
 
 export function RollingReturnBarChart({ fundId, plan, option }: { fundId: number; plan: Plan; option: Option }) {
   const [window, setWindow] = useState<RollingSeriesWindow>("3m");
@@ -94,12 +140,11 @@ export function RollingReturnBarChart({ fundId, plan, option }: { fundId: number
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.points} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} minTickGap={40} />
+                <XAxis dataKey="end_date" tick={{ fill: "#94a3b8", fontSize: 11 }} minTickGap={40} />
                 <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} width={44} unit="%" />
                 <Tooltip
-                  contentStyle={{ background: "#0f172a", border: "1px solid #334155", fontSize: 12 }}
-                  labelStyle={{ color: "#e2e8f0" }}
-                  formatter={(value) => [formatPct(Number(value)), data.annualized ? "Annualized return" : "Return"]}
+                  cursor={{ fill: "rgba(148, 163, 184, 0.08)" }}
+                  content={<RollingReturnTooltip annualized={data.annualized} />}
                 />
                 <Bar dataKey="return_pct">
                   {data.points.map((p, i) => (
@@ -111,8 +156,8 @@ export function RollingReturnBarChart({ fundId, plan, option }: { fundId: number
           </div>
           <p className="text-xs text-slate-500">
             {data.annualized
-              ? "Each bar is the annualized (CAGR) return for the selected rolling window ending on that date."
-              : "Each bar is the point-to-point return for the selected rolling window ending on that date (not annualized — the window is under a year)."}
+              ? "Each bar is the annualized (CAGR) return over the holding period it covers — hover a bar to see its exact start and end date."
+              : "Each bar is the point-to-point return over the holding period it covers (not annualized — the window is under a year) — hover a bar to see its exact start and end date."}
           </p>
         </>
       )}

@@ -116,9 +116,10 @@ class RollingReturnsResponse(BaseModel):
 
 
 class RollingReturnPoint(BaseModel):
-    date: date
+    start_date: date = Field(..., description="The day this rolling window's holding period began")
+    end_date: date = Field(..., description="The day this rolling window's holding period ended")
     return_pct: float = Field(
-        ..., description="Rolling return ending on this date — annualized for 1y windows, simple/non-annualized below"
+        ..., description="Return over [start_date, end_date] — annualized for 1y windows, simple/non-annualized below"
     )
 
 

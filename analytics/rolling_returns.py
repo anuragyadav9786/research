@@ -70,6 +70,30 @@ def rolling_returns(nav: pd.Series, window_years: float, step_days: int = 1) -> 
     return pd.Series(results, dtype=float).sort_index()
 
 
+def rolling_window_end_date(nav: pd.Series, start_date, window_years: float) -> pd.Timestamp | None:
+    """The actual NAV date used as a rolling window's end for a given
+    `start_date` — the last available NAV date on/before
+    start_date + window_years (the same asof matching `rolling_returns`
+    itself uses internally), or None if the series doesn't reach that far.
+
+    `rolling_returns` returns each window indexed by its START date only
+    (see its own docstring: "for each start date t..."); this exists so a
+    caller that needs the matching END date too — e.g. a chart showing
+    "return from X to Y" for a bar — can recover it without duplicating
+    the date-matching methodology, rather than re-deriving it (or worse,
+    approximating it) independently.
+    """
+    nav = nav.sort_index()
+    window_days = round(window_years * 365.25)
+    target_end = pd.Timestamp(start_date) + pd.Timedelta(days=window_days)
+    if nav.empty or target_end > nav.index[-1]:
+        return None
+    end_pos = nav.index.searchsorted(target_end, side="right") - 1
+    if end_pos < 0:
+        return None
+    return nav.index[end_pos]
+
+
 def rolling_return_distribution(rolling: pd.Series) -> dict:
     """Summary statistics for a rolling-return series.
 

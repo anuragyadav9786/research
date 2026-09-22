@@ -24,7 +24,12 @@ from analytics.capture_ratio import downside_capture, upside_capture
 from analytics.drawdown import max_drawdown
 from analytics.returns import cagr_for_window, returns_series
 from analytics.risk import annualized_volatility, downside_deviation, sharpe_ratio, sortino_ratio
-from analytics.rolling_returns import benchmark_consistency, rolling_return_distribution, rolling_returns
+from analytics.rolling_returns import (
+    benchmark_consistency,
+    rolling_return_distribution,
+    rolling_returns,
+    rolling_window_end_date,
+)
 
 RETURN_WINDOWS_YEARS = {"1y": 1, "3y": 3, "5y": 5, "7y": 7, "10y": 10}
 MIN_OBSERVATIONS_FOR_RISK = 2
@@ -226,9 +231,11 @@ def compute_rolling_returns(nav: pd.Series, benchmark: pd.Series | None, window_
 
 def compute_rolling_return_series(nav: pd.Series, window: str, lookback: str) -> dict:
     """A plottable time series for the rolling-return bar chart: one point
-    per (downsampled) start date, each the rolling return for `window`
-    ending on that date. Unlike `compute_rolling_returns`, this returns the
-    actual series, not a distribution summary.
+    per (downsampled) window, each carrying both the start and end date it
+    actually spans (via `rolling_window_end_date` — `rolling_returns`
+    itself only indexes each window by its start date) and the return
+    earned over that span. Unlike `compute_rolling_returns`, this returns
+    the actual series, not a distribution summary.
 
     `window` selects the rolling window length (1m/3m/6m/1y — sub-annual
     windows report a non-annualized simple return, see
@@ -278,7 +285,14 @@ def compute_rolling_return_series(nav: pd.Series, window: str, lookback: str) ->
         "annualized": window_years >= 1,
         "available": True,
         "reason": None,
-        "points": [{"date": _to_date(idx), "return_pct": round(float(v) * 100, 4)} for idx, v in sampled.items()],
+        "points": [
+            {
+                "start_date": _to_date(idx),
+                "end_date": _to_date(rolling_window_end_date(nav, idx, window_years)),
+                "return_pct": round(float(v) * 100, 4),
+            }
+            for idx, v in sampled.items()
+        ],
     }
 
 

@@ -5,6 +5,7 @@ from analytics.rolling_returns import (
     benchmark_consistency,
     rolling_return_distribution,
     rolling_returns,
+    rolling_window_end_date,
 )
 
 
@@ -87,3 +88,30 @@ def test_benchmark_consistency_no_overlap_returns_none():
     result = benchmark_consistency(fund, benchmark)
     assert result["aligned_windows"] == 0
     assert result["beat_rate_pct"] is None
+
+
+def test_rolling_window_end_date_matches_rolling_returns_own_internal_matching():
+    # rolling_returns() indexes each window by its START date only (see its
+    # own docstring) — rolling_window_end_date exists to recover the END
+    # date for a given start using the exact same asof matching, without
+    # duplicating or drifting from that methodology. Verified here by
+    # reconstructing each window's actual elapsed days from the recovered
+    # end date and confirming it's consistent with the window requested.
+    dates = pd.date_range("2020-01-01", periods=800, freq="D")
+    nav = pd.Series([100.0 * 1.0003**i for i in range(800)], index=dates)
+
+    rolling = rolling_returns(nav, window_years=0.25)
+    assert not rolling.empty
+
+    start_date = rolling.index[10]
+    end_date = rolling_window_end_date(nav, start_date, window_years=0.25)
+
+    assert end_date is not None
+    elapsed_days = (end_date - start_date).days
+    assert 85 <= elapsed_days <= 95  # ~3 months (0.25 * 365.25 ≈ 91 days)
+
+
+def test_rolling_window_end_date_returns_none_past_available_history():
+    dates = pd.date_range("2020-01-01", periods=10, freq="D")
+    nav = pd.Series([100.0] * 10, index=dates)
+    assert rolling_window_end_date(nav, dates[-1], window_years=1.0) is None
