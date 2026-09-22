@@ -101,7 +101,8 @@ export type RollingSeriesWindow = "1m" | "3m" | "6m" | "1y";
 export type RollingSeriesLookback = "1y" | "3y" | "5y" | "10y";
 
 export interface RollingReturnPoint {
-  date: string;
+  start_date: string;
+  end_date: string;
   return_pct: number;
 }
 

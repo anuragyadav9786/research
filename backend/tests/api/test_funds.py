@@ -175,7 +175,8 @@ def test_get_fund_rolling_returns_series_reports_points(seeded_fund_id):
     assert body["available"] is True
     assert 0 < len(body["points"]) <= MAX_ROLLING_SERIES_POINTS
     for point in body["points"]:
-        assert "date" in point and "return_pct" in point
+        assert "start_date" in point and "end_date" in point and "return_pct" in point
+        assert point["start_date"] < point["end_date"]
 
 
 def test_get_fund_rolling_returns_series_1y_window_is_annualized(seeded_fund_id):

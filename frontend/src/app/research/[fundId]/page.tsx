@@ -210,7 +210,7 @@ export default async function FundDetailPage({
                 aria-disabled={!availablePlans.has(p)}
                 className={`px-3 py-1.5 capitalize ${FOCUS_RING} ${
                   p === plan
-                    ? "bg-indigo-900/60 text-indigo-800"
+                    ? "bg-indigo-900/60 text-indigo-200"
                     : availablePlans.has(p)
                       ? "hover:bg-slate-900 text-slate-300"
                       : "text-slate-700 pointer-events-none"
@@ -227,7 +227,7 @@ export default async function FundDetailPage({
                 href={urlFor({ option: o })}
                 className={`px-3 py-1.5 uppercase ${FOCUS_RING} ${
                   o === option
-                    ? "bg-indigo-900/60 text-indigo-800"
+                    ? "bg-indigo-900/60 text-indigo-200"
                     : availableOptions.has(o)
                       ? "hover:bg-slate-900 text-slate-300"
                       : "text-slate-700 pointer-events-none"
@@ -494,18 +494,25 @@ export default async function FundDetailPage({
             <section id="consistency" className="scroll-mt-28">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm uppercase tracking-wide text-slate-500">Rolling Returns</h2>
-                <div className="flex rounded-md border border-slate-800 overflow-hidden text-xs">
-                  {ROLLING_WINDOW_OPTIONS.map((w) => (
-                    <Link
-                      key={w}
-                      href={urlFor({ window: w })}
-                      className={`px-3 py-1 ${FOCUS_RING} ${
-                        w === windowYears ? "bg-indigo-900/60 text-indigo-800" : "hover:bg-slate-900 text-slate-400"
-                      }`}
-                    >
-                      {w}Y
-                    </Link>
-                  ))}
+                {/* Sets the HOLDING PERIOD for the summary sentence + spread bar below — distinct
+                    from the bar chart's own "Rolling window"/"Show last" controls further down,
+                    which plot a separate time series. Labelled explicitly since both are
+                    "pick a duration" controls and easy to mistake for the same thing. */}
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <span>Holding period</span>
+                  <div className="flex rounded-md border border-slate-800 overflow-hidden">
+                    {ROLLING_WINDOW_OPTIONS.map((w) => (
+                      <Link
+                        key={w}
+                        href={urlFor({ window: w })}
+                        className={`px-3 py-1 ${FOCUS_RING} ${
+                          w === windowYears ? "bg-indigo-900/60 text-indigo-200" : "hover:bg-slate-900 text-slate-400"
+                        }`}
+                      >
+                        {w}Y
+                      </Link>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="rounded-lg border border-slate-800 p-4 space-y-4">
