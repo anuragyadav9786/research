@@ -116,7 +116,11 @@ export function NavChart({
           <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
             <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 11 }} minTickGap={50} />
-            <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} width={44} />
+            <YAxis
+              tick={{ fill: "#94a3b8", fontSize: 11 }}
+              width={44}
+              domain={[(min: number) => Math.floor(min * 0.97), (max: number) => Math.ceil(max * 1.03)]}
+            />
             <Tooltip content={<NavChartTooltip fundLabel={fundLabel} benchmarkLabel={benchmarkLabel} />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Line type="monotone" dataKey="fund" name={fundLabel} stroke="#818cf8" dot={false} strokeWidth={1.5} />
@@ -135,8 +139,9 @@ export function NavChart({
         </ResponsiveContainer>
       </div>
       <p className="text-xs text-slate-500 mt-2">
-        Rebased to 100 at the start of the available history for comparison — not actual investment amounts. Hover a
-        point to see the actual NAV / index level on that date.
+        Rebased to 100 at the start of the available history for comparison — not actual investment amounts. The
+        y-axis is zoomed to the actual range of the two lines rather than starting at zero, to make their relative
+        movement easier to read. Hover a point to see the actual NAV / index level on that date.
       </p>
     </div>
   );
