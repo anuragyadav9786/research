@@ -8,6 +8,7 @@ import { formatDate, formatLakh, formatNumber, formatPct } from "@/lib/format";
 import { AllocationBar } from "@/components/fund/AllocationBar";
 import { Disclosure } from "@/components/fund/Disclosure";
 import { StatCard } from "@/components/fund/StatCard";
+import { CasUploadPanel } from "@/components/portfolio/CasUploadPanel";
 import type { FundSummary } from "@/types/fund";
 import type { PairwiseOverlapItem, PortfolioAnalysisResponse } from "@/types/portfolioAnalysis";
 
@@ -125,6 +126,8 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
 
   return (
     <div className="space-y-6">
+      <CasUploadPanel maxRows={MAX_ROWS} onUseHoldings={(newRows) => setRows(newRows)} />
+
       <form onSubmit={handleSubmit} className="space-y-3">
         {rows.map((row, i) => (
           <div key={i} className="flex flex-wrap items-center gap-3">
