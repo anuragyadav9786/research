@@ -133,6 +133,60 @@ def test_get_fund_returns_reports_all_windows(seeded_fund_id):
     assert "disclaimer" in body
 
 
+def test_get_fund_investment_value_requires_at_least_one_amount(seeded_fund_id):
+    response = client.get(f"/api/funds/{seeded_fund_id}/investment-value")
+    assert response.status_code == 422
+
+
+def test_get_fund_investment_value_requires_frequency_with_sip_amount(seeded_fund_id):
+    response = client.get(f"/api/funds/{seeded_fund_id}/investment-value", params={"sip_amount": 5000})
+    assert response.status_code == 422
+
+
+def test_get_fund_investment_value_lumpsum_only(seeded_fund_id):
+    response = client.get(f"/api/funds/{seeded_fund_id}/investment-value", params={"lumpsum": 100000})
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body["windows"].keys()) == {"1y", "3y", "5y", "7y", "10y"}
+    w1y = body["windows"]["1y"]
+    assert w1y["available"] is True
+    assert w1y["lumpsum_invested"] == pytest.approx(100000)
+    assert w1y["lumpsum_value"] > 0
+    assert w1y["sip_value"] is None
+    assert w1y["total_value"] == pytest.approx(w1y["lumpsum_value"])
+    assert body["windows"]["10y"]["available"] is False
+
+
+def test_get_fund_investment_value_sip_only(seeded_fund_id):
+    response = client.get(
+        f"/api/funds/{seeded_fund_id}/investment-value",
+        params={"sip_amount": 5000, "sip_frequency": "monthly"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    w1y = body["windows"]["1y"]
+    assert w1y["available"] is True
+    assert w1y["lumpsum_value"] is None
+    assert w1y["sip_installments"] >= 11
+    assert w1y["sip_invested"] == pytest.approx(5000 * w1y["sip_installments"])
+    assert w1y["total_value"] == pytest.approx(w1y["sip_value"])
+
+
+def test_get_fund_investment_value_lumpsum_and_sip_combined(seeded_fund_id):
+    response = client.get(
+        f"/api/funds/{seeded_fund_id}/investment-value",
+        params={"lumpsum": 50000, "sip_amount": 2000, "sip_frequency": "monthly"},
+    )
+    assert response.status_code == 200
+    w1y = response.json()["windows"]["1y"]
+    assert w1y["total_value"] == pytest.approx(w1y["lumpsum_value"] + w1y["sip_value"])
+
+
+def test_get_fund_investment_value_unknown_fund_returns_404():
+    response = client.get("/api/funds/999999999/investment-value", params={"lumpsum": 1000})
+    assert response.status_code == 404
+
+
 def test_get_fund_risk_reports_metrics(seeded_fund_id):
     response = client.get(f"/api/funds/{seeded_fund_id}/risk")
     assert response.status_code == 200

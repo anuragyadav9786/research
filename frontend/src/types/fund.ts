@@ -117,6 +117,28 @@ export interface RollingReturnSeriesResponse {
   disclaimer: string;
 }
 
+export type SipFrequency = "daily" | "weekly" | "monthly";
+
+export interface InvestmentValueWindow {
+  available: boolean;
+  reason: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  earliest_nav_date: string | null;
+  lumpsum_invested: number | null;
+  lumpsum_value: number | null;
+  sip_invested: number | null;
+  sip_value: number | null;
+  sip_installments: number | null;
+  total_value: number | null;
+}
+
+export interface InvestmentValueResponse {
+  as_of_date: string | null;
+  windows: Record<"1y" | "3y" | "5y" | "7y" | "10y", InvestmentValueWindow>;
+  disclaimer: string;
+}
+
 export interface DrawdownResponse {
   available: boolean;
   reason: string | null;

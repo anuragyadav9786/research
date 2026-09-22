@@ -19,6 +19,7 @@ import { CategoryBenchmarkRow } from "@/components/fund/CategoryBenchmarkRow";
 import { Disclosure } from "@/components/fund/Disclosure";
 import { DistributionBar } from "@/components/fund/DistributionBar";
 import { HoldingsTable } from "@/components/fund/HoldingsTable";
+import { InvestmentValueCalculator } from "@/components/fund/InvestmentValueCalculator";
 import { MarketRegimeTable } from "@/components/fund/MarketRegimeTable";
 import { MetricDisclosure } from "@/components/fund/MetricDisclosure";
 import { NavChart } from "@/components/fund/NavChart";
@@ -292,6 +293,8 @@ export default async function FundDetailPage({
                   </p>
                 </Disclosure>
               </div>
+
+              <InvestmentValueCalculator fundId={fund.id} plan={plan} option={option} />
 
               {returns!.windows["3y"]?.available && categoryBenchmark && returns!.windows["3y"].cagr_pct !== null && (
                 <div className="mt-4">

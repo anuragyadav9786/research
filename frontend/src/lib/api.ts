@@ -7,6 +7,7 @@ import type {
   FundListResponse,
   FundSummary,
   IntelligenceResponse,
+  InvestmentValueResponse,
   NavHistoryResponse,
   Option,
   Plan,
@@ -16,6 +17,7 @@ import type {
   RollingReturnsResponse,
   RollingSeriesLookback,
   RollingSeriesWindow,
+  SipFrequency,
 } from "@/types/fund";
 import type { MarketRegimeBehaviorResponse, MarketRegimeSummary } from "@/types/marketRegime";
 import type { OverlapResponse } from "@/types/overlap";
@@ -126,6 +128,13 @@ export function getFundReturns(fundId: number, params: VariantParams = {}): Prom
 
 export function getFundRisk(fundId: number, params: VariantParams = {}): Promise<RiskResponse> {
   return apiGet<RiskResponse>(`/api/funds/${fundId}/risk`, params);
+}
+
+export function getFundInvestmentValue(
+  fundId: number,
+  params: VariantParams & { lumpsum?: number; sip_amount?: number; sip_frequency?: SipFrequency } = {},
+): Promise<InvestmentValueResponse> {
+  return apiGet<InvestmentValueResponse>(`/api/funds/${fundId}/investment-value`, params);
 }
 
 export function getFundRollingReturns(
