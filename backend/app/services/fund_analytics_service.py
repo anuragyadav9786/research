@@ -36,8 +36,21 @@ MIN_OBSERVATIONS_FOR_RISK = 2
 ROLLING_SERIES_WINDOWS_YEARS = {"1m": 1 / 12, "3m": 0.25, "6m": 0.5, "1y": 1.0}
 ROLLING_SERIES_LOOKBACK_YEARS = {"1y": 1, "3y": 3, "5y": 5, "10y": 10}
 # A bar per NAV date over a 10-year lookback would be thousands of
-# illegible slivers — cap and evenly downsample, the same
-# every-Nth-point approach NavChart.tsx already uses for its line chart.
+# illegible slivers, so the shown points are downsampled — but evenly to
+# a flat cap regardless of `window` made every window length look like
+# the same chart at a given lookback (e.g. "1 Month" and "3 Month" over
+# "1 Year" both landed near MAX_ROLLING_SERIES_POINTS, since both start
+# from the same ~252 daily observations): picking a different window
+# visibly changed each bar's VALUE but not the chart's shape, which read
+# as the control "not doing anything." Sampling cadence is now targeted
+# to roughly lookback/window bars (e.g. a 1-month window over a 1-year
+# lookback aims for ~12 bars, one per month) — still genuine overlapping
+# rolling returns, just shown at a cadence that scales with the chosen
+# window the way the control implies, clamped to a sane range so neither
+# a long window over a short lookback (too few bars to read as a chart)
+# nor a short window over a long lookback (still thousands of slivers)
+# breaks it.
+MIN_ROLLING_SERIES_POINTS = 3
 MAX_ROLLING_SERIES_POINTS = 60
 
 
@@ -247,11 +260,15 @@ def compute_rolling_return_series(nav: pd.Series, window: str, lookback: str) ->
     cutoff = roll.index[-1] - pd.Timedelta(days=round(lookback_years * 365.25))
     windowed = roll.loc[roll.index >= cutoff]
 
-    # Ceiling division so the sampled count never exceeds the cap (floor
-    # division under-steps whenever len(windowed) isn't an exact multiple
-    # of MAX_ROLLING_SERIES_POINTS, e.g. 395 points // 60 = 6, but
-    # iloc[::6] still yields 66 — one step too dense).
-    step = max(1, -(-len(windowed) // MAX_ROLLING_SERIES_POINTS))
+    # Target roughly one bar per `window` of calendar time within the
+    # lookback (lookback_years / window_years — e.g. 1y/1m = 12), clamped
+    # to [MIN_ROLLING_SERIES_POINTS, MAX_ROLLING_SERIES_POINTS] so the
+    # chart never collapses to a handful of bars or explodes into
+    # hundreds. Ceiling division on the resulting step so the sampled
+    # count never exceeds the target (floor division under-steps
+    # whenever len(windowed) isn't an exact multiple of it).
+    target_points = max(MIN_ROLLING_SERIES_POINTS, min(MAX_ROLLING_SERIES_POINTS, round(lookback_years / window_years)))
+    step = max(1, -(-len(windowed) // target_points))
     sampled = windowed.iloc[::step]
 
     return {
