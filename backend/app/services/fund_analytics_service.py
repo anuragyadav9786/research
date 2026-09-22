@@ -22,6 +22,7 @@ from analytics.alpha_beta import beta as compute_beta
 from analytics.alpha_beta import jensen_alpha
 from analytics.capture_ratio import downside_capture, upside_capture
 from analytics.drawdown import max_drawdown
+from analytics.investment_value import lumpsum_value, sip_value
 from analytics.returns import cagr_for_window, returns_series
 from analytics.risk import annualized_volatility, downside_deviation, sharpe_ratio, sortino_ratio
 from analytics.rolling_returns import (
@@ -71,6 +72,26 @@ def _to_date(value) -> date | None:
     return pd.Timestamp(value).date()
 
 
+def _resolve_return_window(
+    nav: pd.Series, end_date, earliest_nav_date, years: float, nav_history_backfilled: bool
+) -> tuple[pd.Timestamp | None, str | None, pd.Timestamp | None]:
+    """The actual NAV start date for a `years`-long window ending at
+    `end_date`, or (None, reason, earliest_nav_date_if_relevant) if the
+    window isn't available — shared by compute_returns (percentage CAGR)
+    and compute_investment_value (rupee-terms lumpsum/SIP value), so both
+    report the exact same window and the exact same scheme_too_young vs.
+    insufficient_history distinction from one place."""
+    target_start = end_date - pd.Timedelta(days=round(years * 365.25))
+    if target_start < earliest_nav_date:
+        if nav_history_backfilled:
+            return None, "scheme_too_young", earliest_nav_date
+        return None, "insufficient_history", None
+    window_nav = nav.loc[target_start:end_date]
+    if window_nav.empty or len(window_nav) < 2:
+        return None, "insufficient_history", None
+    return window_nav.index[0], None, None
+
+
 def compute_returns(nav: pd.Series, nav_history_backfilled: bool = False) -> dict:
     """`nav_history_backfilled` should reflect whether this variant's full
     NAV history has already been pulled from mfapi.in
@@ -95,25 +116,19 @@ def compute_returns(nav: pd.Series, nav_history_backfilled: bool = False) -> dic
             },
         }
 
+    nav = nav.sort_index()
     end_date = nav.index[-1]
     earliest_nav_date = nav.index[0]
     windows = {}
     for label, years in RETURN_WINDOWS_YEARS.items():
-        target_start = end_date - pd.Timedelta(days=round(years * 365.25))
-        if target_start < earliest_nav_date:
-            if nav_history_backfilled:
-                windows[label] = {
-                    "available": False, "cagr_pct": None, "start_date": None, "end_date": None,
-                    "reason": "scheme_too_young", "earliest_nav_date": _to_date(earliest_nav_date),
-                }
-            else:
-                windows[label] = {
-                    "available": False, "cagr_pct": None, "start_date": None, "end_date": None,
-                    "reason": "insufficient_history", "earliest_nav_date": None,
-                }
+        window_start, reason, earliest = _resolve_return_window(nav, end_date, earliest_nav_date, years, nav_history_backfilled)
+        if window_start is None:
+            windows[label] = {
+                "available": False, "cagr_pct": None, "start_date": None, "end_date": None,
+                "reason": reason, "earliest_nav_date": _to_date(earliest),
+            }
             continue
-        window_nav = nav.loc[target_start:end_date]
-        cagr_value = cagr_for_window(nav, target_start, end_date)
+        cagr_value = cagr_for_window(nav, window_start, end_date)
         if cagr_value is None:
             windows[label] = {
                 "available": False, "cagr_pct": None, "start_date": None, "end_date": None,
@@ -123,11 +138,93 @@ def compute_returns(nav: pd.Series, nav_history_backfilled: bool = False) -> dic
             windows[label] = {
                 "available": True,
                 "cagr_pct": round(cagr_value * 100, 4),
-                "start_date": _to_date(window_nav.index[0]),
+                "start_date": _to_date(window_start),
                 "end_date": _to_date(end_date),
                 "reason": None,
                 "earliest_nav_date": None,
             }
+
+    return {"as_of_date": _to_date(end_date), "windows": windows}
+
+
+def compute_investment_value(
+    nav: pd.Series,
+    lumpsum_amount: float | None,
+    sip_amount: float | None,
+    sip_frequency: str | None,
+    nav_history_backfilled: bool = False,
+) -> dict:
+    """Per RETURN_WINDOWS_YEARS window, the rupee value today of an
+    optional lumpsum invested at the window's start plus an optional SIP
+    contributed at `sip_frequency` throughout it — the amount-terms
+    counterpart to compute_returns' percentage figures, sharing the exact
+    same window boundaries via _resolve_return_window so the two never
+    disagree about what "the 3-year window" means for this fund.
+
+    At least one of lumpsum_amount/sip_amount is expected to be set (the
+    API layer enforces this); if both are None every window comes back
+    unavailable with reason="no_investment_specified" rather than a
+    meaningless zero.
+    """
+    empty_window = {
+        "available": False, "reason": None, "start_date": None, "end_date": None, "earliest_nav_date": None,
+        "lumpsum_invested": None, "lumpsum_value": None,
+        "sip_invested": None, "sip_value": None, "sip_installments": None,
+        "total_value": None,
+    }
+
+    if lumpsum_amount is None and sip_amount is None:
+        return {
+            "as_of_date": None,
+            "windows": {label: {**empty_window, "reason": "no_investment_specified"} for label in RETURN_WINDOWS_YEARS},
+        }
+
+    if nav.empty:
+        return {
+            "as_of_date": None,
+            "windows": {label: {**empty_window, "reason": "no_nav_history"} for label in RETURN_WINDOWS_YEARS},
+        }
+
+    nav = nav.sort_index()
+    end_date = nav.index[-1]
+    earliest_nav_date = nav.index[0]
+    windows = {}
+    for label, years in RETURN_WINDOWS_YEARS.items():
+        window_start, reason, earliest = _resolve_return_window(nav, end_date, earliest_nav_date, years, nav_history_backfilled)
+        if window_start is None:
+            windows[label] = {**empty_window, "reason": reason, "earliest_nav_date": _to_date(earliest)}
+            continue
+
+        lumpsum_val = None
+        if lumpsum_amount is not None:
+            lumpsum_val = lumpsum_value(nav, window_start, end_date, lumpsum_amount)
+
+        sip_val = sip_invested = sip_installments = None
+        if sip_amount is not None and sip_frequency is not None:
+            sip_result = sip_value(nav, window_start, end_date, sip_amount, sip_frequency)
+            if sip_result is not None:
+                sip_val = sip_result["value"]
+                sip_invested = sip_result["invested_amount"]
+                sip_installments = sip_result["installments"]
+
+        if lumpsum_val is None and sip_val is None:
+            windows[label] = {**empty_window, "reason": "insufficient_history"}
+            continue
+
+        total_value = (lumpsum_val or 0.0) + (sip_val or 0.0)
+        windows[label] = {
+            "available": True,
+            "reason": None,
+            "start_date": _to_date(window_start),
+            "end_date": _to_date(end_date),
+            "earliest_nav_date": None,
+            "lumpsum_invested": round(lumpsum_amount, 2) if lumpsum_val is not None else None,
+            "lumpsum_value": round(lumpsum_val, 2) if lumpsum_val is not None else None,
+            "sip_invested": round(sip_invested, 2) if sip_invested is not None else None,
+            "sip_value": round(sip_val, 2) if sip_val is not None else None,
+            "sip_installments": sip_installments,
+            "total_value": round(total_value, 2),
+        }
 
     return {"as_of_date": _to_date(end_date), "windows": windows}
 

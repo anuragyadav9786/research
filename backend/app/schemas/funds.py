@@ -138,6 +138,39 @@ class RollingReturnSeriesResponse(BaseModel):
     disclaimer: str = DISCLAIMER
 
 
+class InvestmentValueWindow(BaseModel):
+    """One RETURN_WINDOWS_YEARS window's rupee-terms result — the amount
+    a lumpsum and/or SIP invested over this exact window (same start/end
+    dates compute_returns' matching window uses) would be worth today."""
+
+    available: bool
+    # "no_investment_specified" (neither lumpsum nor SIP given — never
+    # returned by the API itself, which requires at least one; kept here
+    # for a caller that reuses this service function directly),
+    # "no_nav_history", "scheme_too_young", or "insufficient_history" —
+    # same meanings as ReturnWindow.reason.
+    reason: str | None
+    start_date: date | None
+    end_date: date | None
+    earliest_nav_date: date | None
+    lumpsum_invested: float | None = Field(None, description="The lumpsum amount, echoed back, if one was given")
+    lumpsum_value: float | None = Field(None, description="That lumpsum's value today")
+    sip_invested: float | None = Field(None, description="Total SIP contributions actually made in this window")
+    sip_value: float | None = Field(None, description="Those SIP contributions' combined value today")
+    sip_installments: int | None = Field(None, description="Number of SIP installments actually made in this window")
+    total_value: float | None = Field(None, description="lumpsum_value + sip_value")
+
+
+class InvestmentValueResponse(BaseModel):
+    """Amount-terms counterpart to ReturnsResponse — "what would this
+    investment be worth today" rather than "what annualized rate did this
+    fund return." See fund_analytics_service.compute_investment_value."""
+
+    as_of_date: date | None
+    windows: dict[str, InvestmentValueWindow]
+    disclaimer: str = DISCLAIMER
+
+
 class DrawdownResponse(BaseModel):
     available: bool
     reason: str | None

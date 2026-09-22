@@ -41,6 +41,7 @@ from app.schemas.funds import (
     FundListResponse,
     FundSummary,
     IntelligenceResponse,
+    InvestmentValueResponse,
     NavHistoryResponse,
     ReturnsResponse,
     RiskResponse,
@@ -250,6 +251,32 @@ def get_fund_returns(
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
     return fund_analytics_service.compute_returns(nav, variant.nav_history_backfilled_at is not None)
+
+
+@router.get("/{fund_id}/investment-value", response_model=InvestmentValueResponse)
+def get_fund_investment_value(
+    fund_id: int,
+    plan: Literal["direct", "regular"] = "direct",
+    option: Literal["growth", "idcw"] = "growth",
+    lumpsum: float | None = Query(None, gt=0, description="One-time lumpsum amount invested at each window's start"),
+    sip_amount: float | None = Query(None, gt=0, description="Amount contributed each SIP installment"),
+    sip_frequency: Literal["daily", "weekly", "monthly"] | None = Query(None, description="Required if sip_amount is given"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Rupee-terms counterpart to /returns — what a lumpsum and/or SIP
+    invested over each RETURN_WINDOWS_YEARS window would be worth today.
+    See compute_investment_value."""
+    if lumpsum is None and sip_amount is None:
+        raise HTTPException(status_code=422, detail="Provide at least one of lumpsum or sip_amount")
+    if sip_amount is not None and sip_frequency is None:
+        raise HTTPException(status_code=422, detail="sip_frequency is required when sip_amount is given")
+
+    scheme = _resolve_scheme(db, fund_id)
+    variant = _resolve_variant(db, scheme, plan, option)
+    nav = fund_repository.get_nav_series(db, variant.id)
+    return fund_analytics_service.compute_investment_value(
+        nav, lumpsum, sip_amount, sip_frequency, variant.nav_history_backfilled_at is not None
+    )
 
 
 @router.get("/{fund_id}/nav-history", response_model=NavHistoryResponse)

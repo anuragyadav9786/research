@@ -26,6 +26,16 @@ export function formatNav(value: number | null): string {
   return `₹${value.toFixed(4)}`;
 }
 
+/** Whole-rupee amount with Indian comma grouping (₹1,23,456) — for a
+ * concrete invested/redeemed figure the reader would recognize as "an
+ * amount," unlike formatLakh's rounded-to-lakh figure below (which suits
+ * a portfolio-sized number, not a specific SIP contribution or a small
+ * lumpsum). */
+export function formatRupees(value: number | null): string {
+  if (value === null || Number.isNaN(value)) return "—";
+  return `₹${Math.round(value).toLocaleString("en-IN")}`;
+}
+
 /** Whole-rupee amounts in lakh (₹1,00,000), the unit Indian investors
  * actually think in for a portfolio-sized number — a raw ₹ figure with
  * five zeros reads as "count the zeros," not "understand the number." */

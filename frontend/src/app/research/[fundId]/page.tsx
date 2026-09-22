@@ -13,12 +13,14 @@ import {
   getFundRollingReturns,
   getFundStressTest,
 } from "@/lib/api";
-import { formatDate, formatMonthYear, formatNav, formatNumber, formatPct, signColorClass } from "@/lib/format";
+import { formatDate, formatNav, formatNumber, formatPct, signColorClass } from "@/lib/format";
 import { AllocationBar } from "@/components/fund/AllocationBar";
 import { CategoryBenchmarkRow } from "@/components/fund/CategoryBenchmarkRow";
 import { Disclosure } from "@/components/fund/Disclosure";
 import { DistributionBar } from "@/components/fund/DistributionBar";
 import { HoldingsTable } from "@/components/fund/HoldingsTable";
+import { InvestmentControls } from "@/components/fund/InvestmentControls";
+import { InvestmentProvider } from "@/components/fund/InvestmentContext";
 import { MarketRegimeTable } from "@/components/fund/MarketRegimeTable";
 import { MetricDisclosure } from "@/components/fund/MetricDisclosure";
 import { NavChart } from "@/components/fund/NavChart";
@@ -29,6 +31,7 @@ import { ScalarScaleBar } from "@/components/fund/ScalarScaleBar";
 import { StatCard } from "@/components/fund/StatCard";
 import { AiSummaryPanel } from "@/components/fund/AiSummaryPanel";
 import { StressTestPanel } from "@/components/fund/StressTestPanel";
+import { UnifiedReturnCards } from "@/components/fund/UnifiedReturnCards";
 import {
   cagrContextSentence,
   drawdownContextSentence,
@@ -45,7 +48,7 @@ import {
   volatilityContextSentence,
 } from "@/lib/metricInterpretation";
 import { buildResearchSummary } from "@/lib/researchSummary";
-import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, ReturnWindow, RiskResponse, RollingReturnsResponse } from "@/types/fund";
+import type { DrawdownResponse, NavHistoryResponse, Option, Plan, ReturnsResponse, RiskResponse, RollingReturnsResponse } from "@/types/fund";
 import type { MarketRegimeBehaviorResponse } from "@/types/marketRegime";
 import type { StressTestResponse } from "@/types/stressTest";
 
@@ -55,31 +58,7 @@ const HHI_LABELS: Record<string, string> = {
   high_concentration: "High Concentration",
 };
 
-const RETURN_WINDOW_LABELS: Record<string, string> = { "1y": "1Y", "3y": "3Y", "5y": "5Y", "7y": "7Y", "10y": "10Y" };
-const RETURN_WINDOW_PERIOD_NAMES: Record<string, string> = {
-  "1y": "1-year", "3y": "3-year", "5y": "5-year", "7y": "7-year", "10y": "10-year",
-};
 const ROLLING_WINDOW_OPTIONS = [1, 3, 5];
-
-/** A return window is unavailable for one of two different reasons, and
- * conflating them is misleading: a scheme that's too young to have a
- * 10-year return is a different situation from an established scheme
- * whose 10-year NAV history genuinely has gaps in our data. `reason` is
- * set server-side (fund_analytics_service.compute_returns) — this just
- * turns it into investor-facing copy, never a color or icon alone. */
-function returnWindowHint(w: ReturnWindow): string | undefined {
-  if (w.available) return undefined;
-  if (w.reason === "scheme_too_young" && w.earliest_nav_date) {
-    return `No NAV history before ${formatMonthYear(w.earliest_nav_date)}`;
-  }
-  return "Insufficient NAV history";
-}
-
-function returnWindowAriaLabel(periodKey: string, w: ReturnWindow): string | undefined {
-  if (w.available) return undefined;
-  const period = RETURN_WINDOW_PERIOD_NAMES[periodKey] ?? periodKey;
-  return `${period} return not available. ${returnWindowHint(w)}.`;
-}
 
 const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
@@ -179,6 +158,7 @@ export default async function FundDetailPage({
       <SiteHeader active="research" />
 
       <main className="px-8 py-10 max-w-5xl mx-auto space-y-8">
+        <InvestmentProvider>
         <div id="overview" className="flex items-start justify-between scroll-mt-28">
           <div>
             <Link
@@ -243,6 +223,7 @@ export default async function FundDetailPage({
               as of {formatDate(currentVariant.latest_nav_date)}
             </div>
           )}
+          <InvestmentControls />
         </div>
 
         <ResearchStepNav />
@@ -263,25 +244,16 @@ export default async function FundDetailPage({
                 Point-to-point figures — each depends on the exact day measured. See Rolling Returns below for how
                 consistent this fund&rsquo;s outcomes actually were.
               </p>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                {Object.entries(returns!.windows).map(([key, w]) => (
-                  <StatCard
-                    key={key}
-                    label={RETURN_WINDOW_LABELS[key] ?? key}
-                    value={w.available ? formatPct(w.cagr_pct) : "Not available"}
-                    valueClassName={w.available ? signColorClass(w.cagr_pct) : "text-slate-600"}
-                    hint={returnWindowHint(w)}
-                    ariaLabel={returnWindowAriaLabel(key, w)}
-                  />
-                ))}
-              </div>
+              <UnifiedReturnCards fundId={fund.id} plan={plan} option={option} returns={returns!} />
 
               <div className="mt-3">
                 <Disclosure label="What does this mean?">
                   <p className="text-sm text-slate-400">
                     CAGR (Compound Annual Growth Rate) is the annualised rate of return over the selected period,
                     assuming gains are reinvested. It smooths out the actual up-and-down path into a single average
-                    figure — two funds with the same CAGR can have had very different journeys to get there.
+                    figure — two funds with the same CAGR can have had very different journeys to get there. Enter a
+                    lumpsum and/or SIP amount above to see the same period in rupee terms — what that investment
+                    would be worth today, not just its annualised rate.
                   </p>
                   <p className="text-sm text-slate-400 mt-2">
                     Longer-period returns are shown only when there&rsquo;s enough NAV history to compute them. For a
@@ -767,6 +739,7 @@ export default async function FundDetailPage({
           {(returns ?? risk ?? rolling ?? drawdown ?? portfolio)?.disclaimer ??
             "Historical performance does not guarantee future results."}
         </p>
+        </InvestmentProvider>
       </main>
     </div>
   );
