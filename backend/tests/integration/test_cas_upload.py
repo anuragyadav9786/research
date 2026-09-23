@@ -377,6 +377,129 @@ def test_holding_period_reflects_a_realized_partial_redemption(test_scheme):
     assert holding_period["open_weighted_avg_days"] == 834
 
 
+TWR_TEST_AMC_NAME = "CAS Test TWR Fund House"
+TWR_TEST_ISIN = "INF000CAS004"
+
+TWR_CAS_LINES = [
+    "Consolidated Account Statement",
+    "01-Jan-2003 To 22-Sep-2026",
+    "PORTFOLIO SUMMARY",
+    "Date Transaction Amount Units Price Unit Balance",
+    "Test TWR Fund House Mutual Fund",
+    "Folio No: 33332222 / 0    PAN: ABCDE1234F    KYC: OK PAN: OK",
+    "Test Investor",
+    f"900TWRXGG-Test TWR Flexi Cap Fund - Regular Plan - Growth (Non Demat) - ISIN: {TWR_TEST_ISIN}(Advisor: ARN-1)",
+    "Nominee 1:    Nominee 2:    Nominee 3:",
+    "Opening Unit Balance: 0.000",
+    "10-Jun-2024   Purchase    1000.00    40.000    25.000    40.000",
+    "Closing Unit Balance: 40.000    NAV on 13-Jun-2024: INR 26.125    Total Cost Value: 1000.00    Market Value on 13-Jun-2024: INR 1045.00",
+    "Entry Load: Nil; Exit Load: Nil.",
+]
+
+
+@pytest.fixture
+def twr_test_scheme(db):
+    # Four NAV points, chosen to produce known, hand-checkable sub-period
+    # returns once combined with the single 10-Jun-2024 purchase below:
+    # 06-10 -> 06-11: +10%, 06-11 -> 06-12: 0%, 06-12 -> 06-13: -5%.
+    amc = AMC(name=TWR_TEST_AMC_NAME)
+    db.add(amc)
+    db.flush()
+    family = FundFamily(amc_id=amc.id, name=TWR_TEST_AMC_NAME)
+    db.add(family)
+    db.flush()
+    scheme = Scheme(fund_family_id=family.id, name="CAS Test TWR Flexi Cap Fund", category="Equity - Flexi Cap")
+    db.add(scheme)
+    db.flush()
+    variant = SchemeVariant(scheme_id=scheme.id, plan="regular", option="growth", isin=TWR_TEST_ISIN)
+    db.add(variant)
+    db.flush()
+
+    source = db.query(DataSource).filter(DataSource.source_type == "manual").first()
+    if source is None:
+        source = DataSource(name="TEST FIXTURE SOURCE", source_type="manual")
+        db.add(source)
+        db.flush()
+    for nav_date, nav in [
+        (date(2024, 6, 10), 25.0),
+        (date(2024, 6, 11), 27.5),
+        (date(2024, 6, 12), 27.5),
+        (date(2024, 6, 13), 26.125),
+    ]:
+        db.add(NavHistory(scheme_variant_id=variant.id, date=nav_date, nav=nav, source_id=source.id))
+    db.commit()
+
+    yield scheme
+
+    db.query(NavHistory).filter(NavHistory.scheme_variant_id == variant.id).delete()
+    db.query(SchemeVariant).filter(SchemeVariant.scheme_id == scheme.id).delete()
+    db.query(Scheme).filter(Scheme.id == scheme.id).delete()
+    db.query(FundFamily).filter(FundFamily.id == family.id).delete()
+    db.query(AMC).filter(AMC.id == amc.id).delete()
+    db.commit()
+
+
+def test_time_weighted_return_matches_hand_computed_sub_period_returns(twr_test_scheme):
+    pdf_bytes = _pdf_with_lines(TWR_CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    twr = response.json()["overview"]["time_weighted_return"]
+
+    assert twr["priced_scheme_count"] == 1
+    assert twr["start_date"] == "2024-06-10"
+    assert twr["end_date"] == "2024-06-13"
+
+    # Chain-linking +10%, 0%, -5% -> 1.10 * 1.00 * 0.95 - 1 = 4.5%. The
+    # purchase itself (10-Jun) is cash-flow-neutralized, contributing no
+    # sub-period return of its own -- only 3 later NAV points do.
+    assert twr["cumulative_twr_pct"] == pytest.approx(4.5, abs=0.01)
+
+    # Synthetic NAV from those same returns: 110, 110, 104.5 -> peaks at
+    # the first date reaching 110 (06-11), troughs at 06-13, a real -5%
+    # drawdown that hasn't recovered within this short window.
+    assert twr["max_drawdown_pct"] == pytest.approx(-5.0, abs=0.01)
+    assert twr["drawdown_peak_date"] == "2024-06-11"
+    assert twr["drawdown_trough_date"] == "2024-06-13"
+    assert twr["drawdown_recovered"] is False
+    assert twr["drawdown_recovery_date"] is None
+
+    assert twr["volatility_pct"] is not None
+    # A 3-day span is nowhere near a year -- annualizing it would blow a
+    # 4.5% return up into an absurd figure, so it's null, matching the
+    # same >=1yr gate fund_analytics_service.py's rolling returns use.
+    assert twr["annualized_twr_pct"] is None
+
+
+def test_time_weighted_return_is_all_null_when_no_matched_scheme_has_nav_history():
+    pdf_bytes = _pdf_with_lines(CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    # CAS_LINES's only holdings are TEST_ISIN (unmatched here, no fixture)
+    # and an always-unmatched ISIN -- nothing is priced, so the
+    # reconstruction reports its absence explicitly rather than a
+    # misleading 0%.
+    twr = response.json()["overview"]["time_weighted_return"]
+    assert twr == {
+        "cumulative_twr_pct": None,
+        "annualized_twr_pct": None,
+        "volatility_pct": None,
+        "max_drawdown_pct": None,
+        "drawdown_peak_date": None,
+        "drawdown_trough_date": None,
+        "drawdown_recovery_date": None,
+        "drawdown_recovered": None,
+        "priced_scheme_count": 0,
+        "start_date": None,
+        "end_date": None,
+    }
+
+
 def test_missing_password_on_encrypted_pdf_returns_422():
     from pypdf import PdfWriter as _Writer
 

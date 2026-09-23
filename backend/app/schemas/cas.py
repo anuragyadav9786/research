@@ -132,6 +132,33 @@ class CASHoldingPeriodSummary(BaseModel):
     realized_consumption_count: int = Field(..., description="Number of FIFO lot consumptions realized_avg/median are over")
 
 
+class CASTimeWeightedReturn(BaseModel):
+    """Portfolio Analysis §6: Time-Weighted Return, annualized volatility,
+    and max drawdown of the portfolio's own actual value over time —
+    reconstructed from real per-scheme unit holdings and NAV history, not
+    a hypothetical fixed-weight blend (see analytics/portfolio_valuation.py).
+    Unlike portfolio_xirr_pct above (money-weighted — sensitive to this
+    investor's own contribution timing), TWR strips out cash-flow timing
+    so it measures how choppy the ride itself was. Only covers schemes
+    this platform has ever priced (`priced_scheme_count` of
+    matched_scheme_count) — every field is null when none are priced,
+    never a fabricated 0%."""
+
+    cumulative_twr_pct: float | None = Field(None, description="Total time-weighted return over the whole reconstructed span")
+    annualized_twr_pct: float | None = None
+    volatility_pct: float | None = Field(None, description="Annualized standard deviation of the TWR sub-period returns")
+    max_drawdown_pct: float | None = Field(None, description="Worst peak-to-trough decline in the reconstructed value")
+    drawdown_peak_date: date | None = None
+    drawdown_trough_date: date | None = None
+    drawdown_recovery_date: date | None = Field(
+        None, description="Null if not yet recovered as of the last reconstructed date, or no drawdown to recover from"
+    )
+    drawdown_recovered: bool | None = None
+    priced_scheme_count: int = Field(..., description="How many matched schemes this reconstruction actually covers")
+    start_date: date | None = Field(None, description="First date in the reconstructed value series")
+    end_date: date | None = None
+
+
 class CASOverviewResponse(BaseModel):
     """Portfolio Analysis §4/§5/§7/§8/§12/§15: invested capital vs.
     current value, realized vs. unrealized gain, money-weighted (XIRR)
@@ -156,6 +183,7 @@ class CASOverviewResponse(BaseModel):
         None, description="Null if no matched holding has a usable current value yet"
     )
     holding_period: CASHoldingPeriodSummary
+    time_weighted_return: CASTimeWeightedReturn
 
 
 class CASParseResponse(BaseModel):

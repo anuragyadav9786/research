@@ -1,11 +1,12 @@
 """Builds the Portfolio Analysis Overview (invested capital, current
 value, realized/unrealized gain, portfolio XIRR, per-scheme contribution,
-and holding-period analysis) from a CAS's full parsed transaction ledger
-— Phases 1-3 of the larger Portfolio Analysis intelligence module (spec
-sections 4-5, 12, 15). Only covers schemes matched to this platform's own
-fund catalog by ISIN (same matching cas_service.py already does for the
-manual-form pre-fill) — a scheme not in our catalog has no NAV history we
-can use to value it today, so it's reported as excluded, never guessed at.
+holding-period analysis, and time-weighted return/volatility/drawdown)
+from a CAS's full parsed transaction ledger — Phases 1-4 of the larger
+Portfolio Analysis intelligence module (spec sections 4-5, 6, 12, 15).
+Only covers schemes matched to this platform's own fund catalog by ISIN
+(same matching cas_service.py already does for the manual-form pre-fill)
+— a scheme not in our catalog has no NAV history we can use to value it
+today, so it's reported as excluded, never guessed at.
 
 Cash-flow treatment (why this isn't "every transaction is a cash flow"):
 switches/STP move money between two schemes already inside this same
@@ -22,10 +23,22 @@ from __future__ import annotations
 import statistics
 from datetime import date
 
+import pandas as pd
 from sqlalchemy.orm import Session
 
 from analytics.concentration import group_weights, herfindahl_hirschman_index, hhi_label, top_n_weight_pct
 from analytics.cost_basis import apply_fifo
+from analytics.drawdown import max_drawdown
+from analytics.portfolio import synthetic_nav_from_returns
+from analytics.portfolio_valuation import (
+    annualized_time_weighted_return,
+    cash_flow_adjusted_returns,
+    combine_portfolio_value_series,
+    daily_net_contributions,
+    time_weighted_return,
+    units_held_series,
+)
+from analytics.risk import annualized_volatility
 from analytics.xirr import xirr
 from app.models.reference import Scheme, SchemeVariant
 from app.repositories import fund_repository
@@ -76,6 +89,18 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
     # holding_period_days for every FIFO-realized (sold/switched-out) lot
     # consumption, across every matched scheme.
     realized_holding_days: list[int] = []
+    # Each priced scheme's own real (not static-weight) value-over-time
+    # series, keyed by isin — the basis for the portfolio-wide TWR/
+    # volatility/drawdown reconstruction. Only schemes with SOME NAV
+    # history are included (a scheme we've never priced can't be placed
+    # in a value series at all) — a broader set than valued_schemes above,
+    # since a now-fully-redeemed scheme still contributed real historical
+    # value along the way.
+    priced_scheme_value_series: dict[str, pd.Series] = {}
+    # (date, signed contribution) across every priced scheme — positive =
+    # money the investor put in that day, negative = money taken out;
+    # switches/STP excluded (internal, not a real external cash flow).
+    priced_scheme_contributions: list[tuple[date, float]] = []
     total_invested = 0.0
     total_current_value = 0.0
     total_realized_gain = 0.0
@@ -96,6 +121,15 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         latest_nav_date = nav_series.index[-1].date() if not nav_series.empty else None
         current_value = cost_basis.remaining_units * latest_nav if latest_nav is not None else None
         unrealized_gain = current_value - cost_basis.remaining_cost if current_value is not None else None
+
+        if not nav_series.empty:
+            unit_events = [(t.transaction_date, t.units) for t in txns]
+            priced_scheme_value_series[isin] = units_held_series(nav_series.index, unit_events) * nav_series
+            for t in txns:
+                if t.transaction_type in _OUTFLOW_TYPES:
+                    priced_scheme_contributions.append((t.transaction_date, abs(t.amount)))
+                elif t.transaction_type in _INFLOW_TYPES:
+                    priced_scheme_contributions.append((t.transaction_date, -abs(t.amount)))
 
         scheme_invested = sum(t.amount for t in txns if t.transaction_type in _OUTFLOW_TYPES)
         total_invested += scheme_invested
@@ -181,6 +215,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         "unmatched_schemes": unmatched,
         "structure": _build_structure(valued_schemes),
         "holding_period": _holding_period_summary(open_lot_days_values, realized_holding_days),
+        "time_weighted_return": _time_weighted_return_summary(priced_scheme_value_series, priced_scheme_contributions),
     }
 
 
@@ -255,6 +290,79 @@ def _holding_period_summary(open_lot_days_values: list[tuple[int, float]], reali
         "realized_avg_days": round(statistics.mean(realized_days)) if realized_days else None,
         "realized_median_days": round(statistics.median(realized_days)) if realized_days else None,
         "realized_consumption_count": len(realized_days),
+    }
+
+
+def _time_weighted_return_summary(
+    value_series_by_scheme: dict[str, pd.Series], contribution_events: list[tuple[date, float]]
+) -> dict:
+    """Portfolio Analysis §6: Time-Weighted Return, annualized volatility,
+    and max drawdown of the portfolio's OWN actual value over time — not a
+    single constituent fund's, and not a hypothetical fixed-weight blend
+    (see analytics/portfolio_valuation.py's module docstring for why this
+    differs from both). Only schemes with any NAV history at all can be
+    placed in a value series, so a scheme this platform has never priced
+    is excluded from this reconstruction entirely (both its value AND its
+    cash flows) rather than partially included in a way that would show a
+    misleading loss with no offsetting value. `priced_scheme_count` says
+    how many of the matched schemes that reconstruction actually covers."""
+    if not value_series_by_scheme:
+        return {
+            "cumulative_twr_pct": None,
+            "annualized_twr_pct": None,
+            "volatility_pct": None,
+            "max_drawdown_pct": None,
+            "drawdown_peak_date": None,
+            "drawdown_trough_date": None,
+            "drawdown_recovery_date": None,
+            "drawdown_recovered": None,
+            "priced_scheme_count": 0,
+            "start_date": None,
+            "end_date": None,
+        }
+
+    value = combine_portfolio_value_series(value_series_by_scheme)
+    contributions = daily_net_contributions(value.index, contribution_events)
+    returns = cash_flow_adjusted_returns(value, contributions)
+
+    start_date = value.index[0].date() if not value.empty else None
+    end_date = value.index[-1].date() if not value.empty else None
+
+    cumulative_twr = time_weighted_return(returns)
+    span_days = (end_date - start_date).days if start_date is not None and end_date is not None else 0
+    # Annualizing a sub-year span amplifies noise into an absurd figure --
+    # the same "meaningless for periods shorter than ~1 year" rule
+    # analytics/returns.py's cagr() docstring documents, and the same
+    # >= 1 year gate fund_analytics_service.py's rolling-returns windows
+    # already use. cumulative_twr_pct (the actual, un-annualized return
+    # over the real span) is always reported regardless.
+    annualized_twr = (
+        annualized_time_weighted_return(cumulative_twr, start_date, end_date)
+        if cumulative_twr is not None and span_days >= 365
+        else None
+    )
+    volatility = annualized_volatility(returns) if len(returns) >= 2 else None
+
+    dd = None
+    if len(returns) >= 1:
+        synthetic_nav = synthetic_nav_from_returns(returns)
+        if len(synthetic_nav) >= 2:
+            dd = max_drawdown(synthetic_nav)
+
+    return {
+        "cumulative_twr_pct": round(cumulative_twr * 100, 2) if cumulative_twr is not None else None,
+        "annualized_twr_pct": round(annualized_twr * 100, 2) if annualized_twr is not None else None,
+        "volatility_pct": round(volatility * 100, 2) if volatility is not None else None,
+        "max_drawdown_pct": round(dd["max_drawdown_pct"] * 100, 2) if dd is not None else None,
+        "drawdown_peak_date": dd["peak_date"].date() if dd is not None else None,
+        "drawdown_trough_date": dd["trough_date"].date() if dd is not None else None,
+        "drawdown_recovery_date": (
+            dd["recovery_date"].date() if dd is not None and dd["recovery_date"] is not None else None
+        ),
+        "drawdown_recovered": dd["recovered"] if dd is not None else None,
+        "priced_scheme_count": len(value_series_by_scheme),
+        "start_date": start_date,
+        "end_date": end_date,
     }
 
 

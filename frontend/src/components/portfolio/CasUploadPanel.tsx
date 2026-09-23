@@ -7,6 +7,7 @@ import { formatDate, formatPct, formatRupees, signColorClass } from "@/lib/forma
 import { CasFundContribution } from "@/components/portfolio/CasFundContribution";
 import { CasHoldingPeriod } from "@/components/portfolio/CasHoldingPeriod";
 import { CasPortfolioStructure } from "@/components/portfolio/CasPortfolioStructure";
+import { CasTimeWeightedReturn } from "@/components/portfolio/CasTimeWeightedReturn";
 import { Disclosure } from "@/components/fund/Disclosure";
 import { StatCard } from "@/components/fund/StatCard";
 import type { CASParseResponse } from "@/types/cas";
@@ -185,6 +186,10 @@ export function CasUploadPanel({
           )}
 
           {result.overview?.structure && <CasPortfolioStructure structure={result.overview.structure} />}
+
+          {result.overview?.time_weighted_return && (
+            <CasTimeWeightedReturn twr={result.overview.time_weighted_return} />
+          )}
 
           {result.overview && result.overview.per_scheme.length > 1 && (
             <CasFundContribution perScheme={result.overview.per_scheme} />

@@ -76,6 +76,20 @@ export interface CASHoldingPeriodSummary {
   realized_consumption_count: number;
 }
 
+export interface CASTimeWeightedReturn {
+  cumulative_twr_pct: number | null;
+  annualized_twr_pct: number | null;
+  volatility_pct: number | null;
+  max_drawdown_pct: number | null;
+  drawdown_peak_date: string | null;
+  drawdown_trough_date: string | null;
+  drawdown_recovery_date: string | null;
+  drawdown_recovered: boolean | null;
+  priced_scheme_count: number;
+  start_date: string | null;
+  end_date: string | null;
+}
+
 export interface CASOverviewResponse {
   total_invested: number;
   total_current_value: number;
@@ -88,6 +102,7 @@ export interface CASOverviewResponse {
   unmatched_schemes: CASUnmatchedScheme[];
   structure: CASPortfolioStructure | null;
   holding_period: CASHoldingPeriodSummary;
+  time_weighted_return: CASTimeWeightedReturn;
 }
 
 export interface CASParseResponse {
