@@ -348,6 +348,27 @@ def test_portfolio_structure_across_two_matched_holdings_in_different_amcs_and_a
     assert by_isin[TEST_ISIN]["scheme_xirr_pct"] is not None
     assert by_isin[SECOND_TEST_ISIN]["scheme_xirr_pct"] is not None
 
+    # Two distinct schemes, AMCs, categories -> a small, "Simple" complexity
+    # footprint; one folio per scheme -> no duplication penalty in the score.
+    complexity = overview["complexity"]
+    assert complexity["scheme_count"] == 2
+    assert complexity["amc_count"] == 2
+    assert complexity["category_count"] == 2
+    assert complexity["asset_class_count"] == 2  # Equity + Debt
+    assert complexity["folio_count"] == 2
+    assert complexity["complexity_score"] == pytest.approx(2 * 6 + 2 * 4 + 2 * 3)
+    assert complexity["complexity_label"] == "Simple"
+
+    # Two lumpsum purchases, no switches or redemptions at all.
+    behavior = overview["investor_behavior"]
+    assert behavior["investing_since"] == "2024-03-11"
+    assert behavior["last_activity_date"] == "2024-06-10"
+    assert behavior["investing_span_days"] == 91
+    assert behavior["total_switched_amount"] == pytest.approx(0.0)
+    assert behavior["switch_ratio_pct"] == pytest.approx(0.0)
+    assert behavior["total_redeemed_amount"] == pytest.approx(0.0)
+    assert behavior["redemption_ratio_pct"] == pytest.approx(0.0)
+
 
 REDEMPTION_CAS_LINES = [
     "Consolidated Account Statement",
@@ -405,6 +426,62 @@ def test_holding_period_reflects_a_realized_partial_redemption(test_scheme):
     # The remaining 18.129 units are still the original lot, still open,
     # so open-position holding period is unaffected by the redemption.
     assert holding_period["open_weighted_avg_days"] == 834
+
+    # 500 of the 999.95 invested has since come back via redemption ->
+    # ~50% redemption ratio, and no switch activity at all in this fixture.
+    behavior = overview["investor_behavior"]
+    assert behavior["total_redeemed_amount"] == pytest.approx(500.0)
+    assert behavior["redemption_ratio_pct"] == pytest.approx((500.0 / 999.95) * 100, abs=0.01)
+    assert behavior["total_switched_amount"] == pytest.approx(0.0)
+    assert behavior["switch_ratio_pct"] == pytest.approx(0.0)
+
+
+DUPLICATE_FOLIO_CAS_LINES = [
+    "Consolidated Account Statement",
+    "01-Jan-2003 To 22-Sep-2026",
+    "PORTFOLIO SUMMARY",
+    "Date Transaction Amount Units Price Unit Balance",
+    "Test Fund House Mutual Fund",
+    "Folio No: 12345678 / 0    PAN: ABCDE1234F    KYC: OK PAN: OK",
+    "Test Investor",
+    f"900TESTGG-Test Fund House Flexi Cap Fund - Regular Plan - Growth (Non Demat) - ISIN: {TEST_ISIN}(Advisor: ARN-1)",
+    "Nominee 1: Jane Doe    Nominee 2:    Nominee 3:",
+    "Opening Unit Balance: 0.000",
+    "10-Jun-2024   Purchase    999.95    38.129    26.222    38.129",
+    "Closing Unit Balance: 38.129    NAV on 22-Sep-2026: INR 30.5    Total Cost Value: 999.95    Market Value on 22-Sep-2026: INR 1163.94",
+    "Entry Load: Nil; Exit Load: Nil.",
+    "Test Fund House Mutual Fund",
+    "Folio No: 99991111 / 0    PAN: ABCDE1234F    KYC: OK PAN: OK",
+    "Test Investor",
+    f"900TESTGG-Test Fund House Flexi Cap Fund - Regular Plan - Growth (Non Demat) - ISIN: {TEST_ISIN}(Advisor: ARN-1)",
+    "Nominee 1: Jane Doe    Nominee 2:    Nominee 3:",
+    "Opening Unit Balance: 0.000",
+    "15-Jul-2024   Purchase    500.00    18.000    27.778    18.000",
+    "Closing Unit Balance: 18.000    NAV on 22-Sep-2026: INR 30.5    Total Cost Value: 500.00    Market Value on 22-Sep-2026: INR 549.00",
+    "Entry Load: Nil; Exit Load: Nil.",
+]
+
+
+def test_complexity_counts_two_folios_of_the_same_scheme_separately(test_scheme):
+    # The same ISIN across two folios is merged into one scheme
+    # everywhere else in this overview (matched by ISIN) -- complexity's
+    # folio_count is the one place that duplication becomes visible.
+    pdf_bytes = _pdf_with_lines(DUPLICATE_FOLIO_CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    overview = response.json()["overview"]
+
+    assert overview["matched_scheme_count"] == 1
+    assert overview["per_scheme"][0]["invested_amount"] == pytest.approx(999.95 + 500.0)
+
+    complexity = overview["complexity"]
+    assert complexity["scheme_count"] == 1
+    assert complexity["folio_count"] == 2
+    assert complexity["complexity_score"] == pytest.approx(1 * 6 + 1 * 4 + 1 * 3 + (2 - 1) * 8)
+    assert complexity["complexity_label"] == "Simple"
 
 
 TWR_TEST_AMC_NAME = "CAS Test TWR Fund House"

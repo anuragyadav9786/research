@@ -135,6 +135,26 @@ export interface CASInvestmentTiming {
   methodology_note: string;
 }
 
+export interface CASInvestorBehavior {
+  investing_since: string | null;
+  last_activity_date: string | null;
+  investing_span_days: number | null;
+  total_switched_amount: number;
+  switch_ratio_pct: number | null;
+  total_redeemed_amount: number;
+  redemption_ratio_pct: number | null;
+}
+
+export interface CASPortfolioComplexity {
+  scheme_count: number;
+  amc_count: number;
+  category_count: number;
+  asset_class_count: number;
+  folio_count: number;
+  complexity_score: number;
+  complexity_label: "Simple" | "Moderate" | "Complex" | "Highly Complex";
+}
+
 export interface CASOverviewResponse {
   total_invested: number;
   total_current_value: number;
@@ -150,6 +170,8 @@ export interface CASOverviewResponse {
   time_weighted_return: CASTimeWeightedReturn;
   transaction_activity: CASTransactionActivity[];
   investment_timing: CASInvestmentTiming;
+  investor_behavior: CASInvestorBehavior;
+  complexity: CASPortfolioComplexity;
 }
 
 export interface CASParseResponse {

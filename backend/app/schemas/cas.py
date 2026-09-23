@@ -213,6 +213,48 @@ class CASHoldingPeriodSummary(BaseModel):
     realized_consumption_count: int = Field(..., description="Number of FIFO lot consumptions realized_avg/median are over")
 
 
+class CASInvestorBehavior(BaseModel):
+    """Portfolio Analysis §14: purely factual investor-behavior metrics —
+    how long the recorded activity spans, and what fraction of invested
+    capital has since moved via a switch/STP or come back via a
+    redemption/SWP/dividend. Deliberately does NOT infer intent (e.g.
+    "return-chasing" or "panic-selling") — see app/services/
+    cas_portfolio_service.py's own module docstring for why."""
+
+    investing_since: date | None = Field(None, description="Earliest transaction date across every matched scheme")
+    last_activity_date: date | None = Field(None, description="Latest transaction date across every matched scheme")
+    investing_span_days: int | None = Field(
+        None, description="Between investing_since and last_activity_date — recorded activity, not against today's date"
+    )
+    total_switched_amount: float = Field(..., description="Sum of Switch-Out/STP-Out amounts (internal transfers)")
+    switch_ratio_pct: float | None = Field(
+        None, description="total_switched_amount as a % of total_invested — null if total_invested is 0"
+    )
+    total_redeemed_amount: float = Field(..., description="Sum of Redemption/SWP/Dividend amounts")
+    redemption_ratio_pct: float | None = Field(
+        None, description="total_redeemed_amount as a % of total_invested — null if total_invested is 0"
+    )
+
+
+class CASPortfolioComplexity(BaseModel):
+    """Portfolio Analysis §complexity: how many distinct moving parts the
+    CURRENT portfolio spans — same scope as Portfolio Structure (current
+    holdings only). `folio_count` surfaces something invisible elsewhere:
+    the same scheme registered under two folios is merged into one
+    scheme by ISIN throughout the rest of this overview.
+    `complexity_score` is a simple, fully documented heuristic (see
+    app/services/cas_portfolio_service.py), not a standard industry index
+    or a judgment of whether the complexity is a problem."""
+
+    scheme_count: int
+    amc_count: int
+    category_count: int
+    asset_class_count: int
+    folio_count: int = Field(..., description="Distinct folio numbers across every matched transaction")
+    complexity_score: float = Field(..., description="0-100; see module docstring for the exact formula")
+    complexity_label: str = Field(..., description="'Simple' | 'Moderate' | 'Complex' | 'Highly Complex'")
+
+
 class CASTimeWeightedReturn(BaseModel):
     """Portfolio Analysis §6: Time-Weighted Return, annualized volatility,
     and max drawdown of the portfolio's own actual value over time —
@@ -269,6 +311,8 @@ class CASOverviewResponse(BaseModel):
         ..., description="Breakdown of transaction count and total amount by type, across every matched scheme"
     )
     investment_timing: CASInvestmentTiming
+    investor_behavior: CASInvestorBehavior
+    complexity: CASPortfolioComplexity
 
 
 class CASParseResponse(BaseModel):

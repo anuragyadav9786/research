@@ -1,14 +1,25 @@
 """Builds the Portfolio Analysis Overview (invested capital, current
 value, realized/unrealized gain, portfolio XIRR, per-scheme contribution,
 holding-period analysis, time-weighted return/volatility/drawdown,
-purchase/redemption behavior, SIP consistency, and investment timing vs.
-market conditions) from a CAS's full parsed transaction ledger — Phases
-1-6 of the larger Portfolio Analysis intelligence module (spec sections
-4-5, 6, 12, 13, 14, 15). Only covers schemes matched to this platform's
-own fund catalog by ISIN (same matching cas_service.py already does for
-the manual-form pre-fill) — a scheme not in our catalog has no NAV
-history we can use to value it today, so it's reported as excluded,
-never guessed at.
+purchase/redemption behavior, SIP consistency, investment timing vs.
+market conditions, investor behavior, and portfolio complexity) from a
+CAS's full parsed transaction ledger — Phases 1-7 of the larger Portfolio
+Analysis intelligence module (spec sections 4-5, 6, 12, 13, 14, 15).
+Only covers schemes matched to this platform's own fund catalog by ISIN
+(same matching cas_service.py already does for the manual-form pre-fill)
+— a scheme not in our catalog has no NAV history we can use to value it
+today, so it's reported as excluded, never guessed at.
+
+Investor-behavior scope note: this deliberately does NOT attempt to
+infer intent (e.g. "return-chasing" or "panic-selling" by correlating a
+purchase/redemption date against recent NAV movement) — that would be an
+unverifiable psychological claim about why the investor acted, not a
+fact this ledger can establish, and risks exactly the alarmist,
+judgmental framing the module's spec explicitly rules out. What's
+reported instead (_investor_behavior_summary) is purely factual: how
+long the recorded activity spans, and what fraction of invested capital
+has since moved via a switch/STP or come back via a redemption/SWP/
+dividend — observable amounts, not inferred motives.
 
 Investment-timing note: the market regimes used to classify WHEN a
 purchase happened (see _investment_timing_summary) are this platform's
@@ -259,6 +270,8 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         "time_weighted_return": _time_weighted_return_summary(priced_scheme_value_series, priced_scheme_contributions),
         "transaction_activity": _transaction_activity_summary(matched_transactions),
         "investment_timing": _investment_timing_summary(matched_transactions, market_regime_repository.list_regimes(db)),
+        "investor_behavior": _investor_behavior_summary(matched_transactions, total_invested),
+        "complexity": _portfolio_complexity_summary(valued_schemes, matched_transactions),
     }
 
 
@@ -569,6 +582,105 @@ def _transaction_activity_summary(matched_transactions: list[CASTransaction]) ->
         for ttype in ordered_types
         if ttype in totals
     ]
+
+
+# Internal transfer out of a scheme -- a real move of money between two
+# holdings within this same portfolio, never a claim about why.
+_INTERNAL_TRANSFER_OUT_TYPES = {"SWITCH_OUT", "STP_OUT"}
+
+
+def _investor_behavior_summary(matched_transactions: list[CASTransaction], total_invested: float) -> dict:
+    """Portfolio Analysis §14: purely factual investor-behavior metrics —
+    how long the recorded activity spans, and what fraction of invested
+    capital has since moved via a switch/STP or come back via a
+    redemption/SWP/dividend. Deliberately excludes any inference about
+    WHY (e.g. "return-chasing," "panic-selling") — see this module's own
+    docstring. `investing_span_days` is between the first and last
+    transaction actually in this ledger, not against today's date (the
+    statement may be stale), so it describes recorded activity, not a
+    live "years invested" claim."""
+    if not matched_transactions:
+        return {
+            "investing_since": None,
+            "last_activity_date": None,
+            "investing_span_days": None,
+            "total_switched_amount": 0.0,
+            "switch_ratio_pct": None,
+            "total_redeemed_amount": 0.0,
+            "redemption_ratio_pct": None,
+        }
+
+    dates = [t.transaction_date for t in matched_transactions]
+    investing_since = min(dates)
+    last_activity_date = max(dates)
+
+    total_switched = sum(abs(t.amount) for t in matched_transactions if t.transaction_type in _INTERNAL_TRANSFER_OUT_TYPES)
+    total_redeemed = sum(abs(t.amount) for t in matched_transactions if t.transaction_type in _INFLOW_TYPES)
+
+    return {
+        "investing_since": investing_since,
+        "last_activity_date": last_activity_date,
+        "investing_span_days": (last_activity_date - investing_since).days,
+        "total_switched_amount": round(total_switched, 2),
+        "switch_ratio_pct": round((total_switched / total_invested) * 100, 2) if total_invested > 0 else None,
+        "total_redeemed_amount": round(total_redeemed, 2),
+        "redemption_ratio_pct": round((total_redeemed / total_invested) * 100, 2) if total_invested > 0 else None,
+    }
+
+
+# (label, max_scheme_count) in order; None = unbounded (last label). The
+# single clearest driver of how much an investor has to actively track.
+_COMPLEXITY_LABELS: list[tuple[str, int | None]] = [
+    ("Simple", 3),
+    ("Moderate", 7),
+    ("Complex", 12),
+    ("Highly Complex", None),
+]
+
+
+def _portfolio_complexity_summary(
+    valued_schemes: list[tuple[str, str, str, float]], matched_transactions: list[CASTransaction]
+) -> dict:
+    """Portfolio Analysis §complexity: how many distinct moving parts this
+    portfolio's CURRENT holdings actually span — same `valued_schemes`
+    basis as Portfolio Structure above, so the two sections stay
+    consistent. `folio_count` is a genuinely separate signal this
+    platform doesn't surface anywhere else: the same scheme registered
+    under two different folios is silently merged into one scheme
+    elsewhere in this overview (matched by ISIN), so two folios for one
+    fund would otherwise be invisible.
+
+    `complexity_score`: min(100, scheme_count*6 + amc_count*4 +
+    category_count*3 + max(0, folio_count - scheme_count)*8) — a simple,
+    fully transparent, explicitly documented heuristic combining scheme/
+    AMC/category count plus any folio duplication, not a standard
+    industry index and not a judgment of whether that complexity is a
+    problem. `complexity_label` is thresholded on scheme_count alone (the
+    clearest single driver) so it stays interpretable on its own even
+    without the score."""
+    scheme_count = len(valued_schemes)
+    amc_count = len({amc for _, amc, _, _ in valued_schemes})
+    category_count = len({cat for _, _, cat, _ in valued_schemes})
+    asset_class_count = len({classify_asset_class(cat) for _, _, cat, _ in valued_schemes})
+    folio_count = len({t.folio_no for t in matched_transactions if t.folio_no})
+
+    complexity_score = min(
+        100,
+        scheme_count * 6 + amc_count * 4 + category_count * 3 + max(0, folio_count - scheme_count) * 8,
+    )
+    complexity_label = next(
+        label for label, max_count in _COMPLEXITY_LABELS if max_count is None or scheme_count <= max_count
+    )
+
+    return {
+        "scheme_count": scheme_count,
+        "amc_count": amc_count,
+        "category_count": category_count,
+        "asset_class_count": asset_class_count,
+        "folio_count": folio_count,
+        "complexity_score": complexity_score,
+        "complexity_label": complexity_label,
+    }
 
 
 def _build_structure(valued_schemes: list[tuple[str, str, str, float]]) -> dict | None:

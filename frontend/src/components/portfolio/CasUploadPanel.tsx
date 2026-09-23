@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { ApiError, parseCasStatement } from "@/lib/api";
 import { formatDate, formatPct, formatRupees, signColorClass } from "@/lib/format";
+import { CasBehaviorSnapshot } from "@/components/portfolio/CasBehaviorSnapshot";
 import { CasFundContribution } from "@/components/portfolio/CasFundContribution";
 import { CasHoldingPeriod } from "@/components/portfolio/CasHoldingPeriod";
 import { CasInvestmentTiming } from "@/components/portfolio/CasInvestmentTiming";
@@ -190,6 +191,10 @@ export function CasUploadPanel({
           )}
 
           {result.overview?.structure && <CasPortfolioStructure structure={result.overview.structure} />}
+
+          {result.overview?.complexity && result.overview?.investor_behavior && (
+            <CasBehaviorSnapshot complexity={result.overview.complexity} behavior={result.overview.investor_behavior} />
+          )}
 
           {result.overview?.time_weighted_return && (
             <CasTimeWeightedReturn twr={result.overview.time_weighted_return} />
