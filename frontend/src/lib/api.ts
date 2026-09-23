@@ -25,6 +25,7 @@ import type { PortfolioResponse } from "@/types/portfolio";
 import type { PortfolioAnalysisResponse, PortfolioHoldingInput } from "@/types/portfolioAnalysis";
 import type { StressTestResponse } from "@/types/stressTest";
 import type { AISummaryResponse } from "@/types/aiSummary";
+import type { CASParseResponse } from "@/types/cas";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -181,6 +182,19 @@ export function getFundNavHistory(fundId: number, params: VariantParams = {}): P
 
 export function analysePortfolio(holdings: PortfolioHoldingInput[]): Promise<PortfolioAnalysisResponse> {
   return apiPost<PortfolioAnalysisResponse>("/api/portfolio/analyse", { holdings });
+}
+
+export async function parseCasStatement(file: File, password?: string): Promise<CASParseResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (password) formData.append("password", password);
+
+  const response = await fetch(`${API_BASE_URL}/api/portfolio/cas/parse`, { method: "POST", body: formData });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new ApiError(response.status, extractErrorMessage(body, "Could not parse this statement."));
+  }
+  return response.json();
 }
 
 export function getFundMarketRegimes(
