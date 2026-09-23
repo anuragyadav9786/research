@@ -185,6 +185,124 @@ def test_parses_and_matches_a_holding_by_isin(test_scheme):
     assert overview["portfolio_xirr_pct"] is not None
     assert 0 < overview["portfolio_xirr_pct"] < 50
 
+    # A single matched holding -> degenerate but still-correct structure:
+    # 100% concentration everywhere, one asset-class/style slice.
+    structure = overview["structure"]
+    assert structure["scheme_concentration"]["top1_pct"] == pytest.approx(100.0)
+    assert structure["scheme_concentration"]["hhi"] == pytest.approx(10000.0)
+    assert structure["scheme_concentration"]["hhi_label"] == "high_concentration"
+    assert structure["amc_concentration"]["count"] == 1
+    assert structure["category_concentration"]["count"] == 1
+    assert structure["asset_allocation"] == [
+        {"label": "Equity", "value": pytest.approx(38.129 * 32.0, abs=0.01), "weight_pct": pytest.approx(100.0)}
+    ]
+    assert structure["equity_style_allocation"] == [
+        {"label": "Flexi Cap", "value": pytest.approx(38.129 * 32.0, abs=0.01), "weight_pct": pytest.approx(100.0)}
+    ]
+
+
+SECOND_TEST_AMC_NAME = "CAS Test Debt House"
+SECOND_TEST_ISIN = "INF000CAS002"
+
+TWO_SCHEME_CAS_LINES = [
+    "Consolidated Account Statement",
+    "01-Jan-2003 To 22-Sep-2026",
+    "PORTFOLIO SUMMARY",
+    "Date Transaction Amount Units Price Unit Balance",
+    "Test Fund House Mutual Fund",
+    "Folio No: 12345678 / 0    PAN: ABCDE1234F    KYC: OK PAN: OK",
+    "Test Investor",
+    f"900TESTGG-Test Fund House Flexi Cap Fund - Regular Plan - Growth (Non Demat) - ISIN: {TEST_ISIN}(Advisor: ARN-1)",
+    "Nominee 1: Jane Doe    Nominee 2:    Nominee 3:",
+    "Opening Unit Balance: 0.000",
+    "10-Jun-2024   Purchase    999.95    38.129    26.222    38.129",
+    "Closing Unit Balance: 38.129    NAV on 22-Sep-2026: INR 30.5    Total Cost Value: 999.95    Market Value on 22-Sep-2026: INR 1163.94",
+    "Entry Load: Nil; Exit Load: Nil.",
+    "Test Debt Fund House Mutual Fund",
+    "Folio No: 55554444 / 0    PAN: ABCDE1234F    KYC: OK PAN: OK",
+    "Test Investor",
+    f"800DEBTGG-Test Debt Liquid Fund - Regular Plan - Growth (Non Demat) - ISIN: {SECOND_TEST_ISIN}(Advisor: ARN-1)",
+    "Nominee 1:    Nominee 2:    Nominee 3:",
+    "Opening Unit Balance: 0.000",
+    "11-Mar-2024   Purchase    2000.00    100.000    20.00    100.000",
+    "Closing Unit Balance: 100.000    NAV on 22-Sep-2026: INR 21.0    Total Cost Value: 2000.00    Market Value on 22-Sep-2026: INR 2100.00",
+    "Entry Load: Nil; Exit Load: Nil.",
+]
+
+
+@pytest.fixture
+def second_test_scheme(db):
+    amc = AMC(name=SECOND_TEST_AMC_NAME)
+    db.add(amc)
+    db.flush()
+    family = FundFamily(amc_id=amc.id, name=SECOND_TEST_AMC_NAME)
+    db.add(family)
+    db.flush()
+    scheme = Scheme(fund_family_id=family.id, name="CAS Test Debt Liquid Fund", category="Debt - Liquid")
+    db.add(scheme)
+    db.flush()
+    variant = SchemeVariant(scheme_id=scheme.id, plan="regular", option="growth", isin=SECOND_TEST_ISIN)
+    db.add(variant)
+    db.flush()
+
+    source = db.query(DataSource).filter(DataSource.source_type == "manual").first()
+    if source is None:
+        source = DataSource(name="TEST FIXTURE SOURCE", source_type="manual")
+        db.add(source)
+        db.flush()
+    db.add(NavHistory(scheme_variant_id=variant.id, date=date(2026, 9, 22), nav=22.0, source_id=source.id))
+    db.commit()
+
+    yield scheme
+
+    db.query(NavHistory).filter(NavHistory.scheme_variant_id == variant.id).delete()
+    db.query(SchemeVariant).filter(SchemeVariant.scheme_id == scheme.id).delete()
+    db.query(Scheme).filter(Scheme.id == scheme.id).delete()
+    db.query(FundFamily).filter(FundFamily.id == family.id).delete()
+    db.query(AMC).filter(AMC.id == amc.id).delete()
+    db.commit()
+
+
+def test_portfolio_structure_across_two_matched_holdings_in_different_amcs_and_asset_classes(
+    test_scheme, second_test_scheme
+):
+    pdf_bytes = _pdf_with_lines(TWO_SCHEME_CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    overview = response.json()["overview"]
+    assert overview["matched_scheme_count"] == 2
+
+    equity_value = 38.129 * 32.0  # first scheme's current value, from its own fixture NAV
+    debt_value = 100.0 * 22.0  # second scheme's current value
+    total_value = equity_value + debt_value
+
+    structure = overview["structure"]
+
+    # Two AMCs, two categories -> neither concentration summary is 100% on
+    # a single group; both count as 2 distinct groups.
+    assert structure["amc_concentration"]["count"] == 2
+    assert structure["category_concentration"]["count"] == 2
+    assert structure["amc_concentration"]["top1_pct"] < 100.0
+    assert structure["category_concentration"]["top1_pct"] < 100.0
+
+    asset_allocation = {slice_["label"]: slice_ for slice_ in structure["asset_allocation"]}
+    assert set(asset_allocation.keys()) == {"Equity", "Debt"}
+    assert asset_allocation["Equity"]["value"] == pytest.approx(equity_value, abs=0.01)
+    assert asset_allocation["Equity"]["weight_pct"] == pytest.approx((equity_value / total_value) * 100, abs=0.1)
+    assert asset_allocation["Debt"]["value"] == pytest.approx(debt_value, abs=0.01)
+
+    # Equity style allocation only covers the equity scheme -- the debt
+    # scheme contributes nothing to it, not a misleading "Debt" style row.
+    assert len(structure["equity_style_allocation"]) == 1
+    assert structure["equity_style_allocation"][0]["label"] == "Flexi Cap"
+    assert structure["equity_style_allocation"][0]["value"] == pytest.approx(equity_value, abs=0.01)
+
+    amc_allocation_labels = {slice_["label"] for slice_ in structure["amc_allocation"]}
+    assert amc_allocation_labels == {TEST_AMC_NAME, SECOND_TEST_AMC_NAME}
+
 
 def test_missing_password_on_encrypted_pdf_returns_422():
     from pypdf import PdfWriter as _Writer

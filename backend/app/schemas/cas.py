@@ -53,12 +53,54 @@ class CASUnmatchedScheme(BaseModel):
     scheme_name: str
 
 
+class CASConcentrationSummary(BaseModel):
+    """Herfindahl-Hirschman Index and top-N weight, at whatever level
+    this summary is grouped by (scheme/AMC/category) — see
+    analytics/concentration.py for the formulas and the DOJ/FTC-derived
+    hhi_label thresholds."""
+
+    top1_pct: float
+    top3_pct: float
+    top5_pct: float
+    top10_pct: float
+    hhi: float
+    hhi_label: str = Field(..., description="'diversified' | 'moderate_concentration' | 'high_concentration'")
+    count: int | None = Field(None, description="Number of distinct groups (AMCs/categories) — omitted for scheme-level")
+
+
+class CASAllocationSlice(BaseModel):
+    label: str
+    value: float = Field(..., description="Current rupee value in this slice")
+    weight_pct: float
+
+
+class CASPortfolioStructure(BaseModel):
+    """Portfolio Analysis §7/§8: how the portfolio's current rupee value
+    (not invested amount) breaks down by scheme, AMC, category, and
+    broad asset class — and, for equity holdings, by market-cap/style.
+    Asset-class and equity-style labels come only from each scheme's own
+    stated category string (data_pipeline/normalization/
+    category_classification.py) — never guessed from a scheme's name or
+    its disclosed underlying holdings."""
+
+    scheme_concentration: CASConcentrationSummary
+    amc_concentration: CASConcentrationSummary
+    category_concentration: CASConcentrationSummary
+    asset_allocation: list[CASAllocationSlice]
+    equity_style_allocation: list[CASAllocationSlice] = Field(
+        ..., description="Market-cap/style breakdown within equity holdings only, as a % of the whole portfolio"
+    )
+    amc_allocation: list[CASAllocationSlice]
+    category_allocation: list[CASAllocationSlice]
+
+
 class CASOverviewResponse(BaseModel):
-    """Portfolio Analysis §4/§5: invested capital vs. current value,
-    realized vs. unrealized gain, and money-weighted (XIRR) return —
-    computed from the CAS's full transaction ledger, not just its stated
-    closing balances. Covers only ISIN-matched schemes; anything
-    unmatched is listed, never silently folded into the totals."""
+    """Portfolio Analysis §4/§5/§7/§8: invested capital vs. current
+    value, realized vs. unrealized gain, money-weighted (XIRR) return,
+    and portfolio structure (concentration + allocation) — computed from
+    the CAS's full transaction ledger, not just its stated closing
+    balances. Covers only ISIN-matched schemes; anything unmatched is
+    listed, never silently folded into the totals."""
 
     total_invested: float
     total_current_value: float
@@ -71,6 +113,9 @@ class CASOverviewResponse(BaseModel):
     matched_scheme_count: int
     per_scheme: list[CASSchemeOverview]
     unmatched_schemes: list[CASUnmatchedScheme]
+    structure: CASPortfolioStructure | None = Field(
+        None, description="Null if no matched holding has a usable current value yet"
+    )
 
 
 class CASParseResponse(BaseModel):

@@ -32,6 +32,32 @@ export interface CASUnmatchedScheme {
   scheme_name: string;
 }
 
+export interface CASConcentrationSummary {
+  top1_pct: number;
+  top3_pct: number;
+  top5_pct: number;
+  top10_pct: number;
+  hhi: number;
+  hhi_label: "diversified" | "moderate_concentration" | "high_concentration";
+  count: number | null;
+}
+
+export interface CASAllocationSlice {
+  label: string;
+  value: number;
+  weight_pct: number;
+}
+
+export interface CASPortfolioStructure {
+  scheme_concentration: CASConcentrationSummary;
+  amc_concentration: CASConcentrationSummary;
+  category_concentration: CASConcentrationSummary;
+  asset_allocation: CASAllocationSlice[];
+  equity_style_allocation: CASAllocationSlice[];
+  amc_allocation: CASAllocationSlice[];
+  category_allocation: CASAllocationSlice[];
+}
+
 export interface CASOverviewResponse {
   total_invested: number;
   total_current_value: number;
@@ -42,6 +68,7 @@ export interface CASOverviewResponse {
   matched_scheme_count: number;
   per_scheme: CASSchemeOverview[];
   unmatched_schemes: CASUnmatchedScheme[];
+  structure: CASPortfolioStructure | null;
 }
 
 export interface CASParseResponse {

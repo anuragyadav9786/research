@@ -23,16 +23,20 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from analytics.concentration import group_weights, herfindahl_hirschman_index, hhi_label, top_n_weight_pct
 from analytics.cost_basis import apply_fifo
 from analytics.xirr import xirr
 from app.models.reference import Scheme, SchemeVariant
 from app.repositories import fund_repository
 from data_pipeline.normalization.cas_parser import CASTransaction
+from data_pipeline.normalization.category_classification import classify_asset_class, classify_equity_style
 
 # Real external cash leaving the investor's pocket into a fund.
 _OUTFLOW_TYPES = {"PURCHASE", "SIP"}
 # Real external cash returning to the investor's pocket from a fund.
 _INFLOW_TYPES = {"REDEMPTION", "SWP", "DIVIDEND"}  # DIVIDEND = a cash payout, not reinvested
+
+_CONCENTRATION_TOP_NS = (1, 3, 5, 10)
 
 
 def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
@@ -53,6 +57,10 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
     per_scheme: list[dict] = []
     unmatched: list[dict] = []
     portfolio_cash_flows: list[tuple[date, float]] = []
+    # (scheme_name, amc_name, category, current_value) for every matched
+    # scheme with a valid current value — the weight basis for concentration
+    # and allocation, computed after the main loop.
+    valued_schemes: list[tuple[str, str, str, float]] = []
     total_invested = 0.0
     total_current_value = 0.0
     total_realized_gain = 0.0
@@ -79,6 +87,8 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         if current_value is not None:
             total_current_value += current_value
             total_unrealized_gain += unrealized_gain
+            if current_value > 0:
+                valued_schemes.append((scheme.name, scheme.fund_family.amc.name, scheme.category, current_value))
 
         for t in txns:
             if t.transaction_type in _OUTFLOW_TYPES:
@@ -126,4 +136,63 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         "matched_scheme_count": len(per_scheme),
         "per_scheme": per_scheme,
         "unmatched_schemes": unmatched,
+        "structure": _build_structure(valued_schemes),
+    }
+
+
+def _concentration_summary(weights_pct: list[float]) -> dict:
+    hhi = herfindahl_hirschman_index(weights_pct)
+    top_n = {f"top{n}_pct": round(top_n_weight_pct(weights_pct, n), 2) for n in _CONCENTRATION_TOP_NS}
+    return {**top_n, "hhi": round(hhi, 1), "hhi_label": hhi_label(hhi)}
+
+
+def _grouped_concentration(items: list[tuple[str, float]], total_value: float) -> dict:
+    """Concentration summary one level up from individual schemes — e.g.
+    "how concentrated is this portfolio by AMC" rather than by scheme.
+    `items`: (label, value) pairs to group by label first."""
+    grouped_values = group_weights(items)
+    weights_pct = [(v / total_value) * 100 for v in grouped_values.values()] if total_value > 0 else []
+    return {**_concentration_summary(weights_pct), "count": len(grouped_values)}
+
+
+def _allocation_breakdown(items: list[tuple[str, float]], total_value: float) -> list[dict]:
+    """`items`: (label, value) pairs. Sorted largest-first — the order a
+    reader scans an allocation table in."""
+    grouped_values = group_weights(items)
+    breakdown = [
+        {
+            "label": label,
+            "value": round(value, 2),
+            "weight_pct": round((value / total_value) * 100, 2) if total_value > 0 else 0.0,
+        }
+        for label, value in grouped_values.items()
+    ]
+    return sorted(breakdown, key=lambda b: b["value"], reverse=True)
+
+
+def _build_structure(valued_schemes: list[tuple[str, str, str, float]]) -> dict | None:
+    """`valued_schemes`: (scheme_name, amc_name, category, current_value)
+    — one entry per matched, currently-valued holding. None if there's
+    nothing to compute structure from (no holding has a usable current
+    value yet), rather than a misleadingly empty-but-present breakdown."""
+    if not valued_schemes:
+        return None
+
+    total_value = sum(v for _, _, _, v in valued_schemes)
+    scheme_weights_pct = [(v / total_value) * 100 for _, _, _, v in valued_schemes]
+    amc_items = [(amc, v) for _, amc, _, v in valued_schemes]
+    category_items = [(cat, v) for _, _, cat, v in valued_schemes]
+    asset_class_items = [(classify_asset_class(cat), v) for _, _, cat, v in valued_schemes]
+    equity_style_items = [
+        (classify_equity_style(cat), v) for _, _, cat, v in valued_schemes if classify_asset_class(cat) == "Equity"
+    ]
+
+    return {
+        "scheme_concentration": _concentration_summary(scheme_weights_pct),
+        "amc_concentration": _grouped_concentration(amc_items, total_value),
+        "category_concentration": _grouped_concentration(category_items, total_value),
+        "asset_allocation": _allocation_breakdown(asset_class_items, total_value),
+        "equity_style_allocation": _allocation_breakdown(equity_style_items, total_value) if equity_style_items else [],
+        "amc_allocation": _allocation_breakdown(amc_items, total_value),
+        "category_allocation": _allocation_breakdown(category_items, total_value),
     }

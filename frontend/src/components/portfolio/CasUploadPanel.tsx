@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { ApiError, parseCasStatement } from "@/lib/api";
 import { formatDate, formatPct, formatRupees, signColorClass } from "@/lib/format";
+import { CasPortfolioStructure } from "@/components/portfolio/CasPortfolioStructure";
 import { Disclosure } from "@/components/fund/Disclosure";
 import { StatCard } from "@/components/fund/StatCard";
 import type { CASParseResponse } from "@/types/cas";
@@ -180,6 +181,8 @@ export function CasUploadPanel({
               </Disclosure>
             </div>
           )}
+
+          {result.overview?.structure && <CasPortfolioStructure structure={result.overview.structure} />}
 
           {matchedCount > 0 && (
             <ul className="text-sm text-slate-300 space-y-1">
