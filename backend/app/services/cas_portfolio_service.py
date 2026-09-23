@@ -1,11 +1,11 @@
 """Builds the Portfolio Analysis Overview (invested capital, current
-value, realized/unrealized gain, portfolio XIRR) from a CAS's full
-parsed transaction ledger — Phase 1 of the larger Portfolio Analysis
-intelligence module (spec sections 4-5). Only covers schemes matched to
-this platform's own fund catalog by ISIN (same matching cas_service.py
-already does for the manual-form pre-fill) — a scheme not in our catalog
-has no NAV history we can use to value it today, so it's reported as
-excluded, never guessed at.
+value, realized/unrealized gain, portfolio XIRR, per-scheme contribution,
+and holding-period analysis) from a CAS's full parsed transaction ledger
+— Phases 1-3 of the larger Portfolio Analysis intelligence module (spec
+sections 4-5, 12, 15). Only covers schemes matched to this platform's own
+fund catalog by ISIN (same matching cas_service.py already does for the
+manual-form pre-fill) — a scheme not in our catalog has no NAV history we
+can use to value it today, so it's reported as excluded, never guessed at.
 
 Cash-flow treatment (why this isn't "every transaction is a cash flow"):
 switches/STP move money between two schemes already inside this same
@@ -19,6 +19,7 @@ real money moving in or out.
 """
 from __future__ import annotations
 
+import statistics
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -37,6 +38,14 @@ _OUTFLOW_TYPES = {"PURCHASE", "SIP"}
 _INFLOW_TYPES = {"REDEMPTION", "SWP", "DIVIDEND"}  # DIVIDEND = a cash payout, not reinvested
 
 _CONCENTRATION_TOP_NS = (1, 3, 5, 10)
+
+# Upper bound (in days) of each bucket, in order; None = unbounded (last bucket).
+_HOLDING_PERIOD_BUCKETS: list[tuple[str, int | None]] = [
+    ("< 1 year", 365),
+    ("1-3 years", 365 * 3),
+    ("3-5 years", 365 * 5),
+    ("5+ years", None),
+]
 
 
 def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
@@ -61,6 +70,12 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
     # scheme with a valid current value — the weight basis for concentration
     # and allocation, computed after the main loop.
     valued_schemes: list[tuple[str, str, str, float]] = []
+    # (days_held, current_value) for every still-open lot we could price —
+    # the basis for the portfolio-wide open-position holding-period summary.
+    open_lot_days_values: list[tuple[int, float]] = []
+    # holding_period_days for every FIFO-realized (sold/switched-out) lot
+    # consumption, across every matched scheme.
+    realized_holding_days: list[int] = []
     total_invested = 0.0
     total_current_value = 0.0
     total_realized_gain = 0.0
@@ -74,6 +89,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
 
         variant, scheme = found
         cost_basis = apply_fifo([(t.transaction_date, t.units, t.amount) for t in txns])
+        realized_holding_days.extend(c.holding_period_days for c in cost_basis.consumptions)
 
         nav_series = fund_repository.get_nav_series(db, variant.id)
         latest_nav = float(nav_series.iloc[-1]) if not nav_series.empty else None
@@ -89,12 +105,17 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
             total_unrealized_gain += unrealized_gain
             if current_value > 0:
                 valued_schemes.append((scheme.name, scheme.fund_family.amc.name, scheme.category, current_value))
+            if latest_nav_date is not None:
+                open_lot_days_values.extend(
+                    ((latest_nav_date - lot.purchase_date).days, lot.units * latest_nav) for lot in cost_basis.open_lots
+                )
 
+        scheme_cash_flows: list[tuple[date, float]] = []
         for t in txns:
             if t.transaction_type in _OUTFLOW_TYPES:
-                portfolio_cash_flows.append((t.transaction_date, -abs(t.amount)))
+                scheme_cash_flows.append((t.transaction_date, -abs(t.amount)))
             elif t.transaction_type in _INFLOW_TYPES:
-                portfolio_cash_flows.append((t.transaction_date, abs(t.amount)))
+                scheme_cash_flows.append((t.transaction_date, abs(t.amount)))
             # SWITCH_IN/SWITCH_OUT/STP_IN/STP_OUT/DIVIDEND_REINVESTMENT/BONUS/
             # OTHER/REVERSAL: not an external cash flow, intentionally excluded.
         if current_value is not None and current_value > 0 and latest_nav_date is not None:
@@ -102,7 +123,18 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
             # value, dated to when that value is actually as-of -- not
             # blended into one portfolio-wide date, since different
             # schemes' NAV data can be fresher or staler than each other.
-            portfolio_cash_flows.append((latest_nav_date, current_value))
+            scheme_cash_flows.append((latest_nav_date, current_value))
+        portfolio_cash_flows.extend(scheme_cash_flows)
+        scheme_xirr = xirr(scheme_cash_flows)
+
+        # A scheme still holding units we couldn't value (no NAV history)
+        # has an incomplete gain figure — realized_gain alone understates
+        # it, so its contribution to total gain is reported as unknown
+        # rather than a misleadingly partial number.
+        if cost_basis.remaining_units > 0 and unrealized_gain is None:
+            scheme_gain = None
+        else:
+            scheme_gain = cost_basis.realized_gain + (unrealized_gain or 0.0)
 
         per_scheme.append(
             {
@@ -121,8 +153,19 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
                 "current_nav_date": latest_nav_date,
                 "current_value": round(current_value, 2) if current_value is not None else None,
                 "unrealized_gain": round(unrealized_gain, 2) if unrealized_gain is not None else None,
+                "scheme_xirr_pct": round(scheme_xirr * 100, 2) if scheme_xirr is not None else None,
+                "weight_pct": None,  # filled below, once total_current_value is known
+                "gain": round(scheme_gain, 2) if scheme_gain is not None else None,
+                "contribution_to_gain_pct": None,  # filled below, once total_gain is known
             }
         )
+
+    total_gain = total_realized_gain + total_unrealized_gain
+    for entry in per_scheme:
+        if entry["current_value"] is not None and total_current_value > 0:
+            entry["weight_pct"] = round((entry["current_value"] / total_current_value) * 100, 2)
+        if entry["gain"] is not None and total_gain != 0:
+            entry["contribution_to_gain_pct"] = round((entry["gain"] / total_gain) * 100, 2)
 
     portfolio_xirr = xirr(portfolio_cash_flows)
 
@@ -131,12 +174,13 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         "total_current_value": round(total_current_value, 2),
         "total_realized_gain": round(total_realized_gain, 2),
         "total_unrealized_gain": round(total_unrealized_gain, 2),
-        "total_gain": round(total_realized_gain + total_unrealized_gain, 2),
+        "total_gain": round(total_gain, 2),
         "portfolio_xirr_pct": round(portfolio_xirr * 100, 2) if portfolio_xirr is not None else None,
         "matched_scheme_count": len(per_scheme),
         "per_scheme": per_scheme,
         "unmatched_schemes": unmatched,
         "structure": _build_structure(valued_schemes),
+        "holding_period": _holding_period_summary(open_lot_days_values, realized_holding_days),
     }
 
 
@@ -168,6 +212,50 @@ def _allocation_breakdown(items: list[tuple[str, float]], total_value: float) ->
         for label, value in grouped_values.items()
     ]
     return sorted(breakdown, key=lambda b: b["value"], reverse=True)
+
+
+def _holding_period_bucket(days: int) -> str:
+    for label, max_days in _HOLDING_PERIOD_BUCKETS:
+        if max_days is None or days < max_days:
+            return label
+    return _HOLDING_PERIOD_BUCKETS[-1][0]
+
+
+def _holding_period_summary(open_lot_days_values: list[tuple[int, float]], realized_days: list[int]) -> dict:
+    """Portfolio Analysis §12: how long money has actually been held.
+    `open_lot_days_values`: (days held so far, current value) for every
+    still-open FIFO lot we could price — only lots whose scheme has NAV
+    data are included, so this can under-count if some holdings are
+    unpriced. `realized_days`: holding_period_days for every FIFO-realized
+    (sold/switched-out) lot consumption, across every matched scheme.
+    Every field is null/empty rather than a fabricated 0 when there's
+    nothing of that kind to summarize (e.g. nothing has ever been sold)."""
+    open_total_value = sum(v for _, v in open_lot_days_values)
+    weighted_avg_open_days = (
+        sum(days * v for days, v in open_lot_days_values) / open_total_value if open_total_value > 0 else None
+    )
+
+    bucket_values: dict[str, float] = {}
+    for days, value in open_lot_days_values:
+        label = _holding_period_bucket(days)
+        bucket_values[label] = bucket_values.get(label, 0.0) + value
+    open_value_by_bucket = [
+        {
+            "label": label,
+            "value": round(bucket_values[label], 2),
+            "weight_pct": round((bucket_values[label] / open_total_value) * 100, 2) if open_total_value > 0 else 0.0,
+        }
+        for label, _ in _HOLDING_PERIOD_BUCKETS
+        if label in bucket_values
+    ]
+
+    return {
+        "open_weighted_avg_days": round(weighted_avg_open_days) if weighted_avg_open_days is not None else None,
+        "open_value_by_bucket": open_value_by_bucket,
+        "realized_avg_days": round(statistics.mean(realized_days)) if realized_days else None,
+        "realized_median_days": round(statistics.median(realized_days)) if realized_days else None,
+        "realized_consumption_count": len(realized_days),
+    }
 
 
 def _build_structure(valued_schemes: list[tuple[str, str, str, float]]) -> dict | None:

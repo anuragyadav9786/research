@@ -25,6 +25,10 @@ export interface CASSchemeOverview {
   current_nav_date: string | null;
   current_value: number | null;
   unrealized_gain: number | null;
+  scheme_xirr_pct: number | null;
+  weight_pct: number | null;
+  gain: number | null;
+  contribution_to_gain_pct: number | null;
 }
 
 export interface CASUnmatchedScheme {
@@ -58,6 +62,20 @@ export interface CASPortfolioStructure {
   category_allocation: CASAllocationSlice[];
 }
 
+export interface CASHoldingPeriodBucket {
+  label: string;
+  value: number;
+  weight_pct: number;
+}
+
+export interface CASHoldingPeriodSummary {
+  open_weighted_avg_days: number | null;
+  open_value_by_bucket: CASHoldingPeriodBucket[];
+  realized_avg_days: number | null;
+  realized_median_days: number | null;
+  realized_consumption_count: number;
+}
+
 export interface CASOverviewResponse {
   total_invested: number;
   total_current_value: number;
@@ -69,6 +87,7 @@ export interface CASOverviewResponse {
   per_scheme: CASSchemeOverview[];
   unmatched_schemes: CASUnmatchedScheme[];
   structure: CASPortfolioStructure | null;
+  holding_period: CASHoldingPeriodSummary;
 }
 
 export interface CASParseResponse {

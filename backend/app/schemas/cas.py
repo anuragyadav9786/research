@@ -46,6 +46,20 @@ class CASSchemeOverview(BaseModel):
     current_nav_date: date | None
     current_value: float | None
     unrealized_gain: float | None
+    scheme_xirr_pct: float | None = Field(
+        None, description="This scheme's own money-weighted annualized return — null if it couldn't be solved"
+    )
+    weight_pct: float | None = Field(
+        None, description="This scheme's current_value as a % of total_current_value — null if unpriced"
+    )
+    gain: float | None = Field(
+        None,
+        description="realized_gain + unrealized_gain — null if this scheme still holds units we couldn't value, "
+        "which would otherwise understate the true figure",
+    )
+    contribution_to_gain_pct: float | None = Field(
+        None, description="This scheme's gain as a % of the portfolio's total_gain — null if gain or total_gain is unknown/zero"
+    )
 
 
 class CASUnmatchedScheme(BaseModel):
@@ -94,11 +108,36 @@ class CASPortfolioStructure(BaseModel):
     category_allocation: list[CASAllocationSlice]
 
 
+class CASHoldingPeriodBucket(BaseModel):
+    label: str = Field(..., description="e.g. '< 1 year', '1-3 years', '3-5 years', '5+ years'")
+    value: float = Field(..., description="Current rupee value of still-open lots in this bucket")
+    weight_pct: float
+
+
+class CASHoldingPeriodSummary(BaseModel):
+    """Portfolio Analysis §12: how long money has actually been held —
+    computed from FIFO lot accounting (analytics/cost_basis.py), never
+    from a scheme's overall start date, since different lots within the
+    same scheme can have very different ages. Only covers lots/
+    consumptions from matched, priced schemes; fields are null/empty
+    rather than a fabricated 0 when there's nothing of that kind to
+    summarize (e.g. nothing has ever been sold)."""
+
+    open_weighted_avg_days: int | None = Field(
+        None, description="Value-weighted average age, in days, of currently-held (unsold) lots"
+    )
+    open_value_by_bucket: list[CASHoldingPeriodBucket]
+    realized_avg_days: int | None = Field(None, description="Average holding period of every sold/switched-out lot")
+    realized_median_days: int | None = None
+    realized_consumption_count: int = Field(..., description="Number of FIFO lot consumptions realized_avg/median are over")
+
+
 class CASOverviewResponse(BaseModel):
-    """Portfolio Analysis §4/§5/§7/§8: invested capital vs. current
-    value, realized vs. unrealized gain, money-weighted (XIRR) return,
-    and portfolio structure (concentration + allocation) — computed from
-    the CAS's full transaction ledger, not just its stated closing
+    """Portfolio Analysis §4/§5/§7/§8/§12/§15: invested capital vs.
+    current value, realized vs. unrealized gain, money-weighted (XIRR)
+    return, portfolio structure (concentration + allocation), per-scheme
+    contribution to overall gain, and holding-period analysis — computed
+    from the CAS's full transaction ledger, not just its stated closing
     balances. Covers only ISIN-matched schemes; anything unmatched is
     listed, never silently folded into the totals."""
 
@@ -116,6 +155,7 @@ class CASOverviewResponse(BaseModel):
     structure: CASPortfolioStructure | None = Field(
         None, description="Null if no matched holding has a usable current value yet"
     )
+    holding_period: CASHoldingPeriodSummary
 
 
 class CASParseResponse(BaseModel):

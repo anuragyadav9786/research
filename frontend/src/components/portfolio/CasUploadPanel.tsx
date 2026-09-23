@@ -4,6 +4,8 @@ import { useState } from "react";
 
 import { ApiError, parseCasStatement } from "@/lib/api";
 import { formatDate, formatPct, formatRupees, signColorClass } from "@/lib/format";
+import { CasFundContribution } from "@/components/portfolio/CasFundContribution";
+import { CasHoldingPeriod } from "@/components/portfolio/CasHoldingPeriod";
 import { CasPortfolioStructure } from "@/components/portfolio/CasPortfolioStructure";
 import { Disclosure } from "@/components/fund/Disclosure";
 import { StatCard } from "@/components/fund/StatCard";
@@ -183,6 +185,12 @@ export function CasUploadPanel({
           )}
 
           {result.overview?.structure && <CasPortfolioStructure structure={result.overview.structure} />}
+
+          {result.overview && result.overview.per_scheme.length > 1 && (
+            <CasFundContribution perScheme={result.overview.per_scheme} />
+          )}
+
+          {result.overview?.holding_period && <CasHoldingPeriod holdingPeriod={result.overview.holding_period} />}
 
           {matchedCount > 0 && (
             <ul className="text-sm text-slate-300 space-y-1">

@@ -176,6 +176,12 @@ def test_parses_and_matches_a_holding_by_isin(test_scheme):
     assert scheme_overview["current_nav"] == pytest.approx(32.0)
     assert scheme_overview["current_value"] == pytest.approx(38.129 * 32.0, abs=0.01)
     assert scheme_overview["unrealized_gain"] == pytest.approx(38.129 * 32.0 - 999.95, abs=0.01)
+    # Sole matched, priced holding -> 100% weight and 100% of total gain.
+    assert scheme_overview["weight_pct"] == pytest.approx(100.0)
+    assert scheme_overview["gain"] == pytest.approx(38.129 * 32.0 - 999.95, abs=0.01)
+    assert scheme_overview["contribution_to_gain_pct"] == pytest.approx(100.0)
+    assert scheme_overview["scheme_xirr_pct"] is not None
+    assert scheme_overview["scheme_xirr_pct"] == pytest.approx(overview["portfolio_xirr_pct"], abs=0.01)
 
     assert overview["total_invested"] == pytest.approx(999.95)
     assert overview["total_current_value"] == pytest.approx(38.129 * 32.0, abs=0.01)
@@ -199,6 +205,18 @@ def test_parses_and_matches_a_holding_by_isin(test_scheme):
     assert structure["equity_style_allocation"] == [
         {"label": "Flexi Cap", "value": pytest.approx(38.129 * 32.0, abs=0.01), "weight_pct": pytest.approx(100.0)}
     ]
+
+    # One open lot (never redeemed), bought 2024-06-10, priced as of the
+    # scheme's own latest NAV date (2026-09-22) -> 834 days old, and no
+    # realized sales at all -- reported as an explicit absence, not 0.
+    holding_period = overview["holding_period"]
+    assert holding_period["open_weighted_avg_days"] == 834
+    assert holding_period["open_value_by_bucket"] == [
+        {"label": "1-3 years", "value": pytest.approx(38.129 * 32.0, abs=0.01), "weight_pct": pytest.approx(100.0)}
+    ]
+    assert holding_period["realized_avg_days"] is None
+    assert holding_period["realized_median_days"] is None
+    assert holding_period["realized_consumption_count"] == 0
 
 
 SECOND_TEST_AMC_NAME = "CAS Test Debt House"
@@ -302,6 +320,61 @@ def test_portfolio_structure_across_two_matched_holdings_in_different_amcs_and_a
 
     amc_allocation_labels = {slice_["label"] for slice_ in structure["amc_allocation"]}
     assert amc_allocation_labels == {TEST_AMC_NAME, SECOND_TEST_AMC_NAME}
+
+    # Both schemes are fully priced and both gained value -> weight_pct
+    # and contribution_to_gain_pct each partition cleanly to 100%.
+    by_isin = {s["isin"]: s for s in overview["per_scheme"]}
+    assert sum(s["weight_pct"] for s in by_isin.values()) == pytest.approx(100.0, abs=0.01)
+    assert sum(s["contribution_to_gain_pct"] for s in by_isin.values()) == pytest.approx(100.0, abs=0.01)
+    assert by_isin[TEST_ISIN]["weight_pct"] == pytest.approx((equity_value / total_value) * 100, abs=0.1)
+    assert by_isin[TEST_ISIN]["scheme_xirr_pct"] is not None
+    assert by_isin[SECOND_TEST_ISIN]["scheme_xirr_pct"] is not None
+
+
+REDEMPTION_CAS_LINES = [
+    "Consolidated Account Statement",
+    "01-Jan-2003 To 22-Sep-2026",
+    "PORTFOLIO SUMMARY",
+    "Date Transaction Amount Units Price Unit Balance",
+    "Test Fund House Mutual Fund",
+    "Folio No: 12345678 / 0    PAN: ABCDE1234F    KYC: OK PAN: OK",
+    "Test Investor",
+    f"900TESTGG-Test Fund House Flexi Cap Fund - Regular Plan - Growth (Non Demat) - ISIN: {TEST_ISIN}(Advisor: ARN-1)",
+    "Nominee 1: Jane Doe    Nominee 2:    Nominee 3:",
+    "Opening Unit Balance: 0.000",
+    "10-Jun-2024   Purchase    999.95    38.129    26.222    38.129",
+    "06-Feb-2025   Redemption    (500.00)    (20.000)    25.00    18.129",
+    "Closing Unit Balance: 18.129    NAV on 22-Sep-2026: INR 30.5    Total Cost Value: 475.00    Market Value on 22-Sep-2026: INR 553.00",
+    "Entry Load: Nil; Exit Load: Nil.",
+]
+
+
+def test_holding_period_reflects_a_realized_partial_redemption(test_scheme):
+    pdf_bytes = _pdf_with_lines(REDEMPTION_CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    overview = response.json()["overview"]
+
+    scheme_overview = overview["per_scheme"][0]
+    # 20 units, bought 10-Jun-2024 at 26.222/unit (999.95/38.129), sold
+    # 06-Feb-2025 at 25.00/unit -> a realized loss, FIFO-matched against
+    # the only lot available.
+    cost_per_unit = 999.95 / 38.129
+    assert scheme_overview["realized_gain"] == pytest.approx(20 * (25.00 - cost_per_unit), abs=0.01)
+    assert scheme_overview["remaining_units"] == pytest.approx(18.129)
+
+    holding_period = overview["holding_period"]
+    # The one redemption was held for exactly 241 days (10-Jun-2024 to
+    # 06-Feb-2025) -- with a single realized consumption, avg == median.
+    assert holding_period["realized_consumption_count"] == 1
+    assert holding_period["realized_avg_days"] == 241
+    assert holding_period["realized_median_days"] == 241
+    # The remaining 18.129 units are still the original lot, still open,
+    # so open-position holding period is unaffected by the redemption.
+    assert holding_period["open_weighted_avg_days"] == 834
 
 
 def test_missing_password_on_encrypted_pdf_returns_422():
