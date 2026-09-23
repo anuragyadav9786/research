@@ -29,6 +29,38 @@ class CASUnmatchedHolding(BaseModel):
     reason: str = Field(..., description="Why this holding couldn't be included, e.g. 'isin_not_found'")
 
 
+class CASPurchaseBehavior(BaseModel):
+    """Portfolio Analysis §13: this scheme's own purchase/NAV behavior —
+    how many purchases were made, lumpsum vs. SIP, over what span, and at
+    what NAV range. Purely descriptive: reports what happened, never a
+    judgment of whether it was good or bad timing. All fields are null
+    when this scheme has zero purchase-type transactions (e.g. every unit
+    came in via a switch-in), never a fabricated 0/₹0."""
+
+    purchase_count: int = Field(..., description="Total Purchase + SIP transactions")
+    sip_installment_count: int
+    lumpsum_count: int
+    first_purchase_date: date | None = None
+    latest_purchase_date: date | None = None
+    lowest_purchase_nav: float | None = Field(None, description="Lowest price actually paid (amount/units), across every purchase")
+    highest_purchase_nav: float | None = None
+    average_purchase_nav: float | None = Field(None, description="Amount-weighted average price paid across every purchase")
+
+
+class CASTransactionActivity(BaseModel):
+    """Portfolio Analysis §14: how often, and for how much, the investor
+    actually redeemed, switched, or otherwise transacted — one row per
+    transaction_type that occurred at least once across every matched
+    scheme. Purely descriptive: no framing of any category as good or bad."""
+
+    transaction_type: str = Field(
+        ..., description="PURCHASE | SIP | REDEMPTION | SWP | SWITCH_IN | SWITCH_OUT | STP_IN | STP_OUT | "
+        "DIVIDEND | DIVIDEND_REINVESTMENT | BONUS | REVERSAL | OTHER"
+    )
+    count: int
+    total_amount: float = Field(..., description="Sum of absolute transaction amounts of this type")
+
+
 class CASSchemeOverview(BaseModel):
     """One matched scheme's contribution to the portfolio-level overview
     — invested capital, cost basis, and current value, all from replaying
@@ -60,6 +92,7 @@ class CASSchemeOverview(BaseModel):
     contribution_to_gain_pct: float | None = Field(
         None, description="This scheme's gain as a % of the portfolio's total_gain — null if gain or total_gain is unknown/zero"
     )
+    purchase_behavior: CASPurchaseBehavior
 
 
 class CASUnmatchedScheme(BaseModel):
@@ -184,6 +217,9 @@ class CASOverviewResponse(BaseModel):
     )
     holding_period: CASHoldingPeriodSummary
     time_weighted_return: CASTimeWeightedReturn
+    transaction_activity: list[CASTransactionActivity] = Field(
+        ..., description="Breakdown of transaction count and total amount by type, across every matched scheme"
+    )
 
 
 class CASParseResponse(BaseModel):

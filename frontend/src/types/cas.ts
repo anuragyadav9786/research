@@ -13,6 +13,23 @@ export interface CASUnmatchedHolding {
   reason: string;
 }
 
+export interface CASPurchaseBehavior {
+  purchase_count: number;
+  sip_installment_count: number;
+  lumpsum_count: number;
+  first_purchase_date: string | null;
+  latest_purchase_date: string | null;
+  lowest_purchase_nav: number | null;
+  highest_purchase_nav: number | null;
+  average_purchase_nav: number | null;
+}
+
+export interface CASTransactionActivity {
+  transaction_type: string;
+  count: number;
+  total_amount: number;
+}
+
 export interface CASSchemeOverview {
   fund_id: number;
   scheme_name: string;
@@ -29,6 +46,7 @@ export interface CASSchemeOverview {
   weight_pct: number | null;
   gain: number | null;
   contribution_to_gain_pct: number | null;
+  purchase_behavior: CASPurchaseBehavior;
 }
 
 export interface CASUnmatchedScheme {
@@ -103,6 +121,7 @@ export interface CASOverviewResponse {
   structure: CASPortfolioStructure | null;
   holding_period: CASHoldingPeriodSummary;
   time_weighted_return: CASTimeWeightedReturn;
+  transaction_activity: CASTransactionActivity[];
 }
 
 export interface CASParseResponse {

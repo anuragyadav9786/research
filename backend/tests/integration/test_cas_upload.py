@@ -183,6 +183,24 @@ def test_parses_and_matches_a_holding_by_isin(test_scheme):
     assert scheme_overview["scheme_xirr_pct"] is not None
     assert scheme_overview["scheme_xirr_pct"] == pytest.approx(overview["portfolio_xirr_pct"], abs=0.01)
 
+    # A single lumpsum Purchase, no SIP installments.
+    purchase_behavior = scheme_overview["purchase_behavior"]
+    assert purchase_behavior["purchase_count"] == 1
+    assert purchase_behavior["lumpsum_count"] == 1
+    assert purchase_behavior["sip_installment_count"] == 0
+    assert purchase_behavior["first_purchase_date"] == "2024-06-10"
+    assert purchase_behavior["latest_purchase_date"] == "2024-06-10"
+    assert purchase_behavior["lowest_purchase_nav"] == pytest.approx(999.95 / 38.129, abs=1e-4)
+    assert purchase_behavior["highest_purchase_nav"] == pytest.approx(999.95 / 38.129, abs=1e-4)
+    assert purchase_behavior["average_purchase_nav"] == pytest.approx(999.95 / 38.129, abs=1e-4)
+
+    # One Purchase transaction, in the sole matched scheme -- the other
+    # holding's transactions are excluded entirely (unmatched).
+    activity = {row["transaction_type"]: row for row in overview["transaction_activity"]}
+    assert activity.keys() == {"PURCHASE"}
+    assert activity["PURCHASE"]["count"] == 1
+    assert activity["PURCHASE"]["total_amount"] == pytest.approx(999.95)
+
     assert overview["total_invested"] == pytest.approx(999.95)
     assert overview["total_current_value"] == pytest.approx(38.129 * 32.0, abs=0.01)
     assert overview["total_realized_gain"] == pytest.approx(0.0)
@@ -372,6 +390,18 @@ def test_holding_period_reflects_a_realized_partial_redemption(test_scheme):
     assert holding_period["realized_consumption_count"] == 1
     assert holding_period["realized_avg_days"] == 241
     assert holding_period["realized_median_days"] == 241
+
+    # One Purchase, one Redemption -- purchase_behavior only ever counts
+    # the Purchase (the redemption doesn't add a "purchase"), and
+    # transaction_activity shows both at the portfolio level.
+    purchase_behavior = scheme_overview["purchase_behavior"]
+    assert purchase_behavior["purchase_count"] == 1
+    assert purchase_behavior["first_purchase_date"] == purchase_behavior["latest_purchase_date"] == "2024-06-10"
+
+    activity = {row["transaction_type"]: row for row in overview["transaction_activity"]}
+    assert activity.keys() == {"PURCHASE", "REDEMPTION"}
+    assert activity["PURCHASE"] == {"transaction_type": "PURCHASE", "count": 1, "total_amount": pytest.approx(999.95)}
+    assert activity["REDEMPTION"] == {"transaction_type": "REDEMPTION", "count": 1, "total_amount": pytest.approx(500.0)}
     # The remaining 18.129 units are still the original lot, still open,
     # so open-position holding period is unaffected by the redemption.
     assert holding_period["open_weighted_avg_days"] == 834
@@ -480,11 +510,12 @@ def test_time_weighted_return_is_all_null_when_no_matched_scheme_has_nav_history
         files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
     )
     assert response.status_code == 200, response.text
+    overview = response.json()["overview"]
     # CAS_LINES's only holdings are TEST_ISIN (unmatched here, no fixture)
     # and an always-unmatched ISIN -- nothing is priced, so the
     # reconstruction reports its absence explicitly rather than a
     # misleading 0%.
-    twr = response.json()["overview"]["time_weighted_return"]
+    twr = overview["time_weighted_return"]
     assert twr == {
         "cumulative_twr_pct": None,
         "annualized_twr_pct": None,
@@ -498,6 +529,9 @@ def test_time_weighted_return_is_all_null_when_no_matched_scheme_has_nav_history
         "start_date": None,
         "end_date": None,
     }
+    # Nothing matched at all -> no matched-scheme transactions to break
+    # down, an empty list rather than a padded row of zeros.
+    assert overview["transaction_activity"] == []
 
 
 def test_missing_password_on_encrypted_pdf_returns_422():

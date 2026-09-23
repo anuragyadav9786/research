@@ -7,7 +7,9 @@ import { formatDate, formatPct, formatRupees, signColorClass } from "@/lib/forma
 import { CasFundContribution } from "@/components/portfolio/CasFundContribution";
 import { CasHoldingPeriod } from "@/components/portfolio/CasHoldingPeriod";
 import { CasPortfolioStructure } from "@/components/portfolio/CasPortfolioStructure";
+import { CasPurchaseBehavior } from "@/components/portfolio/CasPurchaseBehavior";
 import { CasTimeWeightedReturn } from "@/components/portfolio/CasTimeWeightedReturn";
+import { CasTransactionActivity } from "@/components/portfolio/CasTransactionActivity";
 import { Disclosure } from "@/components/fund/Disclosure";
 import { StatCard } from "@/components/fund/StatCard";
 import type { CASParseResponse } from "@/types/cas";
@@ -196,6 +198,10 @@ export function CasUploadPanel({
           )}
 
           {result.overview?.holding_period && <CasHoldingPeriod holdingPeriod={result.overview.holding_period} />}
+
+          {result.overview && <CasPurchaseBehavior perScheme={result.overview.per_scheme} />}
+
+          {result.overview && <CasTransactionActivity activity={result.overview.transaction_activity} />}
 
           {matchedCount > 0 && (
             <ul className="text-sm text-slate-300 space-y-1">

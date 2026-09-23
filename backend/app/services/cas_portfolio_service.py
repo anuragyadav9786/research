@@ -1,12 +1,13 @@
 """Builds the Portfolio Analysis Overview (invested capital, current
 value, realized/unrealized gain, portfolio XIRR, per-scheme contribution,
-holding-period analysis, and time-weighted return/volatility/drawdown)
-from a CAS's full parsed transaction ledger — Phases 1-4 of the larger
-Portfolio Analysis intelligence module (spec sections 4-5, 6, 12, 15).
-Only covers schemes matched to this platform's own fund catalog by ISIN
-(same matching cas_service.py already does for the manual-form pre-fill)
-— a scheme not in our catalog has no NAV history we can use to value it
-today, so it's reported as excluded, never guessed at.
+holding-period analysis, time-weighted return/volatility/drawdown, and
+purchase/redemption behavior) from a CAS's full parsed transaction ledger
+— Phases 1-5 of the larger Portfolio Analysis intelligence module (spec
+sections 4-5, 6, 12, 13, 14, 15). Only covers schemes matched to this
+platform's own fund catalog by ISIN (same matching cas_service.py already
+does for the manual-form pre-fill) — a scheme not in our catalog has no
+NAV history we can use to value it today, so it's reported as excluded,
+never guessed at.
 
 Cash-flow treatment (why this isn't "every transaction is a cash flow"):
 switches/STP move money between two schemes already inside this same
@@ -60,6 +61,27 @@ _HOLDING_PERIOD_BUCKETS: list[tuple[str, int | None]] = [
     ("5+ years", None),
 ]
 
+# Display order for the transaction-type activity breakdown -- external
+# cash in, then external cash out, then internal transfers, then
+# non-cash/other events. Any transaction_type the parser ever returns
+# that isn't listed here still appears (appended, unordered) rather than
+# silently dropped -- see _transaction_activity_summary.
+_TRANSACTION_TYPE_DISPLAY_ORDER = [
+    "PURCHASE",
+    "SIP",
+    "REDEMPTION",
+    "SWP",
+    "SWITCH_IN",
+    "SWITCH_OUT",
+    "STP_IN",
+    "STP_OUT",
+    "DIVIDEND",
+    "DIVIDEND_REINVESTMENT",
+    "BONUS",
+    "REVERSAL",
+    "OTHER",
+]
+
 
 def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
     by_isin: dict[str, list[CASTransaction]] = {}
@@ -101,6 +123,11 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
     # money the investor put in that day, negative = money taken out;
     # switches/STP excluded (internal, not a real external cash flow).
     priced_scheme_contributions: list[tuple[date, float]] = []
+    # Every transaction belonging to a MATCHED scheme (priced or not) —
+    # the basis for the portfolio-wide transaction-type activity
+    # breakdown, which needs no pricing at all, just a count of what
+    # actually happened.
+    matched_transactions: list[CASTransaction] = []
     total_invested = 0.0
     total_current_value = 0.0
     total_realized_gain = 0.0
@@ -113,6 +140,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
             continue
 
         variant, scheme = found
+        matched_transactions.extend(txns)
         cost_basis = apply_fifo([(t.transaction_date, t.units, t.amount) for t in txns])
         realized_holding_days.extend(c.holding_period_days for c in cost_basis.consumptions)
 
@@ -191,6 +219,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
                 "weight_pct": None,  # filled below, once total_current_value is known
                 "gain": round(scheme_gain, 2) if scheme_gain is not None else None,
                 "contribution_to_gain_pct": None,  # filled below, once total_gain is known
+                "purchase_behavior": _purchase_behavior_summary(txns),
             }
         )
 
@@ -216,6 +245,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         "structure": _build_structure(valued_schemes),
         "holding_period": _holding_period_summary(open_lot_days_values, realized_holding_days),
         "time_weighted_return": _time_weighted_return_summary(priced_scheme_value_series, priced_scheme_contributions),
+        "transaction_activity": _transaction_activity_summary(matched_transactions),
     }
 
 
@@ -364,6 +394,67 @@ def _time_weighted_return_summary(
         "start_date": start_date,
         "end_date": end_date,
     }
+
+
+def _purchase_behavior_summary(txns: list[CASTransaction]) -> dict:
+    """Portfolio Analysis §13: this scheme's own purchase/NAV behavior —
+    how many purchases were made, lumpsum vs. SIP, over what span, and at
+    what NAV range. Uses amount/units (not the transaction row's own
+    separately-reported Price column) for the price actually paid on each
+    purchase, the same convention analytics/cost_basis.py's cost-basis
+    already uses, so this never disagrees with the cost-basis figures
+    shown alongside it. Purely descriptive: reports what happened, not
+    whether it was good or bad timing."""
+    purchases = [t for t in txns if t.transaction_type in _OUTFLOW_TYPES]
+    if not purchases:
+        return {
+            "purchase_count": 0,
+            "sip_installment_count": 0,
+            "lumpsum_count": 0,
+            "first_purchase_date": None,
+            "latest_purchase_date": None,
+            "lowest_purchase_nav": None,
+            "highest_purchase_nav": None,
+            "average_purchase_nav": None,
+        }
+
+    prices_paid = [t.amount / t.units for t in purchases if t.units]
+    total_amount = sum(t.amount for t in purchases)
+    total_units = sum(t.units for t in purchases)
+    purchase_dates = [t.transaction_date for t in purchases]
+
+    return {
+        "purchase_count": len(purchases),
+        "sip_installment_count": sum(1 for t in purchases if t.transaction_type == "SIP"),
+        "lumpsum_count": sum(1 for t in purchases if t.transaction_type == "PURCHASE"),
+        "first_purchase_date": min(purchase_dates),
+        "latest_purchase_date": max(purchase_dates),
+        "lowest_purchase_nav": round(min(prices_paid), 4) if prices_paid else None,
+        "highest_purchase_nav": round(max(prices_paid), 4) if prices_paid else None,
+        "average_purchase_nav": round(total_amount / total_units, 4) if total_units else None,
+    }
+
+
+def _transaction_activity_summary(matched_transactions: list[CASTransaction]) -> list[dict]:
+    """Portfolio Analysis §14: how often, and for how much, the investor
+    actually redeemed, switched, or otherwise transacted — a breakdown by
+    transaction_type across every MATCHED scheme (pricing not required,
+    since this only counts what happened, not what it's now worth).
+    Purely descriptive: no framing of any category as good or bad, and no
+    row for a type that never occurred, rather than a padded list of
+    zeros."""
+    totals: dict[str, dict] = {}
+    for t in matched_transactions:
+        bucket = totals.setdefault(t.transaction_type, {"count": 0, "total_amount": 0.0})
+        bucket["count"] += 1
+        bucket["total_amount"] += abs(t.amount)
+
+    ordered_types = _TRANSACTION_TYPE_DISPLAY_ORDER + [t for t in totals if t not in _TRANSACTION_TYPE_DISPLAY_ORDER]
+    return [
+        {"transaction_type": ttype, "count": totals[ttype]["count"], "total_amount": round(totals[ttype]["total_amount"], 2)}
+        for ttype in ordered_types
+        if ttype in totals
+    ]
 
 
 def _build_structure(valued_schemes: list[tuple[str, str, str, float]]) -> dict | None:
