@@ -11,6 +11,7 @@ import { CasInvestmentTiming } from "@/components/portfolio/CasInvestmentTiming"
 import { CasPortfolioStructure } from "@/components/portfolio/CasPortfolioStructure";
 import { CasPurchaseBehavior } from "@/components/portfolio/CasPurchaseBehavior";
 import { CasSipConsistency } from "@/components/portfolio/CasSipConsistency";
+import { PortfolioAnalysisResult } from "@/components/portfolio/PortfolioAnalysisResult";
 import { CasTimeWeightedReturn } from "@/components/portfolio/CasTimeWeightedReturn";
 import { CasTransactionActivity } from "@/components/portfolio/CasTransactionActivity";
 import { Disclosure } from "@/components/fund/Disclosure";
@@ -213,6 +214,15 @@ export function CasUploadPanel({
           {result.overview && <CasTransactionActivity activity={result.overview.transaction_activity} />}
 
           {result.overview?.investment_timing && <CasInvestmentTiming timing={result.overview.investment_timing} />}
+
+          {result.overview?.look_through_analysis && (
+            <div className="border-t border-slate-900 pt-4">
+              <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">
+                Look-Through Analysis (Current Holdings)
+              </h3>
+              <PortfolioAnalysisResult result={result.overview.look_through_analysis} />
+            </div>
+          )}
 
           {matchedCount > 0 && (
             <ul className="text-sm text-slate-300 space-y-1">

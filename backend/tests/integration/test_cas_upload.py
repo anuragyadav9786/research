@@ -17,8 +17,8 @@ from datetime import date
 
 from app.core.database import SessionLocal
 from app.main import app
-from app.models.reference import AMC, FundFamily, Scheme, SchemeVariant
-from app.models.timeseries import DataSource, NavHistory
+from app.models.reference import AMC, FundFamily, Scheme, SchemeVariant, Security, Sector
+from app.models.timeseries import DataSource, NavHistory, PortfolioHolding, PortfolioSnapshot
 
 client = TestClient(app)
 
@@ -710,6 +710,116 @@ def test_investment_timing_reports_a_purchase_outside_every_known_regime_as_uncl
     assert timing["total_classified_invested_amount"] == pytest.approx(0.0)
     assert timing["unclassified_purchase_count"] == 1
     assert timing["unclassified_invested_amount"] == pytest.approx(999.95)
+
+
+LOOK_THROUGH_TEST_ISIN = "INF000CAS006"
+
+LOOK_THROUGH_CAS_LINES = [
+    "Consolidated Account Statement",
+    "01-Jan-2003 To 22-Sep-2026",
+    "PORTFOLIO SUMMARY",
+    "Date Transaction Amount Units Price Unit Balance",
+    "Test Fund House Mutual Fund",
+    "Folio No: 12345678 / 0    PAN: ABCDE1234F    KYC: OK PAN: OK",
+    "Test Investor",
+    f"900TESTGG-Test Fund House Flexi Cap Fund - Regular Plan - Growth (Non Demat) - ISIN: {LOOK_THROUGH_TEST_ISIN}(Advisor: ARN-1)",
+    "Nominee 1: Jane Doe    Nominee 2:    Nominee 3:",
+    "Opening Unit Balance: 0.000",
+    "10-Jun-2024   Purchase    999.95    38.129    26.222    38.129",
+    "Closing Unit Balance: 38.129    NAV on 22-Sep-2026: INR 30.5    Total Cost Value: 999.95    Market Value on 22-Sep-2026: INR 1163.94",
+    "Entry Load: Nil; Exit Load: Nil.",
+]
+
+
+@pytest.fixture
+def look_through_test_scheme(db):
+    amc = AMC(name="CAS Test Look-Through Fund House")
+    db.add(amc)
+    db.flush()
+    family = FundFamily(amc_id=amc.id, name="CAS Test Look-Through Fund House")
+    db.add(family)
+    db.flush()
+    scheme = Scheme(fund_family_id=family.id, name="CAS Test Look-Through Fund", category="Equity - Flexi Cap")
+    db.add(scheme)
+    db.flush()
+    variant = SchemeVariant(scheme_id=scheme.id, plan="regular", option="growth", isin=LOOK_THROUGH_TEST_ISIN)
+    db.add(variant)
+    db.flush()
+
+    source = db.query(DataSource).filter(DataSource.source_type == "manual").first()
+    if source is None:
+        source = DataSource(name="TEST FIXTURE SOURCE", source_type="manual")
+        db.add(source)
+        db.flush()
+    db.add(NavHistory(scheme_variant_id=variant.id, date=date(2026, 9, 22), nav=32.0, source_id=source.id))
+
+    tech = Sector(name="CAS Test Technology Sector")
+    financials = Sector(name="CAS Test Financials Sector")
+    db.add_all([tech, financials])
+    db.flush()
+    security_a = Security(isin="INF000SECA0001", name="CAS Test Security A", sector_id=tech.id, market_cap_category="large_cap")
+    security_b = Security(isin="INF000SECB0001", name="CAS Test Security B", sector_id=financials.id, market_cap_category="mid_cap")
+    db.add_all([security_a, security_b])
+    db.flush()
+
+    snapshot = PortfolioSnapshot(scheme_id=scheme.id, as_of_date=date(2026, 9, 1), source_id=source.id)
+    db.add(snapshot)
+    db.flush()
+    db.add_all([
+        PortfolioHolding(snapshot_id=snapshot.id, security_id=security_a.id, weight_pct=60.0),
+        PortfolioHolding(snapshot_id=snapshot.id, security_id=security_b.id, weight_pct=40.0),
+    ])
+    db.commit()
+
+    yield scheme
+
+    db.query(PortfolioHolding).filter(PortfolioHolding.snapshot_id == snapshot.id).delete()
+    db.query(PortfolioSnapshot).filter(PortfolioSnapshot.id == snapshot.id).delete()
+    db.query(Security).filter(Security.id.in_([security_a.id, security_b.id])).delete()
+    db.query(Sector).filter(Sector.id.in_([tech.id, financials.id])).delete()
+    db.query(NavHistory).filter(NavHistory.scheme_variant_id == variant.id).delete()
+    db.query(SchemeVariant).filter(SchemeVariant.scheme_id == scheme.id).delete()
+    db.query(Scheme).filter(Scheme.id == scheme.id).delete()
+    db.query(FundFamily).filter(FundFamily.id == family.id).delete()
+    db.query(AMC).filter(AMC.id == amc.id).delete()
+    db.commit()
+
+
+def test_look_through_analysis_reuses_the_multi_fund_engine(look_through_test_scheme):
+    pdf_bytes = _pdf_with_lines(LOOK_THROUGH_CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    look_through = response.json()["overview"]["look_through_analysis"]
+
+    assert look_through is not None
+    assert len(look_through["funds"]) == 1
+    assert look_through["funds"][0]["weight_pct"] == pytest.approx(100.0)
+
+    # Sole holding at 100% weight -> combined sector allocation is exactly
+    # this scheme's own disclosed 60/40 split, unchanged by any blending.
+    sector_by_name = {s["label"]: s["weight_pct"] for s in look_through["sector_allocation"]}
+    assert sector_by_name["CAS Test Technology Sector"] == pytest.approx(60.0)
+    assert sector_by_name["CAS Test Financials Sector"] == pytest.approx(40.0)
+
+    top_holdings = {h["security_name"]: h["effective_weight_pct"] for h in look_through["combined_top_holdings"]}
+    assert top_holdings["CAS Test Security A"] == pytest.approx(60.0)
+    assert top_holdings["CAS Test Security B"] == pytest.approx(40.0)
+
+    # A single fund has no pairs to compare -- overlap is structurally empty.
+    assert look_through["pairwise_overlap"] == []
+
+
+def test_look_through_analysis_is_null_when_nothing_is_currently_valued():
+    pdf_bytes = _pdf_with_lines(CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["overview"]["look_through_analysis"] is None
 
 
 def test_missing_password_on_encrypted_pdf_returns_422():

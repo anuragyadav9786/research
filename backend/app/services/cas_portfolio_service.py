@@ -2,9 +2,10 @@
 value, realized/unrealized gain, portfolio XIRR, per-scheme contribution,
 holding-period analysis, time-weighted return/volatility/drawdown,
 purchase/redemption behavior, SIP consistency, investment timing vs.
-market conditions, investor behavior, and portfolio complexity) from a
-CAS's full parsed transaction ledger — Phases 1-7 of the larger Portfolio
-Analysis intelligence module (spec sections 4-5, 6, 12, 13, 14, 15).
+market conditions, investor behavior, portfolio complexity, and
+look-through sector/style/overlap analysis) from a CAS's full parsed
+transaction ledger — Phases 1-8 of the larger Portfolio Analysis
+intelligence module (spec sections 4-5, 6, 7, 8, 11, 12, 13, 14, 15).
 Only covers schemes matched to this platform's own fund catalog by ISIN
 (same matching cas_service.py already does for the manual-form pre-fill)
 — a scheme not in our catalog has no NAV history we can use to value it
@@ -60,13 +61,18 @@ from analytics.portfolio_valuation import (
     time_weighted_return,
     units_held_series,
 )
+from analytics.returns import returns_series
 from analytics.risk import annualized_volatility
 from analytics.xirr import xirr
+from app.core.config import get_settings
 from app.models.reference import MarketRegime, Scheme, SchemeVariant
-from app.repositories import fund_repository, market_regime_repository
+from app.repositories import fund_repository, market_regime_repository, portfolio_repository
 from app.schemas.market_regime import METHODOLOGY_NOTE as MARKET_REGIME_METHODOLOGY_NOTE
+from app.services import portfolio_analysis_service
 from data_pipeline.normalization.cas_parser import CASTransaction
 from data_pipeline.normalization.category_classification import classify_asset_class, classify_equity_style
+
+_UNCLASSIFIED_LABEL = "unclassified"
 
 # Real external cash leaving the investor's pocket into a fund.
 _OUTFLOW_TYPES = {"PURCHASE", "SIP"}
@@ -150,6 +156,11 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
     # breakdown, which needs no pricing at all, just a count of what
     # actually happened.
     matched_transactions: list[CASTransaction] = []
+    # (scheme, nav_series) for every scheme with current_value > 0 --
+    # same scope as valued_schemes, kept as full objects (not just the
+    # name/amc/category tuple) since the look-through analysis below
+    # needs the scheme's own id and its already-fetched NAV series.
+    valued_scheme_objects: dict[int, tuple[Scheme, pd.Series]] = {}
     total_invested = 0.0
     total_current_value = 0.0
     total_realized_gain = 0.0
@@ -189,6 +200,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
             total_unrealized_gain += unrealized_gain
             if current_value > 0:
                 valued_schemes.append((scheme.name, scheme.fund_family.amc.name, scheme.category, current_value))
+                valued_scheme_objects[scheme.id] = (scheme, nav_series)
             if latest_nav_date is not None:
                 open_lot_days_values.extend(
                     ((latest_nav_date - lot.purchase_date).days, lot.units * latest_nav) for lot in cost_basis.open_lots
@@ -272,6 +284,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         "investment_timing": _investment_timing_summary(matched_transactions, market_regime_repository.list_regimes(db)),
         "investor_behavior": _investor_behavior_summary(matched_transactions, total_invested),
         "complexity": _portfolio_complexity_summary(valued_schemes, matched_transactions),
+        "look_through_analysis": _look_through_analysis_summary(db, per_scheme, valued_scheme_objects),
     }
 
 
@@ -681,6 +694,64 @@ def _portfolio_complexity_summary(
         "complexity_score": complexity_score,
         "complexity_label": complexity_label,
     }
+
+
+def _look_through_analysis_summary(
+    db: Session, per_scheme: list[dict], valued_scheme_objects: dict[int, tuple[Scheme, pd.Series]]
+) -> dict | None:
+    """Portfolio Analysis §8/§11 (sector/style exposure + fund overlap):
+    reuses the EXACT SAME multi-fund analysis engine the manual "Use these
+    holdings -> Analyse Portfolio" flow already calls (app/services/
+    portfolio_analysis_service.py, POST /api/portfolio/analyse) — combined
+    top holdings, sector/market-cap allocation, concentration, pairwise
+    overlap, correlation, portfolio risk and drawdown — computed
+    automatically here from the CAS's own current holdings and weights,
+    rather than requiring a second manual step to see it. Zero new
+    analytics: this only gathers each scheme's disclosed holdings and NAV
+    return series (the same repository calls that endpoint makes) and
+    hands them to that same function.
+
+    Scoped to currently-held (current_value > 0), priced, matched schemes
+    only — the same basis as Portfolio Structure and Complexity above, so
+    all three sections describe the same "your portfolio today." None if
+    there are no such schemes (nothing to combine), rather than an
+    all-empty-but-present breakdown."""
+    if not valued_scheme_objects:
+        return None
+
+    fund_weights_pct = {
+        entry["fund_id"]: entry["weight_pct"] for entry in per_scheme if entry["weight_pct"] is not None
+    }
+    fund_names = {fund_id: scheme.name for fund_id, (scheme, _nav_series) in valued_scheme_objects.items()}
+
+    per_fund_security_weights: dict[int, dict[str, float]] = {}
+    per_fund_sector_weights: dict[int, dict[str, float]] = {}
+    per_fund_mktcap_weights: dict[int, dict[str, float]] = {}
+    per_fund_returns: dict[int, pd.Series] = {}
+
+    for fund_id, (scheme, nav_series) in valued_scheme_objects.items():
+        snapshot = portfolio_repository.get_latest_snapshot(db, scheme.id)
+        if snapshot is not None:
+            holdings = portfolio_repository.get_holdings(db, snapshot.id)
+            per_fund_security_weights[fund_id] = {h.security_name: h.weight_pct for h in holdings}
+            per_fund_sector_weights[fund_id] = group_weights(
+                [(h.sector_name or _UNCLASSIFIED_LABEL, h.weight_pct) for h in holdings]
+            )
+            per_fund_mktcap_weights[fund_id] = group_weights(
+                [(h.market_cap_category or _UNCLASSIFIED_LABEL, h.weight_pct) for h in holdings]
+            )
+        if not nav_series.empty:
+            per_fund_returns[fund_id] = returns_series(nav_series)
+
+    return portfolio_analysis_service.compute_portfolio_analysis(
+        fund_names=fund_names,
+        fund_weights_pct=fund_weights_pct,
+        per_fund_security_weights=per_fund_security_weights,
+        per_fund_sector_weights=per_fund_sector_weights,
+        per_fund_mktcap_weights=per_fund_mktcap_weights,
+        per_fund_returns=per_fund_returns,
+        risk_free_rate_annual=get_settings().risk_free_rate,
+    )
 
 
 def _build_structure(valued_schemes: list[tuple[str, str, str, float]]) -> dict | None:

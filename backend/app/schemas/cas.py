@@ -8,6 +8,7 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from app.schemas.market_regime import METHODOLOGY_NOTE as MARKET_REGIME_METHODOLOGY_NOTE
+from app.schemas.portfolio_analysis import PortfolioAnalysisResponse
 
 CAS_DISCLAIMER = (
     "Holdings and values are read directly from your uploaded statement as of the date it "
@@ -313,6 +314,12 @@ class CASOverviewResponse(BaseModel):
     investment_timing: CASInvestmentTiming
     investor_behavior: CASInvestorBehavior
     complexity: CASPortfolioComplexity
+    look_through_analysis: PortfolioAnalysisResponse | None = Field(
+        None,
+        description="Combined sector/market-cap allocation, concentration, pairwise fund overlap, correlation, and "
+        "portfolio risk/drawdown across current holdings — the exact same engine POST /api/portfolio/analyse uses. "
+        "Null if no matched scheme currently has a usable value.",
+    )
 
 
 class CASParseResponse(BaseModel):

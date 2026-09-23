@@ -1,3 +1,5 @@
+import type { PortfolioAnalysisResponse } from "@/types/portfolioAnalysis";
+
 export interface CASMatchedHolding {
   fund_id: number;
   scheme_name: string;
@@ -172,6 +174,7 @@ export interface CASOverviewResponse {
   investment_timing: CASInvestmentTiming;
   investor_behavior: CASInvestorBehavior;
   complexity: CASPortfolioComplexity;
+  look_through_analysis: PortfolioAnalysisResponse | null;
 }
 
 export interface CASParseResponse {
