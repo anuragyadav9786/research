@@ -1,13 +1,23 @@
 """Builds the Portfolio Analysis Overview (invested capital, current
 value, realized/unrealized gain, portfolio XIRR, per-scheme contribution,
-holding-period analysis, time-weighted return/volatility/drawdown, and
-purchase/redemption behavior) from a CAS's full parsed transaction ledger
-— Phases 1-5 of the larger Portfolio Analysis intelligence module (spec
-sections 4-5, 6, 12, 13, 14, 15). Only covers schemes matched to this
-platform's own fund catalog by ISIN (same matching cas_service.py already
-does for the manual-form pre-fill) — a scheme not in our catalog has no
-NAV history we can use to value it today, so it's reported as excluded,
+holding-period analysis, time-weighted return/volatility/drawdown,
+purchase/redemption behavior, SIP consistency, and investment timing vs.
+market conditions) from a CAS's full parsed transaction ledger — Phases
+1-6 of the larger Portfolio Analysis intelligence module (spec sections
+4-5, 6, 12, 13, 14, 15). Only covers schemes matched to this platform's
+own fund catalog by ISIN (same matching cas_service.py already does for
+the manual-form pre-fill) — a scheme not in our catalog has no NAV
+history we can use to value it today, so it's reported as excluded,
 never guessed at.
+
+Investment-timing note: the market regimes used to classify WHEN a
+purchase happened (see _investment_timing_summary) are this platform's
+own illustrative sample-data date windows, not verified real-world market
+classifications — same caveat, and same METHODOLOGY_NOTE, as the
+single-fund Market-Cycle Behaviour Engine (app/services/
+market_regime_service.py) already carries. A purchase whose date falls
+outside every known regime window is reported as unclassified, never
+guessed into the nearest one.
 
 Cash-flow treatment (why this isn't "every transaction is a cash flow"):
 switches/STP move money between two schemes already inside this same
@@ -41,8 +51,9 @@ from analytics.portfolio_valuation import (
 )
 from analytics.risk import annualized_volatility
 from analytics.xirr import xirr
-from app.models.reference import Scheme, SchemeVariant
-from app.repositories import fund_repository
+from app.models.reference import MarketRegime, Scheme, SchemeVariant
+from app.repositories import fund_repository, market_regime_repository
+from app.schemas.market_regime import METHODOLOGY_NOTE as MARKET_REGIME_METHODOLOGY_NOTE
 from data_pipeline.normalization.cas_parser import CASTransaction
 from data_pipeline.normalization.category_classification import classify_asset_class, classify_equity_style
 
@@ -220,6 +231,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
                 "gain": round(scheme_gain, 2) if scheme_gain is not None else None,
                 "contribution_to_gain_pct": None,  # filled below, once total_gain is known
                 "purchase_behavior": _purchase_behavior_summary(txns),
+                "sip_consistency": _sip_consistency_summary(txns),
             }
         )
 
@@ -246,6 +258,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         "holding_period": _holding_period_summary(open_lot_days_values, realized_holding_days),
         "time_weighted_return": _time_weighted_return_summary(priced_scheme_value_series, priced_scheme_contributions),
         "transaction_activity": _transaction_activity_summary(matched_transactions),
+        "investment_timing": _investment_timing_summary(matched_transactions, market_regime_repository.list_regimes(db)),
     }
 
 
@@ -432,6 +445,107 @@ def _purchase_behavior_summary(txns: list[CASTransaction]) -> dict:
         "lowest_purchase_nav": round(min(prices_paid), 4) if prices_paid else None,
         "highest_purchase_nav": round(max(prices_paid), 4) if prices_paid else None,
         "average_purchase_nav": round(total_amount / total_units, 4) if total_units else None,
+    }
+
+
+def _sip_consistency_summary(txns: list[CASTransaction]) -> dict | None:
+    """Portfolio Analysis §13: how regularly this scheme's SIP installments
+    actually arrived — purely from the gaps between consecutive
+    installment dates, never from an assumed "should be monthly" cadence
+    (the CAS itself doesn't state the registered SIP frequency, so
+    guessing one and calling installments "missed" against it would be
+    fabricating a claim we can't verify). None if this scheme has no SIP
+    installments at all, so a lumpsum-only scheme doesn't get a
+    misleadingly empty SIP card.
+
+    `gap_consistency_pct`: 100 * (1 - min(coefficient_of_variation, 1)),
+    where coefficient_of_variation = population_stdev(gaps) / mean(gaps).
+    100 = every gap was identical; 0 = gaps varied by as much as (or more
+    than) their own average. A simple, fully transparent dispersion
+    measure — not a standard finance metric, and not a judgment of good
+    or bad investing behavior."""
+    sip_dates = sorted(t.transaction_date for t in txns if t.transaction_type == "SIP")
+    if not sip_dates:
+        return None
+
+    installment_count = len(sip_dates)
+    if installment_count < 2:
+        return {
+            "installment_count": installment_count,
+            "first_installment_date": sip_dates[0],
+            "latest_installment_date": sip_dates[0],
+            "average_gap_days": None,
+            "min_gap_days": None,
+            "max_gap_days": None,
+            "gap_consistency_pct": None,
+        }
+
+    gaps = [(sip_dates[i + 1] - sip_dates[i]).days for i in range(installment_count - 1)]
+    mean_gap = statistics.mean(gaps)
+    coefficient_of_variation = (statistics.pstdev(gaps) / mean_gap) if mean_gap > 0 else 0.0
+
+    return {
+        "installment_count": installment_count,
+        "first_installment_date": sip_dates[0],
+        "latest_installment_date": sip_dates[-1],
+        "average_gap_days": round(mean_gap, 1),
+        "min_gap_days": min(gaps),
+        "max_gap_days": max(gaps),
+        "gap_consistency_pct": round(max(0.0, 1.0 - min(coefficient_of_variation, 1.0)) * 100, 1),
+    }
+
+
+def _matching_regime(purchase_date: date, regimes: list[MarketRegime]) -> MarketRegime | None:
+    for regime in regimes:
+        if purchase_date >= regime.start_date and (regime.end_date is None or purchase_date <= regime.end_date):
+            return regime
+    return None
+
+
+def _investment_timing_summary(matched_transactions: list[CASTransaction], regimes: list[MarketRegime]) -> dict:
+    """Portfolio Analysis §14: how much money went in during each known
+    market regime (bull/correction/high-volatility/etc.) — purely
+    descriptive, never a claim about whether the timing was good or bad.
+    Regimes come from this platform's own market_regimes reference table,
+    the same source and same illustrative-sample-data caveat
+    (`methodology_note`) the single-fund Market-Cycle Behaviour Engine
+    already carries — see this module's own docstring. A purchase dated
+    outside every known regime window is reported separately as
+    unclassified, never guessed into the nearest one."""
+    purchases = [t for t in matched_transactions if t.transaction_type in _OUTFLOW_TYPES]
+
+    by_regime: dict[int, dict] = {}
+    unclassified_amount = 0.0
+    unclassified_count = 0
+
+    for t in purchases:
+        regime = _matching_regime(t.transaction_date, regimes)
+        if regime is None:
+            unclassified_amount += t.amount
+            unclassified_count += 1
+            continue
+        bucket = by_regime.setdefault(
+            regime.id, {"regime_name": regime.name, "regime_type": regime.regime_type, "invested_amount": 0.0, "purchase_count": 0}
+        )
+        bucket["invested_amount"] += t.amount
+        bucket["purchase_count"] += 1
+
+    total_classified = sum(b["invested_amount"] for b in by_regime.values())
+    regime_breakdown = [
+        {
+            **{k: v for k, v in bucket.items() if k != "invested_amount"},
+            "invested_amount": round(bucket["invested_amount"], 2),
+            "weight_pct": round((bucket["invested_amount"] / total_classified) * 100, 2) if total_classified > 0 else 0.0,
+        }
+        for bucket in sorted(by_regime.values(), key=lambda b: b["invested_amount"], reverse=True)
+    ]
+
+    return {
+        "regime_breakdown": regime_breakdown,
+        "total_classified_invested_amount": round(total_classified, 2),
+        "unclassified_invested_amount": round(unclassified_amount, 2),
+        "unclassified_purchase_count": unclassified_count,
+        "methodology_note": MARKET_REGIME_METHODOLOGY_NOTE,
     }
 
 

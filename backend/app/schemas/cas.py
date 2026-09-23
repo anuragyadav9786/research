@@ -7,6 +7,8 @@ from datetime import date
 
 from pydantic import BaseModel, Field
 
+from app.schemas.market_regime import METHODOLOGY_NOTE as MARKET_REGIME_METHODOLOGY_NOTE
+
 CAS_DISCLAIMER = (
     "Holdings and values are read directly from your uploaded statement as of the date it "
     "was generated — they are not refreshed live and may not reflect transactions since then. "
@@ -61,6 +63,51 @@ class CASTransactionActivity(BaseModel):
     total_amount: float = Field(..., description="Sum of absolute transaction amounts of this type")
 
 
+class CASSipConsistency(BaseModel):
+    """Portfolio Analysis §13: how regularly this scheme's SIP installments
+    actually arrived, purely from the gaps between installment dates —
+    never against an assumed "should be monthly" cadence the CAS itself
+    doesn't state. Null gap fields with a single installment (nothing to
+    compare it against yet), never a fabricated 0."""
+
+    installment_count: int
+    first_installment_date: date | None = None
+    latest_installment_date: date | None = None
+    average_gap_days: float | None = None
+    min_gap_days: int | None = None
+    max_gap_days: int | None = None
+    gap_consistency_pct: float | None = Field(
+        None,
+        description="100 * (1 - min(coefficient_of_variation_of_gaps, 1)); 100 = every gap identical, "
+        "0 = gaps varied by as much as their own average. A dispersion measure, not a finance ratio or a judgment.",
+    )
+
+
+class CASRegimeInvestment(BaseModel):
+    regime_name: str
+    regime_type: str
+    invested_amount: float
+    purchase_count: int
+    weight_pct: float = Field(..., description="Share of classified (not total) invested amount in this regime")
+
+
+class CASInvestmentTiming(BaseModel):
+    """Portfolio Analysis §14: how much money went in during each known
+    market regime — purely descriptive, never a claim about whether the
+    timing was good or bad. See `methodology_note` for the same
+    illustrative-sample-data caveat the single-fund Market-Cycle
+    Behaviour Engine already carries; a purchase outside every known
+    regime window is counted as unclassified, never guessed."""
+
+    regime_breakdown: list[CASRegimeInvestment]
+    total_classified_invested_amount: float
+    unclassified_invested_amount: float = Field(
+        ..., description="Purchases whose date falls outside every known regime window"
+    )
+    unclassified_purchase_count: int
+    methodology_note: str = MARKET_REGIME_METHODOLOGY_NOTE
+
+
 class CASSchemeOverview(BaseModel):
     """One matched scheme's contribution to the portfolio-level overview
     — invested capital, cost basis, and current value, all from replaying
@@ -93,6 +140,7 @@ class CASSchemeOverview(BaseModel):
         None, description="This scheme's gain as a % of the portfolio's total_gain — null if gain or total_gain is unknown/zero"
     )
     purchase_behavior: CASPurchaseBehavior
+    sip_consistency: CASSipConsistency | None = Field(None, description="Null if this scheme has no SIP installments")
 
 
 class CASUnmatchedScheme(BaseModel):
@@ -220,6 +268,7 @@ class CASOverviewResponse(BaseModel):
     transaction_activity: list[CASTransactionActivity] = Field(
         ..., description="Breakdown of transaction count and total amount by type, across every matched scheme"
     )
+    investment_timing: CASInvestmentTiming
 
 
 class CASParseResponse(BaseModel):

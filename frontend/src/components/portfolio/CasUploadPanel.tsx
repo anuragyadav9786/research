@@ -6,8 +6,10 @@ import { ApiError, parseCasStatement } from "@/lib/api";
 import { formatDate, formatPct, formatRupees, signColorClass } from "@/lib/format";
 import { CasFundContribution } from "@/components/portfolio/CasFundContribution";
 import { CasHoldingPeriod } from "@/components/portfolio/CasHoldingPeriod";
+import { CasInvestmentTiming } from "@/components/portfolio/CasInvestmentTiming";
 import { CasPortfolioStructure } from "@/components/portfolio/CasPortfolioStructure";
 import { CasPurchaseBehavior } from "@/components/portfolio/CasPurchaseBehavior";
+import { CasSipConsistency } from "@/components/portfolio/CasSipConsistency";
 import { CasTimeWeightedReturn } from "@/components/portfolio/CasTimeWeightedReturn";
 import { CasTransactionActivity } from "@/components/portfolio/CasTransactionActivity";
 import { Disclosure } from "@/components/fund/Disclosure";
@@ -201,7 +203,11 @@ export function CasUploadPanel({
 
           {result.overview && <CasPurchaseBehavior perScheme={result.overview.per_scheme} />}
 
+          {result.overview && <CasSipConsistency perScheme={result.overview.per_scheme} />}
+
           {result.overview && <CasTransactionActivity activity={result.overview.transaction_activity} />}
+
+          {result.overview?.investment_timing && <CasInvestmentTiming timing={result.overview.investment_timing} />}
 
           {matchedCount > 0 && (
             <ul className="text-sm text-slate-300 space-y-1">

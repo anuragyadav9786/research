@@ -30,6 +30,16 @@ export interface CASTransactionActivity {
   total_amount: number;
 }
 
+export interface CASSipConsistency {
+  installment_count: number;
+  first_installment_date: string | null;
+  latest_installment_date: string | null;
+  average_gap_days: number | null;
+  min_gap_days: number | null;
+  max_gap_days: number | null;
+  gap_consistency_pct: number | null;
+}
+
 export interface CASSchemeOverview {
   fund_id: number;
   scheme_name: string;
@@ -47,6 +57,7 @@ export interface CASSchemeOverview {
   gain: number | null;
   contribution_to_gain_pct: number | null;
   purchase_behavior: CASPurchaseBehavior;
+  sip_consistency: CASSipConsistency | null;
 }
 
 export interface CASUnmatchedScheme {
@@ -108,6 +119,22 @@ export interface CASTimeWeightedReturn {
   end_date: string | null;
 }
 
+export interface CASRegimeInvestment {
+  regime_name: string;
+  regime_type: string;
+  invested_amount: number;
+  purchase_count: number;
+  weight_pct: number;
+}
+
+export interface CASInvestmentTiming {
+  regime_breakdown: CASRegimeInvestment[];
+  total_classified_invested_amount: number;
+  unclassified_invested_amount: number;
+  unclassified_purchase_count: number;
+  methodology_note: string;
+}
+
 export interface CASOverviewResponse {
   total_invested: number;
   total_current_value: number;
@@ -122,6 +149,7 @@ export interface CASOverviewResponse {
   holding_period: CASHoldingPeriodSummary;
   time_weighted_return: CASTimeWeightedReturn;
   transaction_activity: CASTransactionActivity[];
+  investment_timing: CASInvestmentTiming;
 }
 
 export interface CASParseResponse {

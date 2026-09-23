@@ -532,6 +532,107 @@ def test_time_weighted_return_is_all_null_when_no_matched_scheme_has_nav_history
     # Nothing matched at all -> no matched-scheme transactions to break
     # down, an empty list rather than a padded row of zeros.
     assert overview["transaction_activity"] == []
+    # Same reasoning for investment timing -- nothing to classify.
+    assert overview["investment_timing"]["regime_breakdown"] == []
+    assert overview["investment_timing"]["total_classified_invested_amount"] == 0.0
+    assert overview["investment_timing"]["unclassified_invested_amount"] == 0.0
+    assert overview["investment_timing"]["unclassified_purchase_count"] == 0
+
+
+SIP_CONSISTENCY_CAS_LINES = [
+    "Consolidated Account Statement",
+    "01-Jan-2003 To 22-Sep-2026",
+    "PORTFOLIO SUMMARY",
+    "Date Transaction Amount Units Price Unit Balance",
+    "Test Fund House Mutual Fund",
+    "Folio No: 12345678 / 0    PAN: ABCDE1234F    KYC: OK PAN: OK",
+    "Test Investor",
+    f"900TESTGG-Test Fund House Flexi Cap Fund - Regular Plan - Growth (Non Demat) - ISIN: {TEST_ISIN}(Advisor: ARN-1)",
+    "Nominee 1: Jane Doe    Nominee 2:    Nominee 3:",
+    "Opening Unit Balance: 0.000",
+    "10-Jun-2024   Purchase    999.95    38.129    26.222    38.129",
+    "10-Jul-2024   Sys. Investment    500.00    18.500    27.027    56.629",
+    "12-Aug-2024   Sys. Investment    500.00    18.000    27.778    74.629",
+    "10-Sep-2024   Sys. Investment    500.00    17.800    28.090    92.429",
+    "Closing Unit Balance: 92.429    NAV on 22-Sep-2026: INR 30.5    Total Cost Value: 2499.95    Market Value on 22-Sep-2026: INR 2819.08",
+    "Entry Load: Nil; Exit Load: Nil.",
+]
+
+
+def test_sip_consistency_and_investment_timing_for_classified_purchases(test_scheme):
+    pdf_bytes = _pdf_with_lines(SIP_CONSISTENCY_CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    overview = response.json()["overview"]
+
+    scheme_overview = overview["per_scheme"][0]
+    purchase_behavior = scheme_overview["purchase_behavior"]
+    assert purchase_behavior["purchase_count"] == 4
+    assert purchase_behavior["lumpsum_count"] == 1
+    assert purchase_behavior["sip_installment_count"] == 3
+
+    # Installments on 10-Jul, 12-Aug, 10-Sep-2024 -> gaps of 33 and 29
+    # days. The lumpsum Purchase on 10-Jun isn't a SIP installment, so it
+    # doesn't factor into the gaps at all.
+    sip = scheme_overview["sip_consistency"]
+    assert sip["installment_count"] == 3
+    assert sip["first_installment_date"] == "2024-07-10"
+    assert sip["latest_installment_date"] == "2024-09-10"
+    assert sip["min_gap_days"] == 29
+    assert sip["max_gap_days"] == 33
+    assert sip["average_gap_days"] == pytest.approx(31.0)
+    assert sip["gap_consistency_pct"] == pytest.approx(93.5, abs=0.1)
+
+    # All 4 purchases (2023-04-01 to 2025-03-31 is this environment's
+    # seeded "Bull" market-regime window -- illustrative sample data, per
+    # the response's own methodology_note) fall inside it.
+    timing = overview["investment_timing"]
+    assert timing["unclassified_purchase_count"] == 0
+    assert timing["unclassified_invested_amount"] == pytest.approx(0.0)
+    assert len(timing["regime_breakdown"]) == 1
+    bull = timing["regime_breakdown"][0]
+    assert bull["regime_type"] == "bull"
+    assert bull["purchase_count"] == 4
+    assert bull["invested_amount"] == pytest.approx(999.95 + 500 + 500 + 500)
+    assert bull["weight_pct"] == pytest.approx(100.0)
+    assert "illustrative" in timing["methodology_note"].lower()
+
+
+UNCLASSIFIED_TIMING_CAS_LINES = [
+    "Consolidated Account Statement",
+    "01-Jan-2003 To 22-Sep-2026",
+    "PORTFOLIO SUMMARY",
+    "Date Transaction Amount Units Price Unit Balance",
+    "Test Fund House Mutual Fund",
+    "Folio No: 12345678 / 0    PAN: ABCDE1234F    KYC: OK PAN: OK",
+    "Test Investor",
+    f"900TESTGG-Test Fund House Flexi Cap Fund - Regular Plan - Growth (Non Demat) - ISIN: {TEST_ISIN}(Advisor: ARN-1)",
+    "Nominee 1: Jane Doe    Nominee 2:    Nominee 3:",
+    "Opening Unit Balance: 0.000",
+    "15-Jan-2020   Purchase    999.95    38.129    26.222    38.129",
+    "Closing Unit Balance: 38.129    NAV on 22-Sep-2026: INR 30.5    Total Cost Value: 999.95    Market Value on 22-Sep-2026: INR 1163.94",
+    "Entry Load: Nil; Exit Load: Nil.",
+]
+
+
+def test_investment_timing_reports_a_purchase_outside_every_known_regime_as_unclassified(test_scheme):
+    # 15-Jan-2020 is before this environment's earliest seeded market
+    # regime (2021-04-01) -- never guessed into the nearest one.
+    pdf_bytes = _pdf_with_lines(UNCLASSIFIED_TIMING_CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    timing = response.json()["overview"]["investment_timing"]
+
+    assert timing["regime_breakdown"] == []
+    assert timing["total_classified_invested_amount"] == pytest.approx(0.0)
+    assert timing["unclassified_purchase_count"] == 1
+    assert timing["unclassified_invested_amount"] == pytest.approx(999.95)
 
 
 def test_missing_password_on_encrypted_pdf_returns_422():
