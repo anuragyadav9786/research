@@ -10,11 +10,13 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.models.reference import Scheme, SchemeVariant
+from app.services.cas_portfolio_service import build_cas_overview
 from data_pipeline.normalization.cas_parser import parse_cas_text, statement_end_date
 
 
 def build_cas_parse_response(db: Session, text: str) -> dict:
-    holdings = parse_cas_text(text)
+    parsed = parse_cas_text(text)
+    holdings = parsed.holdings
     as_of_date = statement_end_date(text)
 
     matched: list[dict] = []
@@ -66,4 +68,5 @@ def build_cas_parse_response(db: Session, text: str) -> dict:
         "unmatched_holdings": unmatched,
         "total_market_value": total_market_value,
         "matched_market_value": round(matched_market_value, 2),
+        "overview": build_cas_overview(db, parsed.transactions),
     }

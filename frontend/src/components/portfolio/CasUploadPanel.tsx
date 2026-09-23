@@ -3,7 +3,9 @@
 import { useState } from "react";
 
 import { ApiError, parseCasStatement } from "@/lib/api";
-import { formatDate, formatRupees } from "@/lib/format";
+import { formatDate, formatPct, formatRupees, signColorClass } from "@/lib/format";
+import { Disclosure } from "@/components/fund/Disclosure";
+import { StatCard } from "@/components/fund/StatCard";
 import type { CASParseResponse } from "@/types/cas";
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -136,6 +138,48 @@ export function CasUploadPanel({
             {matchedCount > 0 && <>, worth {formatRupees(result.matched_market_value)}</>}.
             {truncated && ` Only the ${maxRows} largest are used — analysis supports up to ${maxRows} funds.`}
           </p>
+
+          {result.overview && result.overview.matched_scheme_count > 0 && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCard label="Total Invested" value={formatRupees(result.overview.total_invested)} />
+                <StatCard label="Current Value" value={formatRupees(result.overview.total_current_value)} />
+                <StatCard
+                  label="Portfolio XIRR"
+                  value={result.overview.portfolio_xirr_pct !== null ? formatPct(result.overview.portfolio_xirr_pct) : "N/A"}
+                  valueClassName={
+                    result.overview.portfolio_xirr_pct !== null
+                      ? signColorClass(result.overview.portfolio_xirr_pct)
+                      : "text-slate-600"
+                  }
+                  hint={
+                    result.overview.portfolio_xirr_pct === null
+                      ? "Not enough cash-flow history to solve for a rate"
+                      : undefined
+                  }
+                />
+                <StatCard
+                  label="Total Gain"
+                  value={formatRupees(result.overview.total_gain)}
+                  valueClassName={signColorClass(result.overview.total_gain)}
+                  hint={`Realized ${formatRupees(result.overview.total_realized_gain)} · Unrealized ${formatRupees(result.overview.total_unrealized_gain)}`}
+                />
+              </div>
+              <Disclosure label="What is XIRR?">
+                <p className="text-sm text-slate-400">
+                  XIRR measures the annualized return earned on your actual investment cash flows, taking the timing
+                  of each investment and withdrawal into account — a fairer measure than a simple point-to-point
+                  return when money went in and out at different times (lump sums, SIP installments, redemptions).
+                </p>
+                <p className="text-sm text-slate-400 mt-2">
+                  Computed from every Purchase/SIP (money you paid in) and Redemption (money you received) in this
+                  statement, plus the current value of what&rsquo;s still held. Switches between funds already in
+                  this portfolio aren&rsquo;t counted as new money in or out — internal transfers, not external cash
+                  flow.
+                </p>
+              </Disclosure>
+            </div>
+          )}
 
           {matchedCount > 0 && (
             <ul className="text-sm text-slate-300 space-y-1">

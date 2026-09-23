@@ -13,9 +13,12 @@ from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
+from datetime import date
+
 from app.core.database import SessionLocal
 from app.main import app
 from app.models.reference import AMC, FundFamily, Scheme, SchemeVariant
+from app.models.timeseries import DataSource, NavHistory
 
 client = TestClient(app)
 
@@ -108,10 +111,22 @@ def test_scheme(db):
     db.flush()
     variant = SchemeVariant(scheme_id=scheme.id, plan="regular", option="growth", isin=TEST_ISIN)
     db.add(variant)
+    db.flush()
+
+    source = db.query(DataSource).filter(DataSource.source_type == "manual").first()
+    if source is None:
+        source = DataSource(name="TEST FIXTURE SOURCE", source_type="manual")
+        db.add(source)
+        db.flush()
+    # Deliberately different from the CAS's own stated "NAV on 22-Sep-2026:
+    # INR 30.5" -- proves the overview uses this platform's own NAV data,
+    # not just echoing the statement's figure.
+    db.add(NavHistory(scheme_variant_id=variant.id, date=date(2026, 9, 22), nav=32.0, source_id=source.id))
     db.commit()
 
     yield scheme
 
+    db.query(NavHistory).filter(NavHistory.scheme_variant_id == variant.id).delete()
     db.query(SchemeVariant).filter(SchemeVariant.scheme_id == scheme.id).delete()
     db.query(Scheme).filter(Scheme.id == scheme.id).delete()
     db.query(FundFamily).filter(FundFamily.id == family.id).delete()
@@ -143,6 +158,32 @@ def test_parses_and_matches_a_holding_by_isin(test_scheme):
     assert body["total_market_value"] == pytest.approx(1163.94 + 550.00)
     assert body["matched_market_value"] == pytest.approx(1163.94)
     assert body["as_of_date"] == "2026-09-22"
+
+    overview = body["overview"]
+    assert overview["matched_scheme_count"] == 1
+    assert overview["unmatched_schemes"] == [{"isin": "INF999ZZZ999", "scheme_name": "Some Other Fund - Regular Plan - Growth (Non Demat)"}]
+
+    scheme_overview = overview["per_scheme"][0]
+    assert scheme_overview["fund_id"] == test_scheme.id
+    assert scheme_overview["invested_amount"] == pytest.approx(999.95)
+    assert scheme_overview["realized_gain"] == pytest.approx(0.0)
+    assert scheme_overview["remaining_units"] == pytest.approx(38.129)
+    # cost_per_unit = amount/units from the Purchase row -- not necessarily
+    # bit-identical to the row's separately-reported "Price" column (26.222),
+    # which can carry its own independent rounding in the RTA's own record.
+    assert scheme_overview["weighted_average_purchase_nav"] == pytest.approx(999.95 / 38.129, abs=1e-4)
+    # Uses OUR OWN NAV (32.0), not the CAS's own stated 30.5.
+    assert scheme_overview["current_nav"] == pytest.approx(32.0)
+    assert scheme_overview["current_value"] == pytest.approx(38.129 * 32.0, abs=0.01)
+    assert scheme_overview["unrealized_gain"] == pytest.approx(38.129 * 32.0 - 999.95, abs=0.01)
+
+    assert overview["total_invested"] == pytest.approx(999.95)
+    assert overview["total_current_value"] == pytest.approx(38.129 * 32.0, abs=0.01)
+    assert overview["total_realized_gain"] == pytest.approx(0.0)
+    # A single Purchase followed by a positive terminal value -> a real,
+    # solvable, positive money-weighted return.
+    assert overview["portfolio_xirr_pct"] is not None
+    assert 0 < overview["portfolio_xirr_pct"] < 50
 
 
 def test_missing_password_on_encrypted_pdf_returns_422():
