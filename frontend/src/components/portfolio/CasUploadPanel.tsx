@@ -6,7 +6,9 @@ import { ApiError, parseCasStatement } from "@/lib/api";
 import { formatDate, formatPct, formatRupees, signColorClass } from "@/lib/format";
 import { CasBehaviorSnapshot } from "@/components/portfolio/CasBehaviorSnapshot";
 import { CasFundContribution } from "@/components/portfolio/CasFundContribution";
+import { CasHealthCheck } from "@/components/portfolio/CasHealthCheck";
 import { CasHoldingPeriod } from "@/components/portfolio/CasHoldingPeriod";
+import { CasInsightsList } from "@/components/portfolio/CasInsightsList";
 import { CasInvestmentTiming } from "@/components/portfolio/CasInvestmentTiming";
 import { CasPortfolioStructure } from "@/components/portfolio/CasPortfolioStructure";
 import { CasPurchaseBehavior } from "@/components/portfolio/CasPurchaseBehavior";
@@ -149,6 +151,8 @@ export function CasUploadPanel({
             {truncated && ` Only the ${maxRows} largest are used — analysis supports up to ${maxRows} funds.`}
           </p>
 
+          {result.overview?.health_check && <CasHealthCheck healthCheck={result.overview.health_check} />}
+
           {result.overview && result.overview.matched_scheme_count > 0 && (
             <div className="space-y-2">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -223,6 +227,8 @@ export function CasUploadPanel({
               <PortfolioAnalysisResult result={result.overview.look_through_analysis} />
             </div>
           )}
+
+          {result.overview?.insights && <CasInsightsList insights={result.overview.insights} />}
 
           {matchedCount > 0 && (
             <ul className="text-sm text-slate-300 space-y-1">

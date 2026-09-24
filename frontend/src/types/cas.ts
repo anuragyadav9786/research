@@ -157,6 +157,24 @@ export interface CASPortfolioComplexity {
   complexity_label: "Simple" | "Moderate" | "Complex" | "Highly Complex";
 }
 
+export type CASInsightSeverity = "informational" | "notable" | "significant";
+
+export interface CASInsight {
+  category: string;
+  severity: CASInsightSeverity;
+  message: string;
+}
+
+export interface CASHealthCheck {
+  data_completeness_pct: number | null;
+  priced_scheme_count: number;
+  total_referenced_scheme_count: number;
+  significant_count: number;
+  notable_count: number;
+  informational_count: number;
+  summary: string;
+}
+
 export interface CASOverviewResponse {
   total_invested: number;
   total_current_value: number;
@@ -175,6 +193,8 @@ export interface CASOverviewResponse {
   investor_behavior: CASInvestorBehavior;
   complexity: CASPortfolioComplexity;
   look_through_analysis: PortfolioAnalysisResponse | null;
+  insights: CASInsight[];
+  health_check: CASHealthCheck;
 }
 
 export interface CASParseResponse {

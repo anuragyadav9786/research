@@ -236,6 +236,22 @@ def test_parses_and_matches_a_holding_by_isin(test_scheme):
     assert holding_period["realized_median_days"] is None
     assert holding_period["realized_consumption_count"] == 0
 
+    # 100% in one scheme -> a "significant" concentration insight; the
+    # unmatched holding -> an "informational" data-completeness insight.
+    insights_by_category = {i["category"]: i for i in overview["insights"]}
+    assert insights_by_category["concentration"]["severity"] == "significant"
+    assert "100.0%" in insights_by_category["concentration"]["message"]
+    assert insights_by_category["data_completeness"]["severity"] == "informational"
+    assert "Some Other Fund" in insights_by_category["data_completeness"]["message"]
+
+    health_check = overview["health_check"]
+    assert health_check["priced_scheme_count"] == 1
+    assert health_check["total_referenced_scheme_count"] == 2  # 1 matched + 1 unmatched
+    assert health_check["data_completeness_pct"] == pytest.approx(50.0)
+    assert health_check["significant_count"] == 1
+    assert health_check["informational_count"] == 1
+    assert "1 of 2" in health_check["summary"]
+
 
 SECOND_TEST_AMC_NAME = "CAS Test Debt House"
 SECOND_TEST_ISIN = "INF000CAS002"

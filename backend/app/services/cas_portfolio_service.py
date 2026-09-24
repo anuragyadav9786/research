@@ -2,14 +2,23 @@
 value, realized/unrealized gain, portfolio XIRR, per-scheme contribution,
 holding-period analysis, time-weighted return/volatility/drawdown,
 purchase/redemption behavior, SIP consistency, investment timing vs.
-market conditions, investor behavior, portfolio complexity, and
-look-through sector/style/overlap analysis) from a CAS's full parsed
-transaction ledger — Phases 1-8 of the larger Portfolio Analysis
-intelligence module (spec sections 4-5, 6, 7, 8, 11, 12, 13, 14, 15).
-Only covers schemes matched to this platform's own fund catalog by ISIN
-(same matching cas_service.py already does for the manual-form pre-fill)
-— a scheme not in our catalog has no NAV history we can use to value it
-today, so it's reported as excluded, never guessed at.
+market conditions, investor behavior, portfolio complexity, look-through
+sector/style/overlap analysis, and actionable insights/health check) from
+a CAS's full parsed transaction ledger — Phases 1-10 of the larger
+Portfolio Analysis intelligence module (spec sections 4-5, 6, 7, 8, 11,
+12, 13, 14, 15, plus the closing Actionable Insights/Portfolio Health
+Check sections). Only covers schemes matched to this platform's own fund
+catalog by ISIN (same matching cas_service.py already does for the
+manual-form pre-fill) — a scheme not in our catalog has no NAV history
+we can use to value it today, so it's reported as excluded, never
+guessed at.
+
+Insights/Health Check (app/services/cas_insights_service.py) are
+computed last, over this module's own fully-built overview dict — the
+final synthesis layer, not a new calculation: every insight cites a
+number some earlier section here already computed. See that module's
+own docstring for the ground rules (never a recommendation, never
+alarmist language, deterministic templating only).
 
 Investor-behavior scope note: this deliberately does NOT attempt to
 infer intent (e.g. "return-chasing" or "panic-selling" by correlating a
@@ -68,7 +77,7 @@ from app.core.config import get_settings
 from app.models.reference import MarketRegime, Scheme, SchemeVariant
 from app.repositories import fund_repository, market_regime_repository, portfolio_repository
 from app.schemas.market_regime import METHODOLOGY_NOTE as MARKET_REGIME_METHODOLOGY_NOTE
-from app.services import portfolio_analysis_service
+from app.services import cas_insights_service, portfolio_analysis_service
 from data_pipeline.normalization.cas_parser import CASTransaction
 from data_pipeline.normalization.category_classification import classify_asset_class, classify_equity_style
 
@@ -267,7 +276,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
 
     portfolio_xirr = xirr(portfolio_cash_flows)
 
-    return {
+    overview = {
         "total_invested": round(total_invested, 2),
         "total_current_value": round(total_current_value, 2),
         "total_realized_gain": round(total_realized_gain, 2),
@@ -286,6 +295,15 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         "complexity": _portfolio_complexity_summary(valued_schemes, matched_transactions),
         "look_through_analysis": _look_through_analysis_summary(db, per_scheme, valued_scheme_objects),
     }
+
+    # Insights/Health Check are the final synthesis layer -- computed
+    # last, over the fully-built overview above, so every rule can cite
+    # any already-computed field (structure, overlap, complexity, etc.)
+    # without recomputing anything.
+    insights_result = cas_insights_service.build_cas_insights(overview)
+    overview["insights"] = insights_result["insights"]
+    overview["health_check"] = insights_result["health_check"]
+    return overview
 
 
 def _concentration_summary(weights_pct: list[float]) -> dict:

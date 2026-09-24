@@ -283,6 +283,40 @@ class CASTimeWeightedReturn(BaseModel):
     end_date: date | None = None
 
 
+class CASInsight(BaseModel):
+    """Portfolio Analysis §"Actionable Insights": one evidence-based
+    observation, citing a number some earlier section of this response
+    already computed. Never a buy/sell/hold recommendation, and severity
+    is deliberately neutral/clinical — never alarmist wording — per the
+    module's own explicit constraint. See app/services/
+    cas_insights_service.py for the full rule set and reasoning."""
+
+    category: str = Field(
+        ...,
+        description="concentration | overlap | data_completeness | investment_timing | sip_consistency | "
+        "complexity | holding_period | realized_performance",
+    )
+    severity: str = Field(..., description="'informational' | 'notable' | 'significant' — never an alarmist label")
+    message: str = Field(..., description="A plain-English, evidence-cited statement of fact — never a recommendation")
+
+
+class CASHealthCheck(BaseModel):
+    """Portfolio Analysis §"Portfolio Health Check": a compact summary of
+    how complete this analysis is and how many observations were flagged
+    — deterministically templated (never an LLM call), never a graded
+    score or verdict on the portfolio itself."""
+
+    data_completeness_pct: float | None = Field(
+        None, description="% of referenced schemes (matched + unmatched) this analysis could actually price"
+    )
+    priced_scheme_count: int
+    total_referenced_scheme_count: int = Field(..., description="matched_scheme_count + count of unmatched schemes")
+    significant_count: int
+    notable_count: int
+    informational_count: int
+    summary: str = Field(..., description="A short, deterministic, templated summary sentence")
+
+
 class CASOverviewResponse(BaseModel):
     """Portfolio Analysis §4/§5/§7/§8/§12/§15: invested capital vs.
     current value, realized vs. unrealized gain, money-weighted (XIRR)
@@ -320,6 +354,10 @@ class CASOverviewResponse(BaseModel):
         "portfolio risk/drawdown across current holdings — the exact same engine POST /api/portfolio/analyse uses. "
         "Null if no matched scheme currently has a usable value.",
     )
+    insights: list[CASInsight] = Field(
+        ..., description="Evidence-based observations, most-severe first — never a buy/sell recommendation"
+    )
+    health_check: CASHealthCheck
 
 
 class CASParseResponse(BaseModel):
