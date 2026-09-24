@@ -332,3 +332,87 @@ class CASParseResponse(BaseModel):
         None, description="Invested/current-value/XIRR overview computed from the full transaction ledger"
     )
     disclaimer: str = CAS_DISCLAIMER
+
+
+class CASNewScheme(BaseModel):
+    fund_id: int
+    scheme_name: str
+    isin: str
+    current_value: float = Field(..., description="Value in the current (later) snapshot")
+
+
+class CASExitedScheme(BaseModel):
+    fund_id: int
+    scheme_name: str
+    isin: str
+    previous_value: float = Field(..., description="Value in the previous (earlier) snapshot")
+
+
+class CASSchemeChange(BaseModel):
+    """A scheme with a usable current_value in BOTH snapshots — its value
+    and portfolio weight moved, but it wasn't newly added or fully exited."""
+
+    fund_id: int
+    scheme_name: str
+    isin: str
+    previous_value: float
+    current_value: float
+    value_change: float
+    previous_weight_pct: float | None
+    current_weight_pct: float | None
+    weight_pct_change: float | None = Field(None, description="Null if either snapshot's weight is unavailable")
+
+
+class CASAllocationDrift(BaseModel):
+    label: str
+    previous_weight_pct: float = Field(..., description="0 if this label didn't exist in the previous snapshot")
+    current_weight_pct: float = Field(..., description="0 if this label no longer exists in the current snapshot")
+    weight_pct_change: float
+
+
+class CASComparisonResponse(BaseModel):
+    """Portfolio Analysis §"what changed over time": a diff between two
+    CAS statements the investor uploads together — an earlier one and a
+    later one. Stateless by design, same as every other CAS feature: one
+    request in, one computed response out, nothing persisted (see
+    app/services/cas_comparison_service.py's own docstring for why this
+    takes two uploads rather than remembering one). Schemes are matched
+    by ISIN; "new"/"exited" are relative to having a usable current_value
+    in each snapshot, not merely appearing in the transaction ledger.
+
+    Pricing note: every *_value/*_current_value/*_previous figure here
+    prices both snapshots' holdings at TODAY's latest known NAV (the same
+    convention the rest of this module uses), never at each statement's
+    own historical date — so these differences isolate what you actually
+    did (bought, sold, switched) between the two statements, not market
+    movement in between. See app/services/cas_comparison_service.py."""
+
+    previous_as_of_date: date | None = Field(None, description="The earlier statement's own generation date, if found")
+    current_as_of_date: date | None = Field(None, description="The later statement's own generation date, if found")
+    dates_swapped: bool = Field(
+        ..., description="True if the two uploads were provided in the wrong order and corrected automatically"
+    )
+    span_days: int | None = Field(None, description="Null if either statement's generation date couldn't be found")
+
+    total_invested_previous: float
+    total_invested_current: float
+    total_invested_change: float
+    total_current_value_previous: float
+    total_current_value_current: float
+    total_current_value_change: float
+    total_gain_previous: float
+    total_gain_current: float
+    total_gain_change: float
+    portfolio_xirr_pct_previous: float | None
+    portfolio_xirr_pct_current: float | None
+
+    new_schemes: list[CASNewScheme]
+    exited_schemes: list[CASExitedScheme]
+    scheme_changes: list[CASSchemeChange] = Field(
+        ..., description="Sorted by |value_change| descending — the biggest movers first"
+    )
+    asset_allocation_drift: list[CASAllocationDrift]
+
+    previous_unmatched_schemes: list[CASUnmatchedScheme]
+    current_unmatched_schemes: list[CASUnmatchedScheme]
+    disclaimer: str = CAS_DISCLAIMER

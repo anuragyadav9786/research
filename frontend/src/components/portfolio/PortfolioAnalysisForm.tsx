@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { analysePortfolio, ApiError } from "@/lib/api";
+import { CasCompareTool } from "@/components/portfolio/CasCompareTool";
 import { CasUploadPanel } from "@/components/portfolio/CasUploadPanel";
 import { PortfolioAnalysisResult } from "@/components/portfolio/PortfolioAnalysisResult";
 import type { FundSummary } from "@/types/fund";
@@ -81,6 +82,8 @@ export function PortfolioAnalysisForm({ funds }: { funds: FundSummary[] }) {
   return (
     <div className="space-y-6">
       <CasUploadPanel maxRows={MAX_ROWS} onUseHoldings={(newRows) => setRows(newRows)} />
+
+      <CasCompareTool />
 
       <form onSubmit={handleSubmit} className="space-y-3">
         {rows.map((row, i) => (

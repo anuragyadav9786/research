@@ -17,9 +17,9 @@ from analytics.returns import returns_series
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.repositories import fund_repository, portfolio_repository
-from app.schemas.cas import CASParseResponse
+from app.schemas.cas import CASComparisonResponse, CASParseResponse
 from app.schemas.portfolio_analysis import PortfolioAnalyseRequest, PortfolioAnalysisResponse
-from app.services import cas_service, portfolio_analysis_service
+from app.services import cas_comparison_service, cas_service, portfolio_analysis_service
 from data_pipeline.normalization.cas_pdf import CASPasswordError, CASUnreadableError, extract_cas_text
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
@@ -84,6 +84,38 @@ def analyse_portfolio(request: PortfolioAnalyseRequest, db: Session = Depends(ge
     )
 
 
+async def _parse_cas_upload(file: UploadFile, password: str | None, db: Session, *, label: str) -> dict:
+    """Shared by /cas/parse and /cas/compare — extract, decrypt, and parse
+    one uploaded CAS PDF into a full CASParseResponse-shaped dict. `label`
+    ("statement" / "previous statement" / "current statement") only
+    changes error text, so a two-file request can tell the caller which
+    of the two files was the problem."""
+    if file.content_type not in ("application/pdf", "application/octet-stream"):
+        raise HTTPException(status_code=422, detail=f"Upload a PDF file for the {label}.")
+
+    pdf_bytes = await file.read()
+    if len(pdf_bytes) > MAX_CAS_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail=f"The {label} is too large — maximum 5 MB.")
+
+    try:
+        text = extract_cas_text(pdf_bytes, password)
+    except CASPasswordError as exc:
+        raise HTTPException(status_code=422, detail=f"{label.capitalize()}: {exc}") from exc
+    except CASUnreadableError as exc:
+        raise HTTPException(status_code=422, detail=f"{label.capitalize()}: {exc}") from exc
+
+    result = cas_service.build_cas_parse_response(db, text)
+    if not result["matched_holdings"] and not result["unmatched_holdings"]:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Could not find any currently-held mutual fund positions in the {label}. "
+                "Make sure this is a CAMS/KFintech Consolidated Account Statement PDF."
+            ),
+        )
+    return result
+
+
 @router.post("/cas/parse", response_model=CASParseResponse)
 async def parse_cas_statement(
     file: UploadFile = File(...),
@@ -95,27 +127,43 @@ async def parse_cas_statement(
     platform's own fund catalog by ISIN — a pre-fill for /analyse, not a
     replacement for it (the caller still submits the usual holdings list,
     just populated from here instead of typed by hand)."""
-    if file.content_type not in ("application/pdf", "application/octet-stream"):
-        raise HTTPException(status_code=422, detail="Upload a PDF file.")
+    return await _parse_cas_upload(file, password, db, label="statement")
 
-    pdf_bytes = await file.read()
-    if len(pdf_bytes) > MAX_CAS_FILE_SIZE_BYTES:
-        raise HTTPException(status_code=413, detail="File too large — maximum 5 MB.")
 
-    try:
-        text = extract_cas_text(pdf_bytes, password)
-    except CASPasswordError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except CASUnreadableError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+@router.post("/cas/compare", response_model=CASComparisonResponse)
+async def compare_cas_statements(
+    previous_file: UploadFile = File(...),
+    previous_password: str | None = Form(None),
+    current_file: UploadFile = File(...),
+    current_password: str | None = Form(None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Upload two CAS statements from different dates and see what
+    changed between them — new/exited holdings, value and weight
+    movement per scheme, and asset-allocation drift. Stateless: nothing
+    from either statement is persisted (see app/services/
+    cas_comparison_service.py's own docstring on why this takes two
+    uploads rather than remembering one). If the two files are supplied
+    in the wrong order (the "previous" one is actually more recent), they
+    are swapped automatically — `dates_swapped` in the response says so —
+    rather than producing a nonsensical "you divested everything" diff."""
+    previous = await _parse_cas_upload(previous_file, previous_password, db, label="previous statement")
+    current = await _parse_cas_upload(current_file, current_password, db, label="current statement")
 
-    result = cas_service.build_cas_parse_response(db, text)
-    if not result["matched_holdings"] and not result["unmatched_holdings"]:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "Could not find any currently-held mutual fund positions in this statement. "
-                "Make sure this is a CAMS/KFintech Consolidated Account Statement PDF."
-            ),
-        )
-    return result
+    previous_as_of = previous["as_of_date"]
+    current_as_of = current["as_of_date"]
+    dates_swapped = False
+    if previous_as_of is not None and current_as_of is not None and previous_as_of > current_as_of:
+        previous, current = current, previous
+        previous_as_of, current_as_of = current_as_of, previous_as_of
+        dates_swapped = True
+
+    comparison = cas_comparison_service.compare_cas_overviews(
+        previous_as_of, previous["overview"], current_as_of, current["overview"]
+    )
+    return {
+        **comparison,
+        "dates_swapped": dates_swapped,
+        "previous_unmatched_schemes": previous["overview"]["unmatched_schemes"],
+        "current_unmatched_schemes": current["overview"]["unmatched_schemes"],
+    }

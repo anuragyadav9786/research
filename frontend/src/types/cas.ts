@@ -186,3 +186,64 @@ export interface CASParseResponse {
   overview: CASOverviewResponse | null;
   disclaimer: string;
 }
+
+export interface CASNewScheme {
+  fund_id: number;
+  scheme_name: string;
+  isin: string;
+  current_value: number;
+}
+
+export interface CASExitedScheme {
+  fund_id: number;
+  scheme_name: string;
+  isin: string;
+  previous_value: number;
+}
+
+export interface CASSchemeChange {
+  fund_id: number;
+  scheme_name: string;
+  isin: string;
+  previous_value: number;
+  current_value: number;
+  value_change: number;
+  previous_weight_pct: number | null;
+  current_weight_pct: number | null;
+  weight_pct_change: number | null;
+}
+
+export interface CASAllocationDrift {
+  label: string;
+  previous_weight_pct: number;
+  current_weight_pct: number;
+  weight_pct_change: number;
+}
+
+export interface CASComparisonResponse {
+  previous_as_of_date: string | null;
+  current_as_of_date: string | null;
+  dates_swapped: boolean;
+  span_days: number | null;
+
+  total_invested_previous: number;
+  total_invested_current: number;
+  total_invested_change: number;
+  total_current_value_previous: number;
+  total_current_value_current: number;
+  total_current_value_change: number;
+  total_gain_previous: number;
+  total_gain_current: number;
+  total_gain_change: number;
+  portfolio_xirr_pct_previous: number | null;
+  portfolio_xirr_pct_current: number | null;
+
+  new_schemes: CASNewScheme[];
+  exited_schemes: CASExitedScheme[];
+  scheme_changes: CASSchemeChange[];
+  asset_allocation_drift: CASAllocationDrift[];
+
+  previous_unmatched_schemes: CASUnmatchedScheme[];
+  current_unmatched_schemes: CASUnmatchedScheme[];
+  disclaimer: string;
+}

@@ -25,7 +25,7 @@ import type { PortfolioResponse } from "@/types/portfolio";
 import type { PortfolioAnalysisResponse, PortfolioHoldingInput } from "@/types/portfolioAnalysis";
 import type { StressTestResponse } from "@/types/stressTest";
 import type { AISummaryResponse } from "@/types/aiSummary";
-import type { CASParseResponse } from "@/types/cas";
+import type { CASComparisonResponse, CASParseResponse } from "@/types/cas";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -193,6 +193,26 @@ export async function parseCasStatement(file: File, password?: string): Promise<
   if (!response.ok) {
     const body = await response.json().catch(() => ({ detail: response.statusText }));
     throw new ApiError(response.status, extractErrorMessage(body, "Could not parse this statement."));
+  }
+  return response.json();
+}
+
+export async function compareCasStatements(
+  previousFile: File,
+  previousPassword: string | undefined,
+  currentFile: File,
+  currentPassword: string | undefined,
+): Promise<CASComparisonResponse> {
+  const formData = new FormData();
+  formData.append("previous_file", previousFile);
+  if (previousPassword) formData.append("previous_password", previousPassword);
+  formData.append("current_file", currentFile);
+  if (currentPassword) formData.append("current_password", currentPassword);
+
+  const response = await fetch(`${API_BASE_URL}/api/portfolio/cas/compare`, { method: "POST", body: formData });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new ApiError(response.status, extractErrorMessage(body, "Could not compare these statements."));
   }
   return response.json();
 }
