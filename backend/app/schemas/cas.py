@@ -7,6 +7,9 @@ from datetime import date
 
 from pydantic import BaseModel, Field
 
+from app.schemas.market_regime import METHODOLOGY_NOTE as MARKET_REGIME_METHODOLOGY_NOTE
+from app.schemas.portfolio_analysis import PortfolioAnalysisResponse
+
 CAS_DISCLAIMER = (
     "Holdings and values are read directly from your uploaded statement as of the date it "
     "was generated — they are not refreshed live and may not reflect transactions since then. "
@@ -29,10 +32,425 @@ class CASUnmatchedHolding(BaseModel):
     reason: str = Field(..., description="Why this holding couldn't be included, e.g. 'isin_not_found'")
 
 
+class CASPurchaseBehavior(BaseModel):
+    """Portfolio Analysis §13: this scheme's own purchase/NAV behavior —
+    how many purchases were made, lumpsum vs. SIP, over what span, and at
+    what NAV range. Purely descriptive: reports what happened, never a
+    judgment of whether it was good or bad timing. All fields are null
+    when this scheme has zero purchase-type transactions (e.g. every unit
+    came in via a switch-in), never a fabricated 0/₹0."""
+
+    purchase_count: int = Field(..., description="Total Purchase + SIP transactions")
+    sip_installment_count: int
+    lumpsum_count: int
+    first_purchase_date: date | None = None
+    latest_purchase_date: date | None = None
+    lowest_purchase_nav: float | None = Field(None, description="Lowest price actually paid (amount/units), across every purchase")
+    highest_purchase_nav: float | None = None
+    average_purchase_nav: float | None = Field(None, description="Amount-weighted average price paid across every purchase")
+
+
+class CASTransactionActivity(BaseModel):
+    """Portfolio Analysis §14: how often, and for how much, the investor
+    actually redeemed, switched, or otherwise transacted — one row per
+    transaction_type that occurred at least once across every matched
+    scheme. Purely descriptive: no framing of any category as good or bad."""
+
+    transaction_type: str = Field(
+        ..., description="PURCHASE | SIP | REDEMPTION | SWP | SWITCH_IN | SWITCH_OUT | STP_IN | STP_OUT | "
+        "DIVIDEND | DIVIDEND_REINVESTMENT | BONUS | REVERSAL | OTHER"
+    )
+    count: int
+    total_amount: float = Field(..., description="Sum of absolute transaction amounts of this type")
+
+
+class CASSipConsistency(BaseModel):
+    """Portfolio Analysis §13: how regularly this scheme's SIP installments
+    actually arrived, purely from the gaps between installment dates —
+    never against an assumed "should be monthly" cadence the CAS itself
+    doesn't state. Null gap fields with a single installment (nothing to
+    compare it against yet), never a fabricated 0."""
+
+    installment_count: int
+    first_installment_date: date | None = None
+    latest_installment_date: date | None = None
+    average_gap_days: float | None = None
+    min_gap_days: int | None = None
+    max_gap_days: int | None = None
+    gap_consistency_pct: float | None = Field(
+        None,
+        description="100 * (1 - min(coefficient_of_variation_of_gaps, 1)); 100 = every gap identical, "
+        "0 = gaps varied by as much as their own average. A dispersion measure, not a finance ratio or a judgment.",
+    )
+
+
+class CASRegimeInvestment(BaseModel):
+    regime_name: str
+    regime_type: str
+    invested_amount: float
+    purchase_count: int
+    weight_pct: float = Field(..., description="Share of classified (not total) invested amount in this regime")
+
+
+class CASInvestmentTiming(BaseModel):
+    """Portfolio Analysis §14: how much money went in during each known
+    market regime — purely descriptive, never a claim about whether the
+    timing was good or bad. See `methodology_note` for the same
+    illustrative-sample-data caveat the single-fund Market-Cycle
+    Behaviour Engine already carries; a purchase outside every known
+    regime window is counted as unclassified, never guessed."""
+
+    regime_breakdown: list[CASRegimeInvestment]
+    total_classified_invested_amount: float
+    unclassified_invested_amount: float = Field(
+        ..., description="Purchases whose date falls outside every known regime window"
+    )
+    unclassified_purchase_count: int
+    methodology_note: str = MARKET_REGIME_METHODOLOGY_NOTE
+
+
+class CASSchemeOverview(BaseModel):
+    """One matched scheme's contribution to the portfolio-level overview
+    — invested capital, cost basis, and current value, all from replaying
+    this scheme's own transaction history via FIFO lot accounting (see
+    analytics/cost_basis.py)."""
+
+    fund_id: int
+    scheme_name: str
+    isin: str
+    invested_amount: float = Field(..., description="Real external money paid in (Purchase + SIP only, never switch-in)")
+    realized_gain: float = Field(..., description="Gain/loss already locked in by past redemptions/switch-outs")
+    remaining_units: float
+    weighted_average_purchase_nav: float | None = Field(None, description="Null if nothing is currently held")
+    current_nav: float | None = Field(None, description="Null if this scheme has no NAV history in our database yet")
+    current_nav_date: date | None
+    current_value: float | None
+    unrealized_gain: float | None
+    scheme_xirr_pct: float | None = Field(
+        None, description="This scheme's own money-weighted annualized return — null if it couldn't be solved"
+    )
+    weight_pct: float | None = Field(
+        None, description="This scheme's current_value as a % of total_current_value — null if unpriced"
+    )
+    gain: float | None = Field(
+        None,
+        description="realized_gain + unrealized_gain — null if this scheme still holds units we couldn't value, "
+        "which would otherwise understate the true figure",
+    )
+    contribution_to_gain_pct: float | None = Field(
+        None, description="This scheme's gain as a % of the portfolio's total_gain — null if gain or total_gain is unknown/zero"
+    )
+    purchase_behavior: CASPurchaseBehavior
+    sip_consistency: CASSipConsistency | None = Field(None, description="Null if this scheme has no SIP installments")
+
+
+class CASUnmatchedScheme(BaseModel):
+    isin: str
+    scheme_name: str
+
+
+class CASConcentrationSummary(BaseModel):
+    """Herfindahl-Hirschman Index and top-N weight, at whatever level
+    this summary is grouped by (scheme/AMC/category) — see
+    analytics/concentration.py for the formulas and the DOJ/FTC-derived
+    hhi_label thresholds."""
+
+    top1_pct: float
+    top3_pct: float
+    top5_pct: float
+    top10_pct: float
+    hhi: float
+    hhi_label: str = Field(..., description="'diversified' | 'moderate_concentration' | 'high_concentration'")
+    count: int | None = Field(None, description="Number of distinct groups (AMCs/categories) — omitted for scheme-level")
+
+
+class CASAllocationSlice(BaseModel):
+    label: str
+    value: float = Field(..., description="Current rupee value in this slice")
+    weight_pct: float
+
+
+class CASPortfolioStructure(BaseModel):
+    """Portfolio Analysis §7/§8: how the portfolio's current rupee value
+    (not invested amount) breaks down by scheme, AMC, category, and
+    broad asset class — and, for equity holdings, by market-cap/style.
+    Asset-class and equity-style labels come only from each scheme's own
+    stated category string (data_pipeline/normalization/
+    category_classification.py) — never guessed from a scheme's name or
+    its disclosed underlying holdings."""
+
+    scheme_concentration: CASConcentrationSummary
+    amc_concentration: CASConcentrationSummary
+    category_concentration: CASConcentrationSummary
+    asset_allocation: list[CASAllocationSlice]
+    equity_style_allocation: list[CASAllocationSlice] = Field(
+        ..., description="Market-cap/style breakdown within equity holdings only, as a % of the whole portfolio"
+    )
+    amc_allocation: list[CASAllocationSlice]
+    category_allocation: list[CASAllocationSlice]
+
+
+class CASHoldingPeriodBucket(BaseModel):
+    label: str = Field(..., description="e.g. '< 1 year', '1-3 years', '3-5 years', '5+ years'")
+    value: float = Field(..., description="Current rupee value of still-open lots in this bucket")
+    weight_pct: float
+
+
+class CASHoldingPeriodSummary(BaseModel):
+    """Portfolio Analysis §12: how long money has actually been held —
+    computed from FIFO lot accounting (analytics/cost_basis.py), never
+    from a scheme's overall start date, since different lots within the
+    same scheme can have very different ages. Only covers lots/
+    consumptions from matched, priced schemes; fields are null/empty
+    rather than a fabricated 0 when there's nothing of that kind to
+    summarize (e.g. nothing has ever been sold)."""
+
+    open_weighted_avg_days: int | None = Field(
+        None, description="Value-weighted average age, in days, of currently-held (unsold) lots"
+    )
+    open_value_by_bucket: list[CASHoldingPeriodBucket]
+    realized_avg_days: int | None = Field(None, description="Average holding period of every sold/switched-out lot")
+    realized_median_days: int | None = None
+    realized_consumption_count: int = Field(..., description="Number of FIFO lot consumptions realized_avg/median are over")
+
+
+class CASInvestorBehavior(BaseModel):
+    """Portfolio Analysis §14: purely factual investor-behavior metrics —
+    how long the recorded activity spans, and what fraction of invested
+    capital has since moved via a switch/STP or come back via a
+    redemption/SWP/dividend. Deliberately does NOT infer intent (e.g.
+    "return-chasing" or "panic-selling") — see app/services/
+    cas_portfolio_service.py's own module docstring for why."""
+
+    investing_since: date | None = Field(None, description="Earliest transaction date across every matched scheme")
+    last_activity_date: date | None = Field(None, description="Latest transaction date across every matched scheme")
+    investing_span_days: int | None = Field(
+        None, description="Between investing_since and last_activity_date — recorded activity, not against today's date"
+    )
+    total_switched_amount: float = Field(..., description="Sum of Switch-Out/STP-Out amounts (internal transfers)")
+    switch_ratio_pct: float | None = Field(
+        None, description="total_switched_amount as a % of total_invested — null if total_invested is 0"
+    )
+    total_redeemed_amount: float = Field(..., description="Sum of Redemption/SWP/Dividend amounts")
+    redemption_ratio_pct: float | None = Field(
+        None, description="total_redeemed_amount as a % of total_invested — null if total_invested is 0"
+    )
+
+
+class CASPortfolioComplexity(BaseModel):
+    """Portfolio Analysis §complexity: how many distinct moving parts the
+    CURRENT portfolio spans — same scope as Portfolio Structure (current
+    holdings only). `folio_count` surfaces something invisible elsewhere:
+    the same scheme registered under two folios is merged into one
+    scheme by ISIN throughout the rest of this overview.
+    `complexity_score` is a simple, fully documented heuristic (see
+    app/services/cas_portfolio_service.py), not a standard industry index
+    or a judgment of whether the complexity is a problem."""
+
+    scheme_count: int
+    amc_count: int
+    category_count: int
+    asset_class_count: int
+    folio_count: int = Field(..., description="Distinct folio numbers across every matched transaction")
+    complexity_score: float = Field(..., description="0-100; see module docstring for the exact formula")
+    complexity_label: str = Field(..., description="'Simple' | 'Moderate' | 'Complex' | 'Highly Complex'")
+
+
+class CASTimeWeightedReturn(BaseModel):
+    """Portfolio Analysis §6: Time-Weighted Return, annualized volatility,
+    and max drawdown of the portfolio's own actual value over time —
+    reconstructed from real per-scheme unit holdings and NAV history, not
+    a hypothetical fixed-weight blend (see analytics/portfolio_valuation.py).
+    Unlike portfolio_xirr_pct above (money-weighted — sensitive to this
+    investor's own contribution timing), TWR strips out cash-flow timing
+    so it measures how choppy the ride itself was. Only covers schemes
+    this platform has ever priced (`priced_scheme_count` of
+    matched_scheme_count) — every field is null when none are priced,
+    never a fabricated 0%."""
+
+    cumulative_twr_pct: float | None = Field(None, description="Total time-weighted return over the whole reconstructed span")
+    annualized_twr_pct: float | None = None
+    volatility_pct: float | None = Field(None, description="Annualized standard deviation of the TWR sub-period returns")
+    max_drawdown_pct: float | None = Field(None, description="Worst peak-to-trough decline in the reconstructed value")
+    drawdown_peak_date: date | None = None
+    drawdown_trough_date: date | None = None
+    drawdown_recovery_date: date | None = Field(
+        None, description="Null if not yet recovered as of the last reconstructed date, or no drawdown to recover from"
+    )
+    drawdown_recovered: bool | None = None
+    priced_scheme_count: int = Field(..., description="How many matched schemes this reconstruction actually covers")
+    start_date: date | None = Field(None, description="First date in the reconstructed value series")
+    end_date: date | None = None
+
+
+class CASInsight(BaseModel):
+    """Portfolio Analysis §"Actionable Insights": one evidence-based
+    observation, citing a number some earlier section of this response
+    already computed. Never a buy/sell/hold recommendation, and severity
+    is deliberately neutral/clinical — never alarmist wording — per the
+    module's own explicit constraint. See app/services/
+    cas_insights_service.py for the full rule set and reasoning."""
+
+    category: str = Field(
+        ...,
+        description="concentration | overlap | data_completeness | investment_timing | sip_consistency | "
+        "complexity | holding_period | realized_performance",
+    )
+    severity: str = Field(..., description="'informational' | 'notable' | 'significant' — never an alarmist label")
+    message: str = Field(..., description="A plain-English, evidence-cited statement of fact — never a recommendation")
+
+
+class CASHealthCheck(BaseModel):
+    """Portfolio Analysis §"Portfolio Health Check": a compact summary of
+    how complete this analysis is and how many observations were flagged
+    — deterministically templated (never an LLM call), never a graded
+    score or verdict on the portfolio itself."""
+
+    data_completeness_pct: float | None = Field(
+        None, description="% of referenced schemes (matched + unmatched) this analysis could actually price"
+    )
+    priced_scheme_count: int
+    total_referenced_scheme_count: int = Field(..., description="matched_scheme_count + count of unmatched schemes")
+    significant_count: int
+    notable_count: int
+    informational_count: int
+    summary: str = Field(..., description="A short, deterministic, templated summary sentence")
+
+
+class CASOverviewResponse(BaseModel):
+    """Portfolio Analysis §4/§5/§7/§8/§12/§15: invested capital vs.
+    current value, realized vs. unrealized gain, money-weighted (XIRR)
+    return, portfolio structure (concentration + allocation), per-scheme
+    contribution to overall gain, and holding-period analysis — computed
+    from the CAS's full transaction ledger, not just its stated closing
+    balances. Covers only ISIN-matched schemes; anything unmatched is
+    listed, never silently folded into the totals."""
+
+    total_invested: float
+    total_current_value: float
+    total_realized_gain: float
+    total_unrealized_gain: float
+    total_gain: float = Field(..., description="total_realized_gain + total_unrealized_gain")
+    portfolio_xirr_pct: float | None = Field(
+        None, description="Money-weighted annualized return, as a percentage — null if it couldn't be solved"
+    )
+    matched_scheme_count: int
+    per_scheme: list[CASSchemeOverview]
+    unmatched_schemes: list[CASUnmatchedScheme]
+    structure: CASPortfolioStructure | None = Field(
+        None, description="Null if no matched holding has a usable current value yet"
+    )
+    holding_period: CASHoldingPeriodSummary
+    time_weighted_return: CASTimeWeightedReturn
+    transaction_activity: list[CASTransactionActivity] = Field(
+        ..., description="Breakdown of transaction count and total amount by type, across every matched scheme"
+    )
+    investment_timing: CASInvestmentTiming
+    investor_behavior: CASInvestorBehavior
+    complexity: CASPortfolioComplexity
+    look_through_analysis: PortfolioAnalysisResponse | None = Field(
+        None,
+        description="Combined sector/market-cap allocation, concentration, pairwise fund overlap, correlation, and "
+        "portfolio risk/drawdown across current holdings — the exact same engine POST /api/portfolio/analyse uses. "
+        "Null if no matched scheme currently has a usable value.",
+    )
+    insights: list[CASInsight] = Field(
+        ..., description="Evidence-based observations, most-severe first — never a buy/sell recommendation"
+    )
+    health_check: CASHealthCheck
+
+
 class CASParseResponse(BaseModel):
     as_of_date: date | None = Field(None, description="The statement's own generation/end date, if found")
     matched_holdings: list[CASMatchedHolding]
     unmatched_holdings: list[CASUnmatchedHolding]
     total_market_value: float = Field(..., description="Sum of every currently-held position found in the statement")
     matched_market_value: float = Field(..., description="Sum of only the matched holdings — what weight_pct is based on")
+    overview: CASOverviewResponse | None = Field(
+        None, description="Invested/current-value/XIRR overview computed from the full transaction ledger"
+    )
+    disclaimer: str = CAS_DISCLAIMER
+
+
+class CASNewScheme(BaseModel):
+    fund_id: int
+    scheme_name: str
+    isin: str
+    current_value: float = Field(..., description="Value in the current (later) snapshot")
+
+
+class CASExitedScheme(BaseModel):
+    fund_id: int
+    scheme_name: str
+    isin: str
+    previous_value: float = Field(..., description="Value in the previous (earlier) snapshot")
+
+
+class CASSchemeChange(BaseModel):
+    """A scheme with a usable current_value in BOTH snapshots — its value
+    and portfolio weight moved, but it wasn't newly added or fully exited."""
+
+    fund_id: int
+    scheme_name: str
+    isin: str
+    previous_value: float
+    current_value: float
+    value_change: float
+    previous_weight_pct: float | None
+    current_weight_pct: float | None
+    weight_pct_change: float | None = Field(None, description="Null if either snapshot's weight is unavailable")
+
+
+class CASAllocationDrift(BaseModel):
+    label: str
+    previous_weight_pct: float = Field(..., description="0 if this label didn't exist in the previous snapshot")
+    current_weight_pct: float = Field(..., description="0 if this label no longer exists in the current snapshot")
+    weight_pct_change: float
+
+
+class CASComparisonResponse(BaseModel):
+    """Portfolio Analysis §"what changed over time": a diff between two
+    CAS statements the investor uploads together — an earlier one and a
+    later one. Stateless by design, same as every other CAS feature: one
+    request in, one computed response out, nothing persisted (see
+    app/services/cas_comparison_service.py's own docstring for why this
+    takes two uploads rather than remembering one). Schemes are matched
+    by ISIN; "new"/"exited" are relative to having a usable current_value
+    in each snapshot, not merely appearing in the transaction ledger.
+
+    Pricing note: every *_value/*_current_value/*_previous figure here
+    prices both snapshots' holdings at TODAY's latest known NAV (the same
+    convention the rest of this module uses), never at each statement's
+    own historical date — so these differences isolate what you actually
+    did (bought, sold, switched) between the two statements, not market
+    movement in between. See app/services/cas_comparison_service.py."""
+
+    previous_as_of_date: date | None = Field(None, description="The earlier statement's own generation date, if found")
+    current_as_of_date: date | None = Field(None, description="The later statement's own generation date, if found")
+    dates_swapped: bool = Field(
+        ..., description="True if the two uploads were provided in the wrong order and corrected automatically"
+    )
+    span_days: int | None = Field(None, description="Null if either statement's generation date couldn't be found")
+
+    total_invested_previous: float
+    total_invested_current: float
+    total_invested_change: float
+    total_current_value_previous: float
+    total_current_value_current: float
+    total_current_value_change: float
+    total_gain_previous: float
+    total_gain_current: float
+    total_gain_change: float
+    portfolio_xirr_pct_previous: float | None
+    portfolio_xirr_pct_current: float | None
+
+    new_schemes: list[CASNewScheme]
+    exited_schemes: list[CASExitedScheme]
+    scheme_changes: list[CASSchemeChange] = Field(
+        ..., description="Sorted by |value_change| descending — the biggest movers first"
+    )
+    asset_allocation_drift: list[CASAllocationDrift]
+
+    previous_unmatched_schemes: list[CASUnmatchedScheme]
+    current_unmatched_schemes: list[CASUnmatchedScheme]
     disclaimer: str = CAS_DISCLAIMER

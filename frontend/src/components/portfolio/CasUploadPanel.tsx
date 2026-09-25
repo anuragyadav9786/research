@@ -3,7 +3,21 @@
 import { useState } from "react";
 
 import { ApiError, parseCasStatement } from "@/lib/api";
-import { formatDate, formatRupees } from "@/lib/format";
+import { formatDate, formatPct, formatRupees, signColorClass } from "@/lib/format";
+import { CasBehaviorSnapshot } from "@/components/portfolio/CasBehaviorSnapshot";
+import { CasFundContribution } from "@/components/portfolio/CasFundContribution";
+import { CasHealthCheck } from "@/components/portfolio/CasHealthCheck";
+import { CasHoldingPeriod } from "@/components/portfolio/CasHoldingPeriod";
+import { CasInsightsList } from "@/components/portfolio/CasInsightsList";
+import { CasInvestmentTiming } from "@/components/portfolio/CasInvestmentTiming";
+import { CasPortfolioStructure } from "@/components/portfolio/CasPortfolioStructure";
+import { CasPurchaseBehavior } from "@/components/portfolio/CasPurchaseBehavior";
+import { CasSipConsistency } from "@/components/portfolio/CasSipConsistency";
+import { PortfolioAnalysisResult } from "@/components/portfolio/PortfolioAnalysisResult";
+import { CasTimeWeightedReturn } from "@/components/portfolio/CasTimeWeightedReturn";
+import { CasTransactionActivity } from "@/components/portfolio/CasTransactionActivity";
+import { Disclosure } from "@/components/fund/Disclosure";
+import { StatCard } from "@/components/fund/StatCard";
 import type { CASParseResponse } from "@/types/cas";
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -136,6 +150,85 @@ export function CasUploadPanel({
             {matchedCount > 0 && <>, worth {formatRupees(result.matched_market_value)}</>}.
             {truncated && ` Only the ${maxRows} largest are used — analysis supports up to ${maxRows} funds.`}
           </p>
+
+          {result.overview?.health_check && <CasHealthCheck healthCheck={result.overview.health_check} />}
+
+          {result.overview && result.overview.matched_scheme_count > 0 && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCard label="Total Invested" value={formatRupees(result.overview.total_invested)} />
+                <StatCard label="Current Value" value={formatRupees(result.overview.total_current_value)} />
+                <StatCard
+                  label="Portfolio XIRR"
+                  value={result.overview.portfolio_xirr_pct !== null ? formatPct(result.overview.portfolio_xirr_pct) : "N/A"}
+                  valueClassName={
+                    result.overview.portfolio_xirr_pct !== null
+                      ? signColorClass(result.overview.portfolio_xirr_pct)
+                      : "text-slate-600"
+                  }
+                  hint={
+                    result.overview.portfolio_xirr_pct === null
+                      ? "Not enough cash-flow history to solve for a rate"
+                      : undefined
+                  }
+                />
+                <StatCard
+                  label="Total Gain"
+                  value={formatRupees(result.overview.total_gain)}
+                  valueClassName={signColorClass(result.overview.total_gain)}
+                  hint={`Realized ${formatRupees(result.overview.total_realized_gain)} · Unrealized ${formatRupees(result.overview.total_unrealized_gain)}`}
+                />
+              </div>
+              <Disclosure label="What is XIRR?">
+                <p className="text-sm text-slate-400">
+                  XIRR measures the annualized return earned on your actual investment cash flows, taking the timing
+                  of each investment and withdrawal into account — a fairer measure than a simple point-to-point
+                  return when money went in and out at different times (lump sums, SIP installments, redemptions).
+                </p>
+                <p className="text-sm text-slate-400 mt-2">
+                  Computed from every Purchase/SIP (money you paid in) and Redemption (money you received) in this
+                  statement, plus the current value of what&rsquo;s still held. Switches between funds already in
+                  this portfolio aren&rsquo;t counted as new money in or out — internal transfers, not external cash
+                  flow.
+                </p>
+              </Disclosure>
+            </div>
+          )}
+
+          {result.overview?.structure && <CasPortfolioStructure structure={result.overview.structure} />}
+
+          {result.overview?.complexity && result.overview?.investor_behavior && (
+            <CasBehaviorSnapshot complexity={result.overview.complexity} behavior={result.overview.investor_behavior} />
+          )}
+
+          {result.overview?.time_weighted_return && (
+            <CasTimeWeightedReturn twr={result.overview.time_weighted_return} />
+          )}
+
+          {result.overview && result.overview.per_scheme.length > 1 && (
+            <CasFundContribution perScheme={result.overview.per_scheme} />
+          )}
+
+          {result.overview?.holding_period && <CasHoldingPeriod holdingPeriod={result.overview.holding_period} />}
+
+          {result.overview && <CasPurchaseBehavior perScheme={result.overview.per_scheme} />}
+
+          {result.overview && <CasSipConsistency perScheme={result.overview.per_scheme} />}
+
+          {result.overview && <CasTransactionActivity activity={result.overview.transaction_activity} />}
+
+          {result.overview?.investment_timing && <CasInvestmentTiming timing={result.overview.investment_timing} />}
+
+          {result.overview?.look_through_analysis && (
+            <div className="border-t border-slate-900 pt-4">
+              <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">
+                Look-Through Analysis (Current Holdings)
+              </h3>
+              <PortfolioAnalysisResult result={result.overview.look_through_analysis} />
+            </div>
+          )}
+
+          {result.overview?.insights && <CasInsightsList insights={result.overview.insights} />}
 
           {matchedCount > 0 && (
             <ul className="text-sm text-slate-300 space-y-1">
