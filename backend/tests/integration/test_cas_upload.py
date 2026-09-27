@@ -838,6 +838,87 @@ def test_look_through_analysis_is_null_when_nothing_is_currently_valued():
     assert response.json()["overview"]["look_through_analysis"] is None
 
 
+EXITED_TEST_ISIN = "INF000CAS007"
+
+
+@pytest.fixture
+def exited_test_scheme(db):
+    """A matched, priced scheme fully redeemed to zero units -- reproduces
+    a real-world 500 the CAS insights module hit in production: this
+    scheme's current_value computes to 0.0 (not None, since it still has
+    NAV history), which used to leak into _look_through_analysis_summary's
+    fund_weights_pct (only filtered on "weight_pct is not None") without a
+    matching entry in fund_names (scoped to current_value > 0), raising a
+    KeyError inside compute_portfolio_analysis."""
+    amc = AMC(name="CAS Test Exited Fund House")
+    db.add(amc)
+    db.flush()
+    family = FundFamily(amc_id=amc.id, name="CAS Test Exited Fund House")
+    db.add(family)
+    db.flush()
+    scheme = Scheme(fund_family_id=family.id, name="CAS Test Exited Fund", category="Equity - Flexi Cap")
+    db.add(scheme)
+    db.flush()
+    variant = SchemeVariant(scheme_id=scheme.id, plan="regular", option="growth", isin=EXITED_TEST_ISIN)
+    db.add(variant)
+    db.flush()
+
+    source = db.query(DataSource).filter(DataSource.source_type == "manual").first()
+    if source is None:
+        source = DataSource(name="TEST FIXTURE SOURCE", source_type="manual")
+        db.add(source)
+        db.flush()
+    db.add(NavHistory(scheme_variant_id=variant.id, date=date(2026, 9, 22), nav=20.0, source_id=source.id))
+    db.commit()
+
+    yield scheme
+
+    db.query(NavHistory).filter(NavHistory.scheme_variant_id == variant.id).delete()
+    db.query(SchemeVariant).filter(SchemeVariant.scheme_id == scheme.id).delete()
+    db.query(Scheme).filter(Scheme.id == scheme.id).delete()
+    db.query(FundFamily).filter(FundFamily.id == family.id).delete()
+    db.query(AMC).filter(AMC.id == amc.id).delete()
+    db.commit()
+
+
+EXITED_PLUS_HELD_CAS_LINES = LOOK_THROUGH_CAS_LINES + [
+    "Test Fund House Mutual Fund",
+    "Folio No: 55554444 / 0    PAN: ABCDE1234F    KYC: OK PAN: OK",
+    "Test Investor",
+    f"900TESTGG-Test Fund House Flexi Cap Fund - Regular Plan - Growth (Non Demat) - ISIN: {EXITED_TEST_ISIN}(Advisor: ARN-1)",
+    "Nominee 1:    Nominee 2:    Nominee 3:",
+    "Opening Unit Balance: 0.000",
+    "10-Jun-2024   Purchase    500.00    25.000    20.00    25.000",
+    "20-Jul-2024   Redemption    (500.00)    (25.000)    20.00    0.000",
+    "Closing Unit Balance: 0.000    NAV on 22-Sep-2026: INR 20.0    Total Cost Value: 0.00    Market Value on 22-Sep-2026: INR 0.00",
+    "Entry Load: Nil; Exit Load: Nil.",
+]
+
+
+def test_look_through_analysis_excludes_a_fully_redeemed_scheme_with_zero_current_value(
+    look_through_test_scheme, exited_test_scheme
+):
+    pdf_bytes = _pdf_with_lines(EXITED_PLUS_HELD_CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    overview = response.json()["overview"]
+
+    exited_entry = next(e for e in overview["per_scheme"] if e["isin"] == EXITED_TEST_ISIN)
+    assert exited_entry["current_value"] == pytest.approx(0.0)
+    assert exited_entry["remaining_units"] == pytest.approx(0.0)
+    # Zero current value still yields a defined (zero) weight, not None --
+    # exactly the value that used to slip past the "is not None" filter.
+    assert exited_entry["weight_pct"] == pytest.approx(0.0)
+
+    look_through = overview["look_through_analysis"]
+    assert look_through is not None
+    assert len(look_through["funds"]) == 1
+    assert look_through["funds"][0]["weight_pct"] == pytest.approx(100.0)
+
+
 def test_missing_password_on_encrypted_pdf_returns_422():
     from pypdf import PdfWriter as _Writer
 

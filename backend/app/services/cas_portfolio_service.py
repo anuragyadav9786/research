@@ -737,10 +737,17 @@ def _look_through_analysis_summary(
     if not valued_scheme_objects:
         return None
 
-    fund_weights_pct = {
-        entry["fund_id"]: entry["weight_pct"] for entry in per_scheme if entry["weight_pct"] is not None
-    }
     fund_names = {fund_id: scheme.name for fund_id, (scheme, _nav_series) in valued_scheme_objects.items()}
+    # Filtered to the same currently-held scope as fund_names, not just
+    # "has a weight_pct" — a fully-redeemed scheme (current_value == 0.0,
+    # not None) still gets weight_pct = 0.0 assigned above, which is not
+    # None, so it would otherwise sneak in here without a matching entry
+    # in fund_names and blow up compute_portfolio_analysis's key lookup.
+    fund_weights_pct = {
+        entry["fund_id"]: entry["weight_pct"]
+        for entry in per_scheme
+        if entry["weight_pct"] is not None and entry["fund_id"] in fund_names
+    }
 
     per_fund_security_weights: dict[int, dict[str, float]] = {}
     per_fund_sector_weights: dict[int, dict[str, float]] = {}
