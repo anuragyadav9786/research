@@ -12,6 +12,7 @@ const PRIMARY_ACTIONS = [
   { href: "/research/compare", label: "Compare Funds" },
   { href: "/portfolio", label: "Analyse My Portfolio" },
   { href: "/market", label: "Explore Market Behaviour" },
+  { href: "/research/top-performers", label: "Top Performers" },
 ] as const;
 
 const ANALYSIS_CAPABILITIES = [
