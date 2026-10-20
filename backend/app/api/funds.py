@@ -39,6 +39,7 @@ from app.schemas.funds import (
     DrawdownResponse,
     FundDetail,
     FundListResponse,
+    FundScreenerResponse,
     FundSummary,
     IntelligenceResponse,
     InvestmentValueResponse,
@@ -59,6 +60,7 @@ from app.services import (
     category_analytics_service,
     discovery_service,
     fund_analytics_service,
+    fund_screener_service,
     market_regime_service,
     overlap_service,
     portfolio_intelligence_service,
@@ -232,6 +234,22 @@ def get_discovered_funds(
     if result is None:
         raise HTTPException(status_code=404, detail=f"Unknown discovery filter: {filter}")
     return result
+
+
+@router.get("/screener", response_model=FundScreenerResponse)
+def get_fund_screener(
+    sort_by: Literal["1m", "3m", "6m", "1y", "3y", "5y"] = Query("1y"),
+    sort_dir: Literal["asc", "desc"] = Query("desc"),
+    limit: int = Query(fund_screener_service.DEFAULT_LIMIT, ge=1, le=fund_screener_service.MAX_LIMIT),
+    db: Session = Depends(get_db),
+) -> dict:
+    """A transparent, sortable table of real 1m/3m/6m/1y/3y/5y returns —
+    served entirely from the daily-precomputed fund_period_returns table
+    (data_pipeline/orchestration/period_return_rollup.py), never
+    recalculated live. Not a ranking/"Top Performers" list (see
+    FundScreenerResponse's docstring) — every number is shown with its
+    own as-of/anchor date, sortable by the reader, not pre-judged."""
+    return fund_screener_service.get_fund_screener(db, sort_by=sort_by, sort_dir=sort_dir, limit=limit)
 
 
 @router.get("/{fund_id}", response_model=FundDetail)

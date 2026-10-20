@@ -198,6 +198,32 @@ export interface DiscoverFundsResponse {
   disclaimer: string;
 }
 
+export const SCREENER_PERIODS = ["1m", "3m", "6m", "1y", "3y", "5y"] as const;
+export type ScreenerPeriod = (typeof SCREENER_PERIODS)[number];
+
+export interface FundScreenerPeriodReturn {
+  return_pct: number | null;
+  status: "VALID" | "DATA_UNAVAILABLE";
+  anchor_date: string | null;
+}
+
+export interface FundScreenerEntry {
+  id: number;
+  scheme_name: string;
+  category: string;
+  amc_name: string;
+  returns: Record<ScreenerPeriod, FundScreenerPeriodReturn>;
+}
+
+export interface FundScreenerResponse {
+  as_of_date: string | null;
+  sort_by: ScreenerPeriod;
+  sort_dir: "asc" | "desc";
+  total_eligible: number;
+  items: FundScreenerEntry[];
+  disclaimer: string;
+}
+
 export interface NavPoint {
   date: string;
   value: number;

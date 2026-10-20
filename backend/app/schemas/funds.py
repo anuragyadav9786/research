@@ -6,6 +6,7 @@ models never cross the API boundary directly (Section 20).
 from __future__ import annotations
 
 from datetime import date
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -258,6 +259,46 @@ class DiscoverFundsResponse(BaseModel):
     criterion: str
     funds_scanned: int
     items: list[DiscoveryFundEntry]
+    disclaimer: str = DISCLAIMER
+
+
+SCREENER_PERIODS = ("1m", "3m", "6m", "1y", "3y", "5y")
+
+
+class FundScreenerPeriodReturn(BaseModel):
+    """One lookback window's point-to-point return for one fund. `status`
+    is DATA_UNAVAILABLE (never a fabricated 0%) whenever
+    fund_period_returns has no row for this fund/period — e.g. the scheme
+    didn't exist that far back, or a fetch for that anchor date failed —
+    without trying to distinguish which, since the data this is computed
+    from doesn't itself record a reason (see period_return_rollup.py)."""
+
+    return_pct: float | None
+    status: Literal["VALID", "DATA_UNAVAILABLE"]
+    anchor_date: date | None
+
+
+class FundScreenerEntry(BaseModel):
+    id: int
+    scheme_name: str
+    category: str
+    amc_name: str
+    returns: dict[str, FundScreenerPeriodReturn]
+
+
+class FundScreenerResponse(BaseModel):
+    """A transparent, sortable table of real period returns — never a
+    "Top Performers"/ranked leaderboard (see why-thinkfin's "no arbitrary
+    scores, rankings, or labels like Best Fund" promise, and
+    discovery_service.py's same rule). Every number shown is real and
+    sourced from fund_period_returns; `as_of_date` and each entry's own
+    `anchor_date` make clear exactly which dates it was computed from."""
+
+    as_of_date: date | None
+    sort_by: str
+    sort_dir: str
+    total_eligible: int
+    items: list[FundScreenerEntry]
     disclaimer: str = DISCLAIMER
 
 
