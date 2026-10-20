@@ -81,6 +81,50 @@ class BenchmarkHistory(Base):
     )
 
 
+class FundPeriodReturn(Base):
+    """One scheme_variant's point-to-point return for one fixed lookback
+    period (1m/3m/6m/1y/3y/5y), as of the most recent daily rollup run —
+    the data behind the fund screener/"top performers" feature.
+
+    Deliberately overwrite-style, same convention as FundMetric: each
+    daily run REPLACES the existing row for a given (scheme_variant_id,
+    period) rather than accumulating one row per day forever. No raw NAV
+    time series is stored to produce this — each run fetches only the
+    exact NAV points it needs (today's, plus one anchor point per period)
+    from data_pipeline/sources/amfi/portal_history.py and discards them
+    once the return is computed, so this table's size is bounded at
+    (number of tracked schemes x 6 periods) regardless of how long the
+    platform has been running. See data_pipeline/orchestration/
+    period_return_rollup.py for the computation.
+
+    `anchor_date` is the REAL date the anchor NAV was actually taken from
+    (after stepping back over weekends/holidays with no published NAV) —
+    kept so the API/UI can be honest that e.g. a "1 year" return is as of
+    that exact anchor date, not silently assumed to be exactly 365 days
+    back.
+    """
+
+    __tablename__ = "fund_period_returns"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scheme_variant_id: Mapped[int] = mapped_column(ForeignKey("scheme_variants.id"), nullable=False)
+    period: Mapped[str] = mapped_column(String(10), nullable=False)  # "1m" | "3m" | "6m" | "1y" | "3y" | "5y"
+    return_pct: Mapped[float] = mapped_column(Numeric(12, 4), nullable=False)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
+    anchor_date: Mapped[date] = mapped_column(Date, nullable=False)
+    source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("scheme_variant_id", "period", name="uq_fund_period_return_identity"),
+        CheckConstraint(
+            "period in ('1m', '3m', '6m', '1y', '3y', '5y')", name="ck_fund_period_return_period"
+        ),
+    )
+
+
 class PortfolioSnapshot(Base):
     """One monthly (or as-available) holdings disclosure for a scheme."""
 

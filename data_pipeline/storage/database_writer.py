@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.models.timeseries import BenchmarkHistory, DataSource, NavHistory
+from app.models.timeseries import BenchmarkHistory, DataSource, FundPeriodReturn, NavHistory
 from data_pipeline.normalization.scheme_mapping import MappedNavRecord
 from data_pipeline.validation.benchmark_validation import ValidatedBenchmarkPoint
 
@@ -112,3 +112,38 @@ def write_benchmark_points(
         for p in points
     ]
     return _batched_upsert(db, BenchmarkHistory, rows, constraint="uq_benchmark_date")
+
+
+def write_period_returns(db: Session, source: DataSource, rows: list[dict]) -> int:
+    """Upsert fund_period_returns rows — deliberately ON CONFLICT DO
+    UPDATE, not DO NOTHING, since the whole point of this table is that
+    each day's run REPLACES yesterday's value for a given
+    (scheme_variant_id, period), never accumulates (see FundPeriodReturn's
+    docstring). `rows` already carry scheme_variant_id/period/return_pct/
+    as_of_date/anchor_date (see period_return_rollup.py); source_id is
+    added here.
+
+    Returns the number of rows written (inserted or updated) — unlike
+    _batched_upsert's DO-NOTHING callers, every row in a successful batch
+    counts, since an update is still a real write, not a no-op.
+    """
+    if not rows:
+        return 0
+
+    written = 0
+    for i in range(0, len(rows), _INSERT_BATCH_SIZE):
+        batch = [{**row, "source_id": source.id} for row in rows[i : i + _INSERT_BATCH_SIZE]]
+        stmt = pg_insert(FundPeriodReturn).values(batch)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_fund_period_return_identity",
+            set_={
+                "return_pct": stmt.excluded.return_pct,
+                "as_of_date": stmt.excluded.as_of_date,
+                "anchor_date": stmt.excluded.anchor_date,
+                "source_id": stmt.excluded.source_id,
+                "updated_at": func.now(),
+            },
+        )
+        db.execute(stmt)
+        written += len(batch)
+    return written

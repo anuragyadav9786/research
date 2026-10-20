@@ -25,6 +25,7 @@ if _BACKEND_DIR not in sys.path:
 
 from app.core.database import SessionLocal  # noqa: E402
 from data_pipeline.ingestion.nav_ingestion import run_amfi_nav_ingestion  # noqa: E402
+from data_pipeline.orchestration.period_return_rollup import run_period_return_rollup  # noqa: E402
 from data_pipeline.orchestration.precompute_metrics import run_precompute  # noqa: E402
 
 
@@ -66,6 +67,24 @@ def main() -> None:
                 f"variants_skipped_no_history={precompute.variants_skipped_no_history} "
                 f"metrics_written={precompute.metrics_written}"
             )
+
+            # Independent of the above: fetches its own NAV snapshots
+            # directly (today's + one per lookback period) rather than
+            # reading nav_history, so it runs regardless of whether this
+            # scheme's history has ever been backfilled — see
+            # period_return_rollup.py's module docstring.
+            screener = run_period_return_rollup(db)
+            screener_msg = (
+                f"Fund screener rollup: eligible_variants={screener.eligible_variant_count} "
+                f"as_of={screener.as_of_date} returns_written={screener.returns_computed}"
+            )
+            if screener.periods_unavailable:
+                screener_msg += " | unavailable_by_period=" + ", ".join(
+                    f"{p}={c}" for p, c in screener.periods_unavailable.items()
+                )
+            if screener.fetch_errors:
+                screener_msg += " | fetch_errors=" + "; ".join(screener.fetch_errors)
+            print(screener_msg)
     finally:
         db.close()
 

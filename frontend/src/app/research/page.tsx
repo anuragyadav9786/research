@@ -70,7 +70,15 @@ export default async function ResearchPage({
 
       <main className="px-8 py-10 max-w-5xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold">Fund Research</h1>
+          <div className="flex items-center justify-between gap-4">
+            <h1 className="text-2xl font-semibold">Fund Research</h1>
+            <Link
+              href="/research/screener"
+              className="text-sm text-indigo-400 hover:text-indigo-300 whitespace-nowrap"
+            >
+              Fund Screener →
+            </Link>
+          </div>
           {!discover && persona && (
             <p className="text-indigo-400 text-sm mt-1">
               {persona.label}: {persona.description}

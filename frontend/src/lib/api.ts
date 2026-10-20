@@ -5,6 +5,7 @@ import type {
   DrawdownResponse,
   FundDetail,
   FundListResponse,
+  FundScreenerResponse,
   FundSummary,
   IntelligenceResponse,
   InvestmentValueResponse,
@@ -166,6 +167,14 @@ export function getDiscoveryFilters(): Promise<DiscoveryFiltersResponse> {
 
 export function getDiscoveredFunds(filterKey: string): Promise<DiscoverFundsResponse> {
   return apiGet<DiscoverFundsResponse>("/api/funds/discover", { filter: filterKey });
+}
+
+export function getFundScreener(
+  sortBy: string,
+  sortDir: "asc" | "desc",
+  limit?: number
+): Promise<FundScreenerResponse> {
+  return apiGet<FundScreenerResponse>("/api/funds/screener", { sort_by: sortBy, sort_dir: sortDir, limit });
 }
 
 export function getFundPortfolio(fundId: number): Promise<PortfolioResponse> {
