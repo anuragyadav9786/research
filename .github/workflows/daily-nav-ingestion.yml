@@ -326,12 +326,12 @@ jobs:
                   print(f'nav_history: {stats.n} rows, range {stats.min_d} .. {stats.max_d}')
 
                   last5 = conn.execute(text('''
-                      SELECT nh.date, nh.value, ds.name AS source_name
+                      SELECT nh.date, nh.nav, ds.name AS source_name
                       FROM nav_history nh JOIN data_sources ds ON ds.id = nh.source_id
                       WHERE nh.scheme_variant_id = :vid ORDER BY nh.date DESC LIMIT 5
                   '''), {'vid': r.variant_id}).all()
                   for lr in last5:
-                      print(f'  {lr.date}  {lr.value}  (source: {lr.source_name!r})')
+                      print(f'  {lr.date}  {lr.nav}  (source: {lr.source_name!r})')
 
                   if r.benchmark_id is not None:
                       bstats = conn.execute(text('''
