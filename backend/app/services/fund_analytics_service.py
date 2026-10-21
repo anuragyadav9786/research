@@ -35,6 +35,22 @@ from analytics.rolling_returns import (
 RETURN_WINDOWS_YEARS = {"1y": 1, "3y": 3, "5y": 5, "7y": 7, "10y": 10}
 MIN_OBSERVATIONS_FOR_RISK = 2
 
+# A real production bug: HDFC Flexi Cap Fund's NAV history had a
+# genuine 1,095-day hole, and its 1Y and 3Y windows both silently
+# resolved to the exact same post-gap start date (both targets fell
+# inside the hole) -- producing two identical, misleading CAGR figures
+# dressed up as different periods. lazy_nav_backfill.py now detects and
+# repairs a real gap on each fund view, but this is deliberate defense
+# in depth for whatever window remains before a repair lands (cooldown,
+# a network failure, or a call path that doesn't trigger lazy backfill
+# at all -- e.g. category/discovery aggregates): if the actual resolved
+# start date lands this many days or more after what was targeted, a
+# real gap sits between them -- never show a return computed across an
+# unexplained hole. Matches lazy_nav_backfill.py's own
+# _GAP_THRESHOLD_DAYS (even India's longest market-holiday clusters run
+# well under this).
+_MAX_PLAUSIBLE_WINDOW_SLIPPAGE_DAYS = 20
+
 # Rolling-return bar chart (see compute_rolling_return_series): two
 # independent axes, matching the request in plain terms — "3-month rolling
 # return, plotted over the last 1 year" — rather than one flat list of
@@ -80,7 +96,7 @@ def _resolve_return_window(
     window isn't available — shared by compute_returns (percentage CAGR)
     and compute_investment_value (rupee-terms lumpsum/SIP value), so both
     report the exact same window and the exact same scheme_too_young vs.
-    insufficient_history distinction from one place."""
+    insufficient_history vs. data_gap distinction from one place."""
     target_start = end_date - pd.Timedelta(days=round(years * 365.25))
     if target_start < earliest_nav_date:
         if nav_history_backfilled:
@@ -89,7 +105,10 @@ def _resolve_return_window(
     window_nav = nav.loc[target_start:end_date]
     if window_nav.empty or len(window_nav) < 2:
         return None, "insufficient_history", None
-    return window_nav.index[0], None, None
+    actual_start = window_nav.index[0]
+    if (actual_start - target_start).days >= _MAX_PLAUSIBLE_WINDOW_SLIPPAGE_DAYS:
+        return None, "data_gap", None
+    return actual_start, None, None
 
 
 def compute_returns(nav: pd.Series, nav_history_backfilled: bool = False) -> dict:

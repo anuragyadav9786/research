@@ -154,6 +154,15 @@ class SchemeVariant(Base):
     # "not yet backfilled" — either brand new, or the daily feed's ongoing
     # NAV points are all we have so far.
     nav_history_backfilled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set every time lazy_nav_backfill.py attempts a gap repair (whether or
+    # not it actually closed the gap) for an already-backfilled variant —
+    # a real production bug surfaced a genuine multi-year hole in one
+    # fund's NAV history despite nav_history_backfilled_at being set (the
+    # one-time flag never gets revisited). This timestamp gates a cooldown
+    # (_GAP_RECHECK_COOLDOWN_DAYS) so a gap that turns out to be permanent
+    # costs one wasted mfapi.in call per cooldown window, not one per page
+    # view forever. NULL means no repair has ever been attempted.
+    nav_gap_repair_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     scheme: Mapped["Scheme"] = relationship(back_populates="variants")
 
