@@ -101,3 +101,59 @@ def test_empty_nav_history_is_still_no_nav_history_not_scheme_too_young():
     for label in ("1y", "3y", "5y", "7y", "10y"):
         assert result["windows"][label]["reason"] == "no_nav_history"
         assert result["windows"][label]["earliest_nav_date"] is None
+
+
+def test_a_real_gap_spanning_multiple_windows_is_reported_as_data_gap_not_silently_computed():
+    """Reproduces a real production bug: HDFC Flexi Cap Fund's NAV history
+    had a genuine 1,095-day hole, and its 1Y and 3Y windows both silently
+    resolved to the exact same post-gap start date (both target dates
+    fell inside the hole) -- producing two identical, misleading CAGR
+    figures (-29.33% for both) dressed up as different periods. A window
+    whose actual resolved start lands implausibly far after what was
+    targeted must be reported unavailable (reason="data_gap"), never
+    silently computed."""
+    today = date(2026, 10, 19)
+    old_end = date(2023, 9, 12)
+    recent_start = date(2026, 9, 11)  # 1,095 days after old_end -- the real gap's exact width
+
+    # Deep enough (~9.8 years back from old_end) that 5Y/7Y/10Y's target
+    # dates all land well within this era, not before its earliest date
+    # -- isolates the test to the gap-detection behavior itself, without
+    # also tripping the separate scheme_too_young path.
+    old_era = pd.date_range(end=old_end, periods=1200, freq="3D")
+    recent_era = pd.date_range(start=recent_start, end=today, freq="D")
+    index = old_era.append(recent_era)
+    values = [100.0] * len(old_era) + [100.0 * (1.1 ** i) for i in range(len(recent_era))]
+    nav = pd.Series(values, index=index)
+
+    result = compute_returns(nav, nav_history_backfilled=True)
+
+    # Both the 1Y and 3Y targets land inside the gap (recent_start is less
+    # than 3 years before today) -- both must be refused, not silently
+    # computed as if the gap weren't there.
+    for label in ("1y", "3y"):
+        w = result["windows"][label]
+        assert w["available"] is False
+        assert w["reason"] == "data_gap"
+        assert w["cagr_pct"] is None
+
+    # 5Y/7Y/10Y's target dates fall in the OLD era, well before the gap,
+    # so their actual resolved start is close to what was targeted --
+    # these remain genuinely computable and must not be refused.
+    for label in ("5y", "7y", "10y"):
+        w = result["windows"][label]
+        assert w["available"] is True
+        assert w["reason"] is None
+
+
+def test_a_window_whose_start_lands_a_few_days_late_is_still_available():
+    """A real trading calendar never has NAV on every single day (weekends,
+    holidays) -- a window landing a handful of days after its exact
+    target is normal and must not be mistaken for a real gap."""
+    nav = _daily_nav(date(2010, 1, 1), date(2026, 9, 12), step_days=3)
+    result = compute_returns(nav, nav_history_backfilled=True)
+
+    for label in ("1y", "3y", "5y", "7y", "10y"):
+        w = result["windows"][label]
+        assert w["available"] is True
+        assert w["reason"] is None

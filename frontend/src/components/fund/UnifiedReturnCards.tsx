@@ -23,6 +23,9 @@ function unavailableHint(w: ReturnWindow): string {
   if (w.reason === "scheme_too_young" && w.earliest_nav_date) {
     return `No NAV history before ${formatMonthYear(w.earliest_nav_date)}`;
   }
+  if (w.reason === "data_gap") {
+    return "A gap in this fund's NAV data spans this period — being repaired";
+  }
   return "Insufficient NAV history";
 }
 

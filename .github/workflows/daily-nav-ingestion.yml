@@ -40,6 +40,10 @@ on:
         description: "Read-only: for the exact fund-screener-eligible scheme set (Regular Plan + Growth, non-debt — same filter period_return_rollup.py uses), report the real category breakdown, to scope which benchmark indices a real category->benchmark mapping would actually need"
         type: boolean
         default: false
+      debug_scheme_nav_gap:
+        description: "Read-only: case-insensitive substring match on scheme name — reports each matching scheme_variant's amfi_code, nav_history_backfilled_at, nav_history row count/date range/last 5 rows, linked benchmark, and whether that amfi_code appears in today's live AMFI NAVAll.txt. Diagnoses a fund's NAV history silently going stale (e.g. a chart whose line stops short of the benchmark's)."
+        type: string
+        default: ""
       run_cleanup_idcw:
         description: "DESTRUCTIVE: delete all IDCW-option scheme_variants (and their nav_history), plus any scheme left with zero variants as a result. Growth-only going forward per user request."
         type: boolean
@@ -282,6 +286,86 @@ jobs:
           finally:
               db.close()
           "
+
+      - name: Debug — diagnose a scheme's NAV history gap (no writes)
+        if: ${{ inputs.debug_scheme_nav_gap != '' }}
+        env:
+          DEBUG_SCHEME_QUERY: ${{ inputs.debug_scheme_nav_gap }}
+        run: |
+          python3 << 'PYEOF'
+          import sys, os
+          sys.path.insert(0, os.path.join(os.getcwd(), 'backend'))
+          sys.path.insert(0, os.getcwd())
+          from sqlalchemy import text
+          from app.core.database import engine
+          from data_pipeline.sources.amfi.client import fetch_navall
+          from data_pipeline.sources.amfi.parser import parse_navall
+
+          QUERY = os.environ["DEBUG_SCHEME_QUERY"]
+
+          with engine.connect() as conn:
+              rows = conn.execute(text('''
+                  SELECT s.id AS scheme_id, s.name AS scheme_name, sv.id AS variant_id,
+                         sv.plan, sv.option, sv.amfi_code, sv.nav_history_backfilled_at,
+                         s.benchmark_id
+                  FROM schemes s JOIN scheme_variants sv ON sv.scheme_id = s.id
+                  WHERE s.name ILIKE :q
+                  ORDER BY s.name, sv.plan, sv.option
+              '''), {'q': f'%{QUERY}%'}).all()
+              print(f'{len(rows)} scheme_variant(s) matched {QUERY!r}')
+
+              for r in rows:
+                  print()
+                  print(f'--- {r.scheme_name!r} [{r.plan}/{r.option}] scheme_id={r.scheme_id} variant_id={r.variant_id} ---')
+                  print(f'amfi_code={r.amfi_code!r} nav_history_backfilled_at={r.nav_history_backfilled_at!r} benchmark_id={r.benchmark_id!r}')
+
+                  stats = conn.execute(text('''
+                      SELECT count(*) AS n, min(date) AS min_d, max(date) AS max_d
+                      FROM nav_history WHERE scheme_variant_id = :vid
+                  '''), {'vid': r.variant_id}).one()
+                  print(f'nav_history: {stats.n} rows, range {stats.min_d} .. {stats.max_d}')
+
+                  last5 = conn.execute(text('''
+                      SELECT nh.date, nh.nav, ds.name AS source_name
+                      FROM nav_history nh JOIN data_sources ds ON ds.id = nh.source_id
+                      WHERE nh.scheme_variant_id = :vid ORDER BY nh.date DESC LIMIT 5
+                  '''), {'vid': r.variant_id}).all()
+                  for lr in last5:
+                      print(f'  {lr.date}  {lr.nav}  (source: {lr.source_name!r})')
+
+                  gaps = conn.execute(text('''
+                      WITH ordered AS (
+                          SELECT date, lag(date) OVER (ORDER BY date) AS prev_date
+                          FROM nav_history WHERE scheme_variant_id = :vid
+                      )
+                      SELECT prev_date, date, (date - prev_date) AS gap_days
+                      FROM ordered WHERE date - prev_date > 10
+                      ORDER BY gap_days DESC LIMIT 10
+                  '''), {'vid': r.variant_id}).all()
+                  print(f'largest nav_history gaps (>10 days) for this variant:')
+                  for g in gaps:
+                      print(f'  {g.prev_date} -> {g.date}  ({g.gap_days} days)')
+
+                  if r.benchmark_id is not None:
+                      bstats = conn.execute(text('''
+                          SELECT b.name, count(bh.*) AS n, min(bh.date) AS min_d, max(bh.date) AS max_d
+                          FROM benchmarks b LEFT JOIN benchmark_history bh ON bh.benchmark_id = b.id
+                          WHERE b.id = :bid GROUP BY b.name
+                      '''), {'bid': r.benchmark_id}).one()
+                      print(f'benchmark {bstats.name!r}: {bstats.n} benchmark_history rows, range {bstats.min_d} .. {bstats.max_d}')
+
+          print()
+          print('-- cross-check against TODAY live AMFI NAVAll.txt --')
+          try:
+              raw = fetch_navall()
+              records = parse_navall(raw)
+              matches = [r for r in records if QUERY.lower() in r.scheme_name.lower()]
+              print(f'{len(matches)} live NAVAll.txt row(s) matched {QUERY!r} today')
+              for m in matches[:15]:
+                  print(f'  code={m.scheme_code!r} name={m.scheme_name!r} plan={m.plan_raw!r} option={m.option_raw!r} nav={m.nav_raw!r} date={m.date_raw!r}')
+          except Exception as exc:
+              print(f'Could not fetch/parse live NAVAll.txt: {type(exc).__name__}: {exc}')
+          PYEOF
 
       - name: Cleanup — delete IDCW-option variants, their NAV history, and any now-empty schemes
         if: ${{ inputs.run_cleanup_idcw == true }}
@@ -964,10 +1048,10 @@ jobs:
           PYEOF
 
       - name: Run database migrations
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true && inputs.debug_amc_disclosure_url == '' && inputs.debug_amc_browser_url == '' }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true && inputs.debug_amc_disclosure_url == '' && inputs.debug_amc_browser_url == '' && inputs.debug_scheme_nav_gap == '' }}
         working-directory: backend
         run: alembic upgrade head
 
       - name: Run NAV ingestion
-        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true && inputs.debug_amc_disclosure_url == '' && inputs.debug_amc_browser_url == '' }}
+        if: ${{ inputs.debug_sample != true && inputs.debug_check_deploy != true && inputs.run_cleanup_bulk_backfill != true && inputs.debug_idcw_scope != true && inputs.run_cleanup_idcw != true && inputs.debug_portfolio_disclosure != true && inputs.backfill_featured_funds != true && inputs.debug_ppfas_disclosure != true && inputs.debug_portfolio_fetcher_smoke_test != true && inputs.debug_amc_disclosure_url == '' && inputs.debug_amc_browser_url == '' && inputs.debug_scheme_nav_gap == '' }}
         run: python -m data_pipeline.orchestration.daily_pipeline
