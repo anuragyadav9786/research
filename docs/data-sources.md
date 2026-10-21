@@ -161,27 +161,34 @@ one whose page is being viewed), so there is no identity ambiguity to
 resolve here; a scheme must already be onboarded from the live feed before
 its history can be lazily backfilled.
 
-## 4. NSE index data (real source — response shape confirmed, request mechanics unverified)
+## 4. NSE index data (real source — fully confirmed end-to-end)
 
-**Source**: NSE's own "Historical Index Data" report API,
-`GET https://www.nseindia.com/api/historicalOR/indicesHistory` (used via
-`data_pipeline/sources/benchmarks/nse.py`'s `NSEProvider`) — free, no API
-key, same class of source as mfapi.in above. Its response *shape* is
-confirmed against a real sample a user of this platform captured and
-provided directly (see `nse.py`'s module docstring) — not a guess, unlike
-an earlier version of this module that guessed at a different,
-niftyindices.com-hosted endpoint and was superseded once this one was
-confirmed.
+**Source**: NSE Indices Limited's own "Historical Total Returns Index"
+data, served via `POST https://www.niftyindices.com/BackPage/
+getTotalReturnIndexString` (used via `data_pipeline/sources/benchmarks/
+nse.py`'s `NSEProvider`) — free, no API key, same class of source as
+mfapi.in above. A direct call to nseindia.com's own historical-index API
+(`/api/historicalOR/indicesHistory`, this module's previous
+implementation) was tried first and confirmed, live, this session, to
+return HTTP 403 — a real block, not a transient failure. The
+niftyindices.com endpoint above was confirmed working instead, request
+shape, response shape, and a real end-to-end
+`ensure_benchmark_history()` run against production, all via live round
+trips this session (see `nse.py`'s module docstring for the exact
+confirmed payload/response shape).
 
-**What it is**: daily index levels — either price-return or TRI (Total
-Returns, dividend-reinvested), depending on which index name is queried
-(`indexType`). NSE publishes both as distinct named indices through this
-one endpoint (e.g. "NIFTY 50" vs. "NIFTY 50 TRI"), so `NSEProvider`
-doesn't declare a single fixed type; correctness depends on a TRI
-benchmark's `Benchmark.symbol` actually naming the TRI variant. That
-specific claim (that a TRI-named `indexType` returns real TRI values
-through this endpoint) hasn't itself been confirmed with a real sample
-yet — the response shape is confirmed, this one detail about it isn't.
+**What it is**: daily Total Returns Index (TRI, dividend-reinvested)
+levels. Two confirmed details: the `name`/`indexName` request fields must
+be the *base* index name with no "TRI" suffix (e.g. "Nifty 100", not
+"Nifty 100 TRI") — querying with "TRI" in the name returns an empty
+list — and the endpoint unconditionally returns the TRI value for
+whatever base name is queried, so `NSEProvider.served_benchmark_type` is
+fixed to `"TRI"` (unlike the old nseindia.com endpoint, which served both
+price and TRI variants depending on the symbol and so couldn't declare a
+single fixed type). An unrecognized index name (e.g. a scheme's
+AMC-disclosed custom blended-index benchmark, which isn't a plain
+Nifty-branded index) returns an empty list — confirmed live — so it
+correctly surfaces as "no data" rather than matching the wrong series.
 
 **Lazy, per-benchmark backfill** (`data_pipeline/orchestration/
 lazy_benchmark_backfill.py`, the benchmark-side counterpart to the mfapi.in
@@ -190,30 +197,20 @@ only the date range that fund's own NAV history needs; every other scheme
 sharing that same benchmark (`Scheme.benchmark_id` / `fund_benchmark_history`)
 reuses the same `benchmark_history` rows — never refetched or duplicated
 per fund. A later view that needs a wider range (older or newer) fetches
-only the missing sub-range, never the whole history again. As a defensive
-backstop for a genuinely single-type provider added later,
-`_provider_matches_benchmark_type` refuses to use a provider whose
-declared `served_benchmark_type` contradicts a benchmark's own
-`benchmark_type` — currently a no-op for `NSEProvider` itself, since it
-doesn't declare one.
+only the missing sub-range, never the whole history again. Already wired
+into real request paths: `backend/app/api/funds.py`'s fund-detail
+endpoint and `category_analytics_service.py`'s category-average
+computation both call `ensure_benchmark_history` directly — no separate
+batch/cron job needed, the same "fetch on demand, never speculatively"
+design NAV history already uses.
 
-**Enabled** (`Settings.benchmark_nse_provider_enabled = true`), with one
-open caveat on the *request* side: `nse.py`'s session-handshake and query
-mechanics (cookie establishment, headers, `from`/`to` parameter format)
-follow the widely-documented pattern other NSE-scraping tools use, but —
-like every external source in this pipeline — have not been confirmed
-against a live round trip, because every environment this has been
-developed in so far has had no outbound network access at all (an
-explicit 403 organization-policy denial on `nseindia.com`, confirmed and
-not retried, per that environment's own proxy rules — not a transient
-failure). This was a deliberate choice to enable it anyway rather than
-leave it off indefinitely: a shape mismatch or failed request fails
-closed (`benchmark_validation.py` rejects anything malformed), so the
-worst case while unconfirmed is "Data unavailable" — never a wrong
-number. Still worth confirming end-to-end (a real request succeeding, and
-a TRI-named query actually returning TRI values) from an environment with
-real network access; set the flag back to `false` if nseindia.com's terms
-turn out not to permit this kind of automated fetch.
+**Enabled** (`Settings.benchmark_nse_provider_enabled = true`) and fully
+confirmed, not just shipped-enabled-but-unverified: a real scheme
+(`Nifty 100 TRI`) was backfilled end-to-end against the real local
+database and the real live niftyindices.com endpoint this session, 12
+real daily TRI values stored and later read back correctly. Should still
+be set back to `false` if niftyindices.com's terms turn out not to permit
+this kind of automated fetch.
 
 **Fund → benchmark mapping**: `Scheme.benchmark_id` remains the current
 pointer (unchanged); `fund_benchmark_history` additionally supports a
