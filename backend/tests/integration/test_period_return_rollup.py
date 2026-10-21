@@ -52,22 +52,44 @@ def test_months_before_handles_month_length_and_leap_years():
     assert _months_before(date(2024, 3, 31), 1) == date(2024, 2, 29)
 
 
-def test_eligible_variants_excludes_direct_plan_and_debt_category(seeded_variants, db):
-    eligible = _eligible_variants(db)
-
-    regular_codes = {v.amfi_code for v in seeded_variants if v.plan == "regular"}
-    direct_codes = {v.amfi_code for v in seeded_variants if v.plan == "direct"}
-
+def test_eligible_variants_excludes_direct_plan_and_schemes_with_no_benchmark(seeded_variants, db):
+    """Real production never sets Scheme.benchmark_id automatically except
+    via benchmark_catalogue_sync.py (AMFI's own confirmed Equity
+    classification) — so this test controls benchmark_id directly, rather
+    than relying on seed_sample_data.py's synthetic assignments (which
+    set a benchmark_id on its debt scheme too, for unrelated analytics
+    test purposes)."""
+    scheme_ids = {v.scheme_id for v in seeded_variants}
+    original_benchmark_ids = {
+        s.id: s.benchmark_id for s in db.query(Scheme).filter(Scheme.id.in_(scheme_ids))
+    }
     debt_scheme_ids = {s.id for s in db.query(Scheme).filter(Scheme.category.ilike("Debt%"))}
-    debt_variant_codes = {v.amfi_code for v in seeded_variants if v.scheme_id in debt_scheme_ids}
+    equity_scheme_ids = scheme_ids - debt_scheme_ids
+    assert equity_scheme_ids, "expected at least one non-debt seeded scheme"
 
-    expected_eligible = regular_codes - debt_variant_codes
+    try:
+        # Simulate the real post-sync state: equity schemes have a
+        # confirmed benchmark, the debt scheme never got one.
+        for scheme_id, original in original_benchmark_ids.items():
+            scheme = db.get(Scheme, scheme_id)
+            scheme.benchmark_id = original if scheme_id in equity_scheme_ids else None
+        db.commit()
 
-    # Every expected-eligible seeded code is present...
-    assert expected_eligible <= eligible.keys()
-    # ...and no direct-plan or debt-category seeded code leaked in.
-    assert not (direct_codes & eligible.keys())
-    assert not (debt_variant_codes & eligible.keys())
+        eligible = _eligible_variants(db)
+
+        regular_codes = {v.amfi_code for v in seeded_variants if v.plan == "regular" and v.scheme_id in equity_scheme_ids}
+        direct_codes = {v.amfi_code for v in seeded_variants if v.plan == "direct"}
+        debt_codes = {v.amfi_code for v in seeded_variants if v.scheme_id in debt_scheme_ids}
+
+        # Every regular-plan, confirmed-benchmark seeded code is present...
+        assert regular_codes <= eligible.keys()
+        # ...and no direct-plan or no-benchmark (debt) seeded code leaked in.
+        assert not (direct_codes & eligible.keys())
+        assert not (debt_codes & eligible.keys())
+    finally:
+        for scheme_id, original in original_benchmark_ids.items():
+            db.get(Scheme, scheme_id).benchmark_id = original
+        db.commit()
 
 
 def test_rollup_computes_real_returns_and_overwrites_on_rerun(seeded_variants, db, monkeypatch):
