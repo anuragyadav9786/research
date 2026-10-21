@@ -21,11 +21,25 @@ AMFI as the source of truth for a scheme's bare name (see parser.py's
 module docstring), so this should match cleanly for most real schemes.
 An unmatched AMFI scheme name is reported, never silently dropped or
 fuzzy-guessed into the wrong scheme.
+
+Real production bug found and fixed via this session's own live probes:
+the very first two production runs of this sync (one right after it
+shipped, one right after the BSE override below shipped) both silently
+matched zero schemes -- not a fetch error, but AMFI returning
+validationStatus=SUCCESS with an empty `data` list for every
+sub-category. A live probe confirmed why: AMFI's fund-performance report
+for "today" (and even "yesterday") isn't published yet -- a ~2-day
+publication lag, consistent across sub-categories. See
+_resolve_report_date: it steps back day by day (bounded by
+_MAX_REPORT_DATE_FALLBACK_DAYS), the same pattern
+period_return_rollup.py already uses for its own AMFI endpoint, and the
+actual date used is reported back on the result as report_date_used so
+this is never silently wrong again.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -33,9 +47,37 @@ from app.models.reference import Benchmark, Scheme
 from data_pipeline.sources.amfi.fund_performance import (
     INVESTMENT_TYPE_EQUITY,
     FundPerformanceFetchError,
+    SubCategory,
     fetch_scheme_performance,
     fetch_subcategories,
 )
+
+# AMFI's fund-performance report for a given calendar date isn't published
+# immediately -- confirmed via a real live probe this session: on
+# 21-Oct-2026, both 21-Oct and 20-Oct returned SUCCESS with zero rows for
+# every real sub-category, while 19-Oct returned real data -- a ~2-day
+# lag, not a fetch failure (no exception, just an empty `data` list). A
+# sub-category's data becomes available in step with every other
+# sub-category's (confirmed the same real lag across 3 real sub-categories
+# this session), so resolving the latest usable date against just the
+# first sub-category is representative of the whole run. Mirrors the same
+# step-back-a-day pattern period_return_rollup.py already uses for its own
+# AMFI endpoint, for the same reason (today's data may not exist yet).
+_MAX_REPORT_DATE_FALLBACK_DAYS = 7
+
+
+def _resolve_report_date(target_date: date, probe_subcategory: SubCategory) -> date | None:
+    for offset in range(_MAX_REPORT_DATE_FALLBACK_DAYS + 1):
+        attempt_date = target_date - timedelta(days=offset)
+        try:
+            rows = fetch_scheme_performance(
+                INVESTMENT_TYPE_EQUITY, probe_subcategory.id, attempt_date.strftime("%d-%b-%Y")
+            )
+        except FundPerformanceFetchError:
+            continue
+        if rows:
+            return attempt_date
+    return None
 
 _NSE_PREFIX = ("nifty",)
 _BSE_PREFIX = ("bse", "s&p bse")
@@ -88,10 +130,14 @@ class CatalogueSyncResult:
     # real, bounded "what do we actually need to backfill" list.
     distinct_benchmarks_assigned: dict[str, str | None] = field(default_factory=dict)
     fetch_errors: list[str] = field(default_factory=list)
+    # The real report date AMFI actually had data for -- may be a few days
+    # before the requested one (see _resolve_report_date). None if no
+    # usable date was found at all within the fallback window.
+    report_date_used: date | None = None
 
 
 def run_benchmark_catalogue_sync(db: Session, report_date: date | None = None) -> CatalogueSyncResult:
-    report_date_str = (report_date or date.today()).strftime("%d-%b-%Y")
+    requested_date = report_date or date.today()
     result = CatalogueSyncResult()
 
     schemes_by_normalized_name = {_normalize(s.name): s for s in db.query(Scheme).all()}
@@ -102,6 +148,18 @@ def run_benchmark_catalogue_sync(db: Session, report_date: date | None = None) -
     except FundPerformanceFetchError as exc:
         result.fetch_errors.append(f"Could not fetch Equity sub-category list: {exc}")
         return result
+    if not subcategories:
+        result.fetch_errors.append("AMFI returned no Equity sub-categories")
+        return result
+
+    resolved_date = _resolve_report_date(requested_date, subcategories[0])
+    if resolved_date is None:
+        result.fetch_errors.append(
+            f"No AMFI fund-performance report had data within {_MAX_REPORT_DATE_FALLBACK_DAYS} days of {requested_date}"
+        )
+        return result
+    result.report_date_used = resolved_date
+    report_date_str = resolved_date.strftime("%d-%b-%Y")
 
     for sub in subcategories:
         result.subcategories_processed += 1

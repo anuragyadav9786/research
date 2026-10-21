@@ -7,16 +7,17 @@ and the research engine never need to know which provider actually served
 a given benchmark's data — see Section 23's "research calculation
 contract" principle, applied one layer down to data fetching itself.
 
-Only NSEProvider (nse.py) is implemented. It serves whichever index a
-Benchmark's `symbol` names — price or TRI — through one endpoint, so it
-isn't fixed to a single `served_benchmark_type`; see nse.py's module
-docstring for how a TRI benchmark needs a TRI-named symbol (e.g. "NIFTY
-50 TRI") to actually get TRI data back. BSE, CRISIL and MSCI are
-registered as recognized `provider` values on the Benchmark model
-(Section 5's provider abstraction) but have no working client here — see
-registry.py's docstring for why, and docs/data-sources.md for the
-standing "licensing/availability to confirm" note this satisfies rather
-than overrides.
+Only NSEProvider (nse.py) is implemented, serving niftyindices.com's
+Total Returns Index data — confirmed end-to-end via live round trips
+(see nse.py's module docstring). It's unconditionally TRI-only
+(`served_benchmark_type = "TRI"`); a benchmark whose `benchmark_type` is
+anything else is refused by `_provider_matches_benchmark_type`
+(lazy_benchmark_backfill.py) rather than silently mismatched. BSE, CRISIL
+and MSCI are registered as recognized `provider` values on the Benchmark
+model (Section 5's provider abstraction) but have no working client
+here — see registry.py's docstring for why, and docs/data-sources.md for
+the standing "licensing/availability to confirm" note this satisfies
+rather than overrides.
 """
 from __future__ import annotations
 

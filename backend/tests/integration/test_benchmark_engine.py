@@ -154,12 +154,12 @@ def test_provider_unavailable_with_no_cache_degrades_gracefully(db, benchmark, m
 
 
 # These two tests exercise _provider_matches_benchmark_type's reusable
-# gate mechanism directly (a hypothetical fixed-type provider), not
-# NSEProvider's own behaviour — NSEProvider itself leaves
-# served_benchmark_type unset since it can serve either type depending on
-# the symbol queried (see nse.py). The gate stays in place as defensive
-# architecture for a genuinely single-type provider added later — Section
-# 29's "never use a price index where a TRI benchmark is required" rule,
+# gate mechanism directly (a hypothetical "PRICE"-only provider), not
+# NSEProvider's own behaviour — NSEProvider itself is a real, fixed "TRI"
+# provider now (see nse.py: niftyindices.com's endpoint always returns
+# the Total Returns Index value), so this gate is what actually stops it
+# from ever being asked to serve a PRICE-type benchmark. Section 29's
+# "never use a price index where a TRI benchmark is required" rule,
 # enforced in code, not just documented.
 def test_price_only_provider_is_refused_for_a_tri_benchmark(db, benchmark, monkeypatch):
     benchmark.benchmark_type = "TRI"

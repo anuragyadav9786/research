@@ -11,12 +11,10 @@ section 4). Add a real client under this package and register it here
 once a legitimate source is confirmed for one of them.
 
 NSE is enabled by default (Settings.benchmark_nse_provider_enabled) and
-its response PARSING is now confirmed against a real captured response
-(see nse.py's module docstring). It serves both price and TRI index
-variants through one endpoint, keyed by which symbol is queried — so
-getting the right series for a TRI benchmark depends on that benchmark's
-`symbol` actually naming the TRI variant (e.g. "NIFTY 50 TRI"), not on
-this registry.
+confirmed end-to-end this session — request shape, response shape, and a
+real production backfill run — against niftyindices.com (see nse.py's
+module docstring for why that replaced a direct nseindia.com call, which
+is confirmed blocked).
 """
 from __future__ import annotations
 

@@ -35,7 +35,7 @@ from data_pipeline.validation.benchmark_validation import validate_benchmark_poi
 
 logger = logging.getLogger(__name__)
 
-DATA_SOURCE_URL = "https://www.nseindia.com"
+DATA_SOURCE_URL = "https://www.niftyindices.com"
 
 
 def _provider_matches_benchmark_type(provider, benchmark: Benchmark) -> bool:

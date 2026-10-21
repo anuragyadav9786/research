@@ -43,21 +43,15 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     ai_explanation_model: str = "claude-sonnet-5"
 
-    # Benchmark Data Engine — NSE (nseindia.com) provider. Enabled by
-    # request; its response *shape* (data_pipeline/sources/benchmarks/
-    # nse.py) is confirmed against a real captured sample, but the request
-    # side (session handshake, headers, query params) was NOT verified
-    # against a live round trip before this was turned on — the sandbox
-    # that shipped it had no outbound network access at all (confirmed via
-    # an explicit 403 organization-policy denial on nseindia.com, not a
-    # transient failure). This is a deliberate, informed choice, not an
-    # oversight: nse.py's validation
-    # (data_pipeline/validation/benchmark_validation.py) rejects anything
-    # malformed, and a failed/malformed fetch fails closed — the UI still
-    # only ever shows "Data unavailable" or a real number, never a
-    # fabricated one. Still needs confirming end-to-end from an
-    # environment with real network access. See docs/data-sources.md
-    # section 4.
+    # Benchmark Data Engine — "NSE" provider (data_pipeline/sources/
+    # benchmarks/nse.py), served via niftyindices.com. A direct call to
+    # nseindia.com's own API was tried first and confirmed (live, this
+    # session) to return HTTP 403 -- blocked, not a transient failure --
+    # so this provider was rewritten against niftyindices.com's own
+    # "Historical Total Returns Index" endpoint instead, confirmed
+    # end-to-end (request shape, response shape, and a real
+    # ensure_benchmark_history() run against production) via live round
+    # trips this session. See docs/data-sources.md section 4.
     benchmark_nse_provider_enabled: bool = True
 
 
