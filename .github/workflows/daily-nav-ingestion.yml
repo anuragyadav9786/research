@@ -333,6 +333,19 @@ jobs:
                   for lr in last5:
                       print(f'  {lr.date}  {lr.nav}  (source: {lr.source_name!r})')
 
+                  gaps = conn.execute(text('''
+                      WITH ordered AS (
+                          SELECT date, lag(date) OVER (ORDER BY date) AS prev_date
+                          FROM nav_history WHERE scheme_variant_id = :vid
+                      )
+                      SELECT prev_date, date, (date - prev_date) AS gap_days
+                      FROM ordered WHERE date - prev_date > 10
+                      ORDER BY gap_days DESC LIMIT 10
+                  '''), {'vid': r.variant_id}).all()
+                  print(f'largest nav_history gaps (>10 days) for this variant:')
+                  for g in gaps:
+                      print(f'  {g.prev_date} -> {g.date}  ({g.gap_days} days)')
+
                   if r.benchmark_id is not None:
                       bstats = conn.execute(text('''
                           SELECT b.name, count(bh.*) AS n, min(bh.date) AS min_d, max(bh.date) AS max_d
