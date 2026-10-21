@@ -79,7 +79,8 @@ def main() -> None:
             # automatically rather than requiring a manual re-run.
             catalogue = run_benchmark_catalogue_sync(db)
             catalogue_msg = (
-                f"Benchmark catalogue sync: subcategories={catalogue.subcategories_processed} "
+                f"Benchmark catalogue sync: report_date_used={catalogue.report_date_used} "
+                f"subcategories={catalogue.subcategories_processed} "
                 f"schemes_seen={catalogue.schemes_seen} schemes_matched={catalogue.schemes_matched} "
                 f"unmatched={len(catalogue.schemes_unmatched)} benchmarks_created={catalogue.benchmarks_created} "
                 f"distinct_benchmarks={len(catalogue.distinct_benchmarks_assigned)}"
