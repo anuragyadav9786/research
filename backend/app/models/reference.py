@@ -46,8 +46,13 @@ class Benchmark(Base):
     # The provider's own identifier for the index (e.g. "NIFTY 100 TRI") —
     # kept distinct from `name` (this platform's own display name, already
     # used across the UI/API) since a provider's symbol/query key doesn't
-    # always match how we want the index shown to an investor.
-    symbol: Mapped[str | None] = mapped_column(String(100))
+    # always match how we want the index shown to an investor. Matches
+    # `name`'s length: a real AMC-disclosed benchmark can be a long custom
+    # blended-index description (e.g. "35% BSE Oil & Gas Index +30% BSE
+    # Metal Index + 35% MSCI World Energy 30% Buffer 10/40 Net Total
+    # Return", confirmed via a real production row), not just a short
+    # index name.
+    symbol: Mapped[str | None] = mapped_column(String(255))
     # "TRI" (Total Returns Index, includes reinvested dividends) or
     # "PRICE" (price-return only, no dividend reinvestment) — mutual fund
     # scheme benchmarks are conventionally TRI; kept explicit rather than

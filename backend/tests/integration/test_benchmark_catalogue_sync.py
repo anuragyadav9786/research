@@ -205,6 +205,38 @@ def test_sync_reports_no_data_when_fallback_window_is_exhausted(db, restore_sche
     assert any("No AMFI fund-performance report had data" in reason for reason in result.fetch_errors)
 
 
+def test_sync_handles_a_long_custom_blended_index_benchmark_name(db, restore_scheme_state, monkeypatch):
+    """Real production bug: an AMC can disclose a long custom blended-index
+    description instead of a short index name (confirmed via a real
+    production row this session) -- must not crash inserting it into
+    Benchmark.symbol, which has to accommodate the same length as `name`."""
+    long_benchmark_name = (
+        "35% BSE Oil & Gas Index +30% BSE Metal Index + 35% MSCI World Energy 30% Buffer 10/40 Net Total Return"
+        " (Catalogue Sync Test)"
+    )
+    assert len(long_benchmark_name) > 100
+
+    monkeypatch.setattr(
+        sync_module, "fetch_subcategories", lambda investment_type: [SubCategory(id=1, name="Sectoral/Thematic")]
+    )
+    monkeypatch.setattr(
+        sync_module,
+        "fetch_scheme_performance",
+        lambda investment_type, sub_category_id, report_date: [
+            SchemePerformanceRow(scheme_name=BLUECHIP_SCHEME_NAME, benchmark=long_benchmark_name),
+        ],
+    )
+
+    result = run_benchmark_catalogue_sync(db, report_date=date(2026, 10, 19))
+
+    assert result.schemes_matched == 1
+    scheme = db.query(Scheme).filter(Scheme.name == BLUECHIP_SCHEME_NAME).first()
+    db.refresh(scheme)
+    benchmark = db.get(Benchmark, scheme.benchmark_id)
+    assert benchmark.name == long_benchmark_name
+    assert benchmark.symbol == long_benchmark_name
+
+
 def test_sync_reassigns_benchmark_if_amfi_disclosed_one_changes(db, restore_scheme_state, monkeypatch):
     """A scheme's real-world benchmark can change (a genuine
     re-benchmarking event) -- the sync should follow AMFI's current
