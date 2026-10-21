@@ -110,6 +110,60 @@ def test_sync_is_idempotent_no_duplicate_benchmark_rows(db, restore_scheme_state
     assert count == 1
 
 
+def test_sync_overrides_bse_benchmark_with_confirmed_nifty_equivalent(db, restore_scheme_state, monkeypatch):
+    """Explicit user-approved override (no confirmed BSE TRI data source
+    yet): a BSE-branded benchmark in _BSE_TO_NIFTY_OVERRIDE is assigned as
+    its Nifty equivalent instead, not left BSE-branded."""
+    monkeypatch.setattr(
+        sync_module, "fetch_subcategories", lambda investment_type: [SubCategory(id=1, name="Large Cap")]
+    )
+    monkeypatch.setattr(
+        sync_module,
+        "fetch_scheme_performance",
+        lambda investment_type, sub_category_id, report_date: [
+            SchemePerformanceRow(scheme_name=BLUECHIP_SCHEME_NAME, benchmark="BSE 100 TRI"),
+        ],
+    )
+
+    result = run_benchmark_catalogue_sync(db, report_date=date(2026, 10, 19))
+
+    assert result.schemes_matched == 1
+    assert result.distinct_benchmarks_assigned == {"Nifty 100 TRI": "NSE"}
+
+    scheme = db.query(Scheme).filter(Scheme.name == BLUECHIP_SCHEME_NAME).first()
+    db.refresh(scheme)
+    benchmark = db.get(Benchmark, scheme.benchmark_id)
+    assert benchmark.name == "Nifty 100 TRI"
+    assert benchmark.provider == "NSE"
+
+
+def test_sync_leaves_unconfirmed_bse_benchmark_unmatched(db, restore_scheme_state, monkeypatch):
+    """A BSE-branded benchmark NOT in the override table is reported as
+    unmatched, never guessed at or assigned a BSE-only Benchmark row."""
+    monkeypatch.setattr(
+        sync_module, "fetch_subcategories", lambda investment_type: [SubCategory(id=1, name="Large Cap")]
+    )
+    monkeypatch.setattr(
+        sync_module,
+        "fetch_scheme_performance",
+        lambda investment_type, sub_category_id, report_date: [
+            SchemePerformanceRow(scheme_name=BLUECHIP_SCHEME_NAME, benchmark="S&P BSE Sensex TRI"),
+        ],
+    )
+
+    scheme = db.query(Scheme).filter(Scheme.name == BLUECHIP_SCHEME_NAME).first()
+    benchmark_id_before = scheme.benchmark_id
+
+    result = run_benchmark_catalogue_sync(db, report_date=date(2026, 10, 19))
+
+    assert result.schemes_matched == 0
+    assert result.benchmarks_created == 0
+    assert any("S&P BSE Sensex TRI" in reason for reason in result.schemes_unmatched)
+
+    db.refresh(scheme)
+    assert scheme.benchmark_id == benchmark_id_before
+
+
 def test_sync_reassigns_benchmark_if_amfi_disclosed_one_changes(db, restore_scheme_state, monkeypatch):
     """A scheme's real-world benchmark can change (a genuine
     re-benchmarking event) -- the sync should follow AMFI's current

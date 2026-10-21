@@ -40,6 +40,24 @@ from data_pipeline.sources.amfi.fund_performance import (
 _NSE_PREFIX = ("nifty",)
 _BSE_PREFIX = ("bse", "s&p bse")
 
+# Deliberate, explicit, user-approved TEMPORARY override: this platform
+# has a confirmed-working TRI data source for NSE/Nifty-branded indices
+# (niftyindices.com) but none yet for BSE-branded ones. Nifty and BSE
+# indices are correlated but NOT the same instrument (different
+# constituent selection/weighting/rebalancing) — substituting one for the
+# other is a real approximation, not a neutral relabeling, so it is only
+# applied to a small, explicit table of pairs rather than any mechanical
+# name transform. Every pair here was seen in real AMFI fundperformance
+# data this session (e.g. "BSE 100 TRI" disclosed for several real Large
+# Cap schemes alongside "Nifty 100 TRI" for others in the same
+# sub-category). A BSE-branded benchmark NOT in this table is left
+# unmatched (reported, benchmark_id not set) rather than guessed at —
+# extend this table only once a specific pair is itself confirmed.
+_BSE_TO_NIFTY_OVERRIDE: dict[str, str] = {
+    "BSE 100 TRI": "Nifty 100 TRI",
+    "BSE 500 TRI": "Nifty 500 TRI",
+}
+
 
 def _normalize(name: str) -> str:
     return " ".join(name.casefold().split())
@@ -104,22 +122,36 @@ def run_benchmark_catalogue_sync(db: Session, report_date: date | None = None) -
                 result.schemes_unmatched.append(row.scheme_name)
                 continue
 
-            benchmark = benchmark_by_name.get(row.benchmark)
+            # Apply the explicit, user-approved BSE->Nifty override (see
+            # _BSE_TO_NIFTY_OVERRIDE above) before matching/creating the
+            # Benchmark row. A BSE-branded name with no confirmed Nifty
+            # equivalent is left unmatched rather than assigned a BSE-only
+            # Benchmark row we have no TRI history source for.
+            effective_name = row.benchmark
+            if effective_name in _BSE_TO_NIFTY_OVERRIDE:
+                effective_name = _BSE_TO_NIFTY_OVERRIDE[effective_name]
+            elif effective_name.casefold().startswith(_BSE_PREFIX):
+                result.schemes_unmatched.append(
+                    f"{row.scheme_name} (BSE-benchmarked '{row.benchmark}', no confirmed Nifty equivalent yet)"
+                )
+                continue
+
+            benchmark = benchmark_by_name.get(effective_name)
             if benchmark is None:
                 benchmark = Benchmark(
-                    name=row.benchmark,
-                    provider=_provider_for(row.benchmark),
-                    symbol=row.benchmark,
-                    benchmark_type=_benchmark_type_for(row.benchmark),
+                    name=effective_name,
+                    provider=_provider_for(effective_name),
+                    symbol=effective_name,
+                    benchmark_type=_benchmark_type_for(effective_name),
                 )
                 db.add(benchmark)
                 db.flush()
-                benchmark_by_name[row.benchmark] = benchmark
+                benchmark_by_name[effective_name] = benchmark
                 result.benchmarks_created += 1
 
             scheme.benchmark_id = benchmark.id
             result.schemes_matched += 1
-            result.distinct_benchmarks_assigned[row.benchmark] = benchmark.provider
+            result.distinct_benchmarks_assigned[effective_name] = benchmark.provider
 
     db.commit()
     return result
