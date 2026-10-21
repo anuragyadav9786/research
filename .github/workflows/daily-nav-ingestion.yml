@@ -289,8 +289,10 @@ jobs:
 
       - name: Debug — diagnose a scheme's NAV history gap (no writes)
         if: ${{ inputs.debug_scheme_nav_gap != '' }}
+        env:
+          DEBUG_SCHEME_QUERY: ${{ inputs.debug_scheme_nav_gap }}
         run: |
-          python -c "
+          python3 << 'PYEOF'
           import sys, os
           sys.path.insert(0, os.path.join(os.getcwd(), 'backend'))
           sys.path.insert(0, os.getcwd())
@@ -299,7 +301,7 @@ jobs:
           from data_pipeline.sources.amfi.client import fetch_navall
           from data_pipeline.sources.amfi.parser import parse_navall
 
-          QUERY = ${{ toJSON(inputs.debug_scheme_nav_gap) }}
+          QUERY = os.environ["DEBUG_SCHEME_QUERY"]
 
           with engine.connect() as conn:
               rows = conn.execute(text('''
@@ -350,7 +352,7 @@ jobs:
                   print(f'  code={m.scheme_code!r} name={m.scheme_name!r} plan={m.plan_raw!r} option={m.option_raw!r} nav={m.nav_raw!r} date={m.date_raw!r}')
           except Exception as exc:
               print(f'Could not fetch/parse live NAVAll.txt: {type(exc).__name__}: {exc}')
-          "
+          PYEOF
 
       - name: Cleanup — delete IDCW-option variants, their NAV history, and any now-empty schemes
         if: ${{ inputs.run_cleanup_idcw == true }}
