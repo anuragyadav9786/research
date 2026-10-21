@@ -25,6 +25,7 @@ if _BACKEND_DIR not in sys.path:
 
 from app.core.database import SessionLocal  # noqa: E402
 from data_pipeline.ingestion.nav_ingestion import run_amfi_nav_ingestion  # noqa: E402
+from data_pipeline.orchestration.benchmark_catalogue_sync import run_benchmark_catalogue_sync  # noqa: E402
 from data_pipeline.orchestration.period_return_rollup import run_period_return_rollup  # noqa: E402
 from data_pipeline.orchestration.precompute_metrics import run_precompute  # noqa: E402
 
@@ -67,6 +68,25 @@ def main() -> None:
                 f"variants_skipped_no_history={precompute.variants_skipped_no_history} "
                 f"metrics_written={precompute.metrics_written}"
             )
+
+            # Runs BEFORE the screener rollup below: that rollup's
+            # eligibility filter requires a fresh Scheme.benchmark_id,
+            # which only this sync sets (see benchmark_catalogue_sync.py
+            # and period_return_rollup.py's module docstring). Cheap
+            # (14 real AMFI sub-category calls) and idempotent — safe to
+            # run daily even though a scheme's disclosed benchmark rarely
+            # changes, so a real re-benchmarking event is picked up
+            # automatically rather than requiring a manual re-run.
+            catalogue = run_benchmark_catalogue_sync(db)
+            catalogue_msg = (
+                f"Benchmark catalogue sync: subcategories={catalogue.subcategories_processed} "
+                f"schemes_seen={catalogue.schemes_seen} schemes_matched={catalogue.schemes_matched} "
+                f"unmatched={len(catalogue.schemes_unmatched)} benchmarks_created={catalogue.benchmarks_created} "
+                f"distinct_benchmarks={len(catalogue.distinct_benchmarks_assigned)}"
+            )
+            if catalogue.fetch_errors:
+                catalogue_msg += " | fetch_errors=" + "; ".join(catalogue.fetch_errors)
+            print(catalogue_msg)
 
             # Independent of the above: fetches its own NAV snapshots
             # directly (today's + one per lookback period) rather than

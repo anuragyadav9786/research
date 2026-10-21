@@ -11,9 +11,18 @@ discards the snapshots once done. Nothing beyond the computed return
 itself is persisted, so storage is bounded at
 (eligible scheme count x 6 periods) regardless of how long this runs.
 
-Eligible scope: Regular Plan + Growth option, non-debt asset class (see
-_eligible_variants) — the scope this was sized against (1,350 real
-schemes as of 19-Oct-2026 in AMFI's own universe).
+Eligible scope: Regular Plan + Growth option, AND Scheme.benchmark_id set
+(see _eligible_variants). benchmark_id is only ever set by
+benchmark_catalogue_sync.py, itself driven by AMFI's own real Equity
+(investmentTypeList id=1) classification — so this is a real-data-backed
+equity filter, not a guess at category text. Originally this filtered on
+`classify_asset_class(category) != "Debt"`, which turned out to be far
+too loose: real AMFI category strings include legacy "Income/Debt
+Oriented Schemes - *" naming that doesn't start with the literal word
+"Debt", so under the old filter only ~590 of ~1,727 "eligible" schemes
+were actually Equity. daily_pipeline.py runs benchmark_catalogue_sync.py
+before this module specifically so benchmark_id is fresh before this
+filter runs.
 
 Anchor dates are computed by calendar months (1/3/6/12/36/60 months back
 from today), clamped to the target month's real last day when today's
@@ -31,7 +40,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.reference import Scheme, SchemeVariant
-from data_pipeline.normalization.category_classification import classify_asset_class
 from data_pipeline.sources.amfi.portal_history import (
     PortalHistoryFetchError,
     fetch_portal_history_for_date,
@@ -90,26 +98,22 @@ def _months_before(d: date, months: int) -> date:
 
 
 def _eligible_variants(db: Session) -> dict[str, int]:
-    """{amfi_code: scheme_variant_id} for Regular Plan + Growth option,
-    non-debt scheme_variants — the fund screener's scope. Reuses
-    classify_asset_class on the already-onboarded Scheme.category rather
-    than re-deriving category from the portal file (which doesn't carry
-    category headers in a form worth re-parsing here)."""
+    """{amfi_code: scheme_variant_id} for Regular Plan + Growth option
+    scheme_variants whose Scheme has a real, AMFI-confirmed benchmark_id
+    (set only by benchmark_catalogue_sync.py, itself driven by AMFI's own
+    Equity classification) — the fund screener's scope."""
     rows = db.execute(
-        select(SchemeVariant.amfi_code, SchemeVariant.id, Scheme.category)
+        select(SchemeVariant.amfi_code, SchemeVariant.id)
         .join(Scheme, Scheme.id == SchemeVariant.scheme_id)
         .where(
             SchemeVariant.plan == "regular",
             SchemeVariant.option == "growth",
             SchemeVariant.amfi_code.is_not(None),
+            Scheme.benchmark_id.is_not(None),
         )
     ).all()
 
-    return {
-        amfi_code: variant_id
-        for amfi_code, variant_id, category in rows
-        if classify_asset_class(category) != "Debt"
-    }
+    return {amfi_code: variant_id for amfi_code, variant_id in rows}
 
 
 def _fetch_with_fallback(target_date: date) -> tuple[date, dict[str, float]] | None:

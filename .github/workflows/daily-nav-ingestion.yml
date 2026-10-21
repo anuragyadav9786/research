@@ -36,6 +36,10 @@ on:
         description: "Read-only: report how many scheme_variants/schemes are IDCW-only vs growth, to scope removing IDCW support"
         type: boolean
         default: false
+      debug_screener_category_breakdown:
+        description: "Read-only: for the exact fund-screener-eligible scheme set (Regular Plan + Growth, non-debt — same filter period_return_rollup.py uses), report the real category breakdown, to scope which benchmark indices a real category->benchmark mapping would actually need"
+        type: boolean
+        default: false
       run_cleanup_idcw:
         description: "DESTRUCTIVE: delete all IDCW-option scheme_variants (and their nav_history), plus any scheme left with zero variants as a result. Growth-only going forward per user request."
         type: boolean
@@ -245,6 +249,38 @@ jobs:
               ''')).scalar()
               total_schemes = conn.execute(text('SELECT count(*) FROM schemes')).scalar()
               print(f'schemes with NO growth variant at all (would be orphaned): {orphaned} of {total_schemes} total schemes')
+          "
+
+      - name: Debug — category breakdown of fund-screener-eligible schemes (no writes)
+        if: ${{ inputs.debug_screener_category_breakdown == true }}
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, os.path.join(os.getcwd(), 'backend'))
+          sys.path.insert(0, os.getcwd())
+          from collections import Counter
+          from app.core.database import SessionLocal
+          from app.models.reference import Scheme, SchemeVariant
+          from data_pipeline.orchestration.period_return_rollup import _eligible_variants
+
+          db = SessionLocal()
+          try:
+              eligible = _eligible_variants(db)  # {amfi_code: scheme_variant_id} -- same filter the screener/top-performers rollup uses
+              variant_ids = list(eligible.values())
+              print(f'Total fund-screener-eligible schemes: {len(variant_ids)}')
+
+              rows = (
+                  db.query(Scheme.category)
+                  .join(SchemeVariant, SchemeVariant.scheme_id == Scheme.id)
+                  .filter(SchemeVariant.id.in_(variant_ids))
+                  .all()
+              )
+              counts = Counter(r[0] for r in rows)
+              print(f'Distinct categories: {len(counts)}')
+              for category, n in counts.most_common():
+                  print(f'{n:5d}  {category}')
+          finally:
+              db.close()
           "
 
       - name: Cleanup — delete IDCW-option variants, their NAV history, and any now-empty schemes
