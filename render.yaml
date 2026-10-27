@@ -31,22 +31,39 @@ services:
   # stores them in Google Drive (see portfolio-fetcher/README.md).
   # Render's Cron Job type requires a paid plan — free-tier web services
   # can't run on a schedule — so this is provisioned separately in the
-  # dashboard (New -> Cron Job) rather than picked up by the Blueprint,
-  # which only auto-provisions `type: web`/`worker` services. Kept here
-  # for reference and so `render.yaml` documents the real schedule/env
-  # vars a manually-created Cron Job should match.
+  # dashboard (New -> Cron Job, currently crn-daknidgu01pc73fpekbg)
+  # rather than picked up by the Blueprint, which only auto-provisions
+  # `type: web`/`worker` services. Kept here for reference and so
+  # `render.yaml` documents the real schedule/env vars/runtime the
+  # existing Cron Job should be updated to match — this file alone does
+  # NOT change the live service; see README.md for the dashboard steps.
+  #
+  # Docker, not the plain Python runtime: tier2 scrapers
+  # (scrapers/tier2_playwright.py) need a real Chromium install via
+  # Playwright, which only a Dockerfile-based build can provide system
+  # dependencies for (see Dockerfile).
   - type: cron
     name: thinkfin-portfolio-fetcher
-    runtime: python
+    env: docker
+    dockerfilePath: ./Dockerfile
     plan: starter
     rootDir: portfolio-fetcher
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
-    schedule: "30 18 10 * *" # 23:30 IST (UTC+5:30) on the 10th of every month
+    schedule: "30 20 10 * *" # 02:00 AM IST (UTC+5:30) on the 11th of every month
     envVars:
+      # Primary auth path — see drive_manager.py's module docstring for
+      # why OAuth2 user credentials are now preferred over the
+      # service-account fallback below.
+      - key: GOOGLE_OAUTH_TOKEN_B64
+        sync: false
+      # Fallback auth path — only works if DRIVE_MONTHLY_PORTFOLIOS_PARENT_ID
+      # actually lives inside a Google Shared Drive (see README.md).
       - key: GOOGLE_SERVICE_ACCOUNT_JSON
         sync: false
-      - key: DRIVE_MONTHLY_FOLDER_ID
+      - key: DRIVE_MASTER_DB_FOLDER_ID
+        value: "1hSNV629OnGOchyP0coX72lVA7-Eg1kAx"
+      - key: DRIVE_MONTHLY_PORTFOLIOS_PARENT_ID
         value: "1acNwjxV2mJnEZ9BDAlKoDZpZTVav9h_5"
-      - key: MASTER_CATALOG_SHEET_ID
+      - key: CATALOG_SPREADSHEET_ID
         value: "1sSIAhoPCMHYQH6K5kF9oOZwAp7Llbyrr8d9Db0-YCFU"
+      - key: HEADLESS
+        value: "true"
