@@ -15,7 +15,7 @@ import pandas as pd
 
 from analytics.concentration import group_weights, herfindahl_hirschman_index, hhi_label, top_n_weight_pct
 from analytics.correlation import return_correlation
-from analytics.drawdown import max_drawdown
+from analytics.drawdown import drawdown_episodes, max_drawdown
 from analytics.overlap import overlap_label, weighted_overlap_pct
 from analytics.portfolio import combine_effective_weights, combine_weighted_returns, synthetic_nav_from_returns
 from analytics.risk import annualized_volatility, sharpe_ratio, sortino_ratio
@@ -95,7 +95,8 @@ def compute_portfolio_analysis(
                    "volatility_pct": None, "sharpe_ratio": None, "sortino_ratio": None, "observations_used": 0}
     drawdown_result = {"available": False, "reason": "insufficient_return_data",
                         "max_drawdown_pct": None, "peak_date": None, "trough_date": None,
-                        "recovered": None, "recovery_date": None, "recovery_duration_days": None}
+                        "recovered": None, "recovery_date": None, "recovery_duration_days": None,
+                        "episodes": []}
 
     missing_returns = set(fund_names) - set(per_fund_returns)
     if not missing_returns and len(per_fund_returns) >= 1:
@@ -114,6 +115,7 @@ def compute_portfolio_analysis(
                 }
                 synthetic_nav = synthetic_nav_from_returns(portfolio_returns)
                 dd = max_drawdown(synthetic_nav)
+                episodes = drawdown_episodes(synthetic_nav)
                 drawdown_result = {
                     "available": True,
                     "reason": None,
@@ -123,6 +125,17 @@ def compute_portfolio_analysis(
                     "recovered": dd["recovered"],
                     "recovery_date": dd["recovery_date"].date() if dd["recovery_date"] is not None else None,
                     "recovery_duration_days": dd["recovery_duration_days"],
+                    "episodes": [
+                        {
+                            "max_drawdown_pct": round(e["max_drawdown_pct"] * 100, 4),
+                            "peak_date": e["peak_date"].date(),
+                            "trough_date": e["trough_date"].date(),
+                            "recovered": e["recovered"],
+                            "recovery_date": e["recovery_date"].date() if e["recovery_date"] is not None else None,
+                            "recovery_duration_days": e["recovery_duration_days"],
+                        }
+                        for e in episodes
+                    ],
                 }
             else:
                 risk_result["reason"] = "no_common_dates_across_funds"

@@ -81,6 +81,29 @@ class BenchmarkHistory(Base):
     )
 
 
+class RiskFreeRateSnapshot(Base):
+    """A single day's risk-free rate, used as the annualized rate in every
+    Sharpe/Sortino computation (see app/core/config.py's Settings.risk_free_rate
+    docstring and docs/data-sources.md's "Planned sources" open decision #4).
+    One row per calendar day -- not a full historical series read back for
+    any point-in-time calculation, since the existing Sharpe/Sortino call
+    sites all take a single current rate, never a time-indexed one. See
+    data_pipeline/orchestration/lazy_risk_free_rate.py for the fetch-and-
+    cache logic that reads/writes this table."""
+
+    __tablename__ = "risk_free_rate_snapshots"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    as_of_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
+    rate_pct: Mapped[float] = mapped_column(Numeric(6, 4), nullable=False)
+    source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("rate_pct > 0", name="ck_risk_free_rate_positive"),
+    )
+
+
 class FundPeriodReturn(Base):
     """One scheme_variant's point-to-point return for one fixed lookback
     period (1m/3m/6m/1y/3y/5y), as of the most recent daily rollup run —

@@ -31,6 +31,7 @@ from app.models.reference import Benchmark, Scheme, SchemeVariant
 from app.repositories import fund_repository, market_regime_repository, portfolio_repository
 from data_pipeline.orchestration.lazy_benchmark_backfill import ensure_benchmark_history
 from data_pipeline.orchestration.lazy_nav_backfill import ensure_nav_history
+from data_pipeline.orchestration.lazy_risk_free_rate import get_current_risk_free_rate
 from data_pipeline.orchestration.precompute_metrics import RISK_OPTIONAL_FIELDS, RISK_REQUIRED_FIELDS
 from app.schemas.funds import (
     CategoryBenchmarkResponse,
@@ -162,7 +163,7 @@ def _risk_from_cache(db: Session, variant: SchemeVariant) -> dict | None:
         "available": True,
         "reason": None,
         "observations_used": int(cached["observations_used"]),
-        "risk_free_rate_pct": round(get_settings().risk_free_rate * 100, 4),
+        "risk_free_rate_pct": round(get_current_risk_free_rate(db) * 100, 4),
         "volatility_pct": cached["volatility_pct"],
         "downside_deviation_pct": cached["downside_deviation_pct"],
         "sharpe_ratio": cached.get("sharpe_ratio"),
@@ -332,7 +333,7 @@ def get_fund_risk(
 
     nav = fund_repository.get_nav_series(db, variant.id)
     benchmark = _benchmark_series(db, scheme, nav)
-    risk_free_rate = get_settings().risk_free_rate
+    risk_free_rate = get_current_risk_free_rate(db)
     return fund_analytics_service.compute_risk(nav, benchmark, risk_free_rate)
 
 
@@ -395,7 +396,7 @@ def get_fund_category_benchmark(fund_id: int, db: Session = Depends(get_db)) -> 
     request. Benchmark figures come from this fund's own linked index."""
     scheme = _resolve_scheme(db, fund_id)
     return category_analytics_service.compute_fund_context(
-        db, scheme, risk_free_rate_annual=get_settings().risk_free_rate
+        db, scheme, risk_free_rate_annual=get_current_risk_free_rate(db)
     )
 
 
@@ -477,7 +478,7 @@ def get_fund_ai_summary(
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
     benchmark = _benchmark_series(db, scheme, nav)
-    risk_free_rate = get_settings().risk_free_rate
+    risk_free_rate = get_current_risk_free_rate(db)
 
     returns = fund_analytics_service.compute_returns(nav, variant.nav_history_backfilled_at is not None)
     risk = fund_analytics_service.compute_risk(nav, benchmark, risk_free_rate)
@@ -571,7 +572,7 @@ def get_fund_intelligence(
     variant = _resolve_variant(db, scheme, plan, option)
     nav = fund_repository.get_nav_series(db, variant.id)
     benchmark = _benchmark_series(db, scheme, nav)
-    risk_free_rate = get_settings().risk_free_rate
+    risk_free_rate = get_current_risk_free_rate(db)
 
     return {
         "fund": _fund_detail(db, scheme),

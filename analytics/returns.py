@@ -61,6 +61,20 @@ def returns_series(nav: pd.Series) -> pd.Series:
     return nav.sort_index().pct_change().dropna()
 
 
+def simple_return_for_window(nav: pd.Series, start_date, end_date) -> float | None:
+    """Point-to-point return for the NAV series restricted to [start_date,
+    end_date] -- the non-annualized counterpart to cagr_for_window, for
+    comparing directly against another non-annualized figure over the
+    same span (e.g. a portfolio's own cumulative time-weighted return).
+    Returns None under the same conditions cagr_for_window does: an empty
+    window, or fewer than 2 observations in it."""
+    nav = nav.sort_index()
+    window = nav.loc[start_date:end_date]
+    if window.empty or len(window) < 2:
+        return None
+    return simple_return(window.iloc[0], window.iloc[-1])
+
+
 def cagr_for_window(nav: pd.Series, start_date, end_date) -> float | None:
     """CAGR for the NAV series restricted to [start_date, end_date].
 

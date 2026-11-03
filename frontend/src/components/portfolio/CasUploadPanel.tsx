@@ -5,6 +5,8 @@ import { useState } from "react";
 import { ApiError, parseCasStatement } from "@/lib/api";
 import { formatDate, formatPct, formatRupees, signColorClass } from "@/lib/format";
 import { CasBehaviorSnapshot } from "@/components/portfolio/CasBehaviorSnapshot";
+import { CasBenchmarkComparison } from "@/components/portfolio/CasBenchmarkComparison";
+import { CasCapitalGains } from "@/components/portfolio/CasCapitalGains";
 import { CasFundContribution } from "@/components/portfolio/CasFundContribution";
 import { CasHealthCheck } from "@/components/portfolio/CasHealthCheck";
 import { CasHoldingPeriod } from "@/components/portfolio/CasHoldingPeriod";
@@ -205,11 +207,17 @@ export function CasUploadPanel({
             <CasTimeWeightedReturn twr={result.overview.time_weighted_return} />
           )}
 
+          {result.overview?.benchmark_comparison && (
+            <CasBenchmarkComparison comparison={result.overview.benchmark_comparison} />
+          )}
+
           {result.overview && result.overview.per_scheme.length > 1 && (
             <CasFundContribution perScheme={result.overview.per_scheme} />
           )}
 
           {result.overview?.holding_period && <CasHoldingPeriod holdingPeriod={result.overview.holding_period} />}
+
+          {result.overview?.capital_gains && <CasCapitalGains capitalGains={result.overview.capital_gains} />}
 
           {result.overview && <CasPurchaseBehavior perScheme={result.overview.per_scheme} />}
 

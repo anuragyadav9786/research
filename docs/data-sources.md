@@ -246,9 +246,59 @@ volatility figures today — a BSE/CRISIL/MSCI-benchmarked category (most
 debt fund categories) can still be named this way, but its figures stay
 unavailable until one of those providers is built (see section 5 below).
 
-## 5. Planned sources (not yet built)
+## 6. FBIL T-Bill benchmark rate (real source — fully confirmed end-to-end)
+
+**Source**: Financial Benchmarks India Ltd (FBIL), the RBI-recognized
+administrator of India's official T-Bill benchmark rates —
+`GET https://www.fbil.org.in/wasdm/tbill/fetch?authenticated=false`
+(`data_pipeline/sources/riskfree/fbil_client.py`). Confirmed reachable —
+live, this session — from BOTH a headless-browser fetch and a direct
+`httpx.get()` from this backend environment itself: unlike
+amfiindia.com/the old nseindia.com endpoint, this host is **not**
+network-blocked from this sandbox, so no GitHub Actions detour was
+needed to verify it.
+
+**What it replaces**: the previous hardcoded `Settings.risk_free_rate =
+0.07` placeholder, consumed by every Sharpe/Sortino computation across
+`fund_analytics_service.py`, `category_analytics_service.py`,
+`portfolio_analysis_service.py`, and `cas_portfolio_service.py`.
+
+**Format**: a flat JSON array (no wrapper object), each row a
+`{processRunDate, displayTime, tenorName, rate, comments}` tuple —
+confirmed via a real request this session. `rate` is already a plain
+percentage (5.87 means 5.87%). The endpoint returns only the most
+recently published business day or two (28 rows = 14 tenors × 2 dates in
+the confirmed response), never a full historical series — which is all
+this platform needs, since every Sharpe/Sortino call site takes a single
+current `risk_free_rate_annual`, never a time-indexed one.
+
+**The "91-day" naming**: FBIL does not publish a literal "91 Days"
+tenor, only discrete monthly tenors (1/2/.../12 months). The `"3
+Months"` tenor (~91 days) is used as the standard market-convention
+equivalent — a real, named tenor from the confirmed response, not a
+guess.
+
+**What this pipeline does with it** (`data_pipeline/orchestration/
+lazy_risk_free_rate.py`, the risk-free-rate counterpart to the NAV/
+benchmark lazy-backfill pattern): every call site that used to read
+`get_settings().risk_free_rate` now calls `get_current_risk_free_rate(db)`
+instead. A cached `risk_free_rate_snapshots` row up to 5 days old is used
+as-is (no network call); otherwise a real fetch is attempted, the result
+cached, and the annualized decimal rate (e.g. `0.0587`) returned. A
+failed fetch never raises or blocks a request — it falls back to the
+latest cached value, or to `Settings.risk_free_rate`'s own configured
+default (now just the fallback-of-last-resort, not the live value) if
+there's no cached value at all yet.
+
+**Not yet confirmed**: whether FBIL's terms of use permit this kind of
+automated, unauthenticated polling at production scale — this endpoint
+was discovered via the public website's own frontend network calls
+(`authenticated=false`), not from any published API documentation (FBIL
+publishes none). Revisit if FBIL's terms turn out not to permit this,
+the same caveat section 4 carries for niftyindices.com.
+
+## 7. Planned sources (not yet built)
 
 | Source | Purpose | Status |
 |---|---|---|
 | AMC factsheets (PDF, monthly) | Portfolio holdings | Not started — needs per-AMC parsing or manual entry; see `docs/BUILD_PLAN.md` open decision #2 |
-| RBI 91-day T-bill rate | Risk-free rate for Sharpe/Sortino | Not started — currently a manually configured placeholder (`Settings.risk_free_rate = 0.07`); open decision #4 |
