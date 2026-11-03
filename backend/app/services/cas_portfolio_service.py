@@ -58,9 +58,10 @@ from datetime import date
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from analytics.capital_gains import classify_lot_gain, classify_tax_orientation, summarize_capital_gains
 from analytics.concentration import group_weights, herfindahl_hirschman_index, hhi_label, top_n_weight_pct
 from analytics.cost_basis import apply_fifo
-from analytics.drawdown import max_drawdown
+from analytics.drawdown import drawdown_episodes, max_drawdown
 from analytics.portfolio import synthetic_nav_from_returns
 from analytics.portfolio_valuation import (
     annualized_time_weighted_return,
@@ -70,15 +71,16 @@ from analytics.portfolio_valuation import (
     time_weighted_return,
     units_held_series,
 )
-from analytics.returns import returns_series
+from analytics.returns import returns_series, simple_return_for_window
 from analytics.risk import annualized_volatility
 from analytics.xirr import xirr
-from app.core.config import get_settings
-from app.models.reference import MarketRegime, Scheme, SchemeVariant
+from app.models.reference import Benchmark, MarketRegime, Scheme, SchemeVariant
 from app.repositories import fund_repository, market_regime_repository, portfolio_repository
 from app.schemas.market_regime import METHODOLOGY_NOTE as MARKET_REGIME_METHODOLOGY_NOTE
 from app.services import cas_insights_service, portfolio_analysis_service
 from data_pipeline.normalization.cas_parser import CASTransaction
+from data_pipeline.orchestration.lazy_benchmark_backfill import ensure_benchmark_history
+from data_pipeline.orchestration.lazy_risk_free_rate import get_current_risk_free_rate
 from data_pipeline.normalization.category_classification import classify_asset_class, classify_equity_style
 
 _UNCLASSIFIED_LABEL = "unclassified"
@@ -148,6 +150,10 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
     # holding_period_days for every FIFO-realized (sold/switched-out) lot
     # consumption, across every matched scheme.
     realized_holding_days: list[int] = []
+    # LotGainClassification for every still-open, priced lot across every
+    # matched scheme -- the basis for the portfolio-wide capital-gains
+    # summary (analytics/capital_gains.py).
+    lot_gain_classifications: list = []
     # Each priced scheme's own real (not static-weight) value-over-time
     # series, keyed by isin — the basis for the portfolio-wide TWR/
     # volatility/drawdown reconstruction. Only schemes with SOME NAV
@@ -214,6 +220,11 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
                 open_lot_days_values.extend(
                     ((latest_nav_date - lot.purchase_date).days, lot.units * latest_nav) for lot in cost_basis.open_lots
                 )
+                tax_orientation = classify_tax_orientation(scheme.category)
+                lot_gain_classifications.extend(
+                    classify_lot_gain(lot, as_of=latest_nav_date, current_nav=latest_nav, tax_orientation=tax_orientation)
+                    for lot in cost_basis.open_lots
+                )
 
         scheme_cash_flows: list[tuple[date, float]] = []
         for t in txns:
@@ -275,6 +286,7 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
             entry["contribution_to_gain_pct"] = round((entry["gain"] / total_gain) * 100, 2)
 
     portfolio_xirr = xirr(portfolio_cash_flows)
+    twr_summary = _time_weighted_return_summary(priced_scheme_value_series, priced_scheme_contributions)
 
     overview = {
         "total_invested": round(total_invested, 2),
@@ -288,7 +300,9 @@ def build_cas_overview(db: Session, transactions: list[CASTransaction]) -> dict:
         "unmatched_schemes": unmatched,
         "structure": _build_structure(valued_schemes),
         "holding_period": _holding_period_summary(open_lot_days_values, realized_holding_days),
-        "time_weighted_return": _time_weighted_return_summary(priced_scheme_value_series, priced_scheme_contributions),
+        "capital_gains": summarize_capital_gains(lot_gain_classifications),
+        "time_weighted_return": twr_summary,
+        "benchmark_comparison": _portfolio_benchmark_summary(db, valued_scheme_objects, per_scheme, twr_summary),
         "transaction_activity": _transaction_activity_summary(matched_transactions),
         "investment_timing": _investment_timing_summary(matched_transactions, market_regime_repository.list_regimes(db)),
         "investor_behavior": _investor_behavior_summary(matched_transactions, total_invested),
@@ -403,6 +417,7 @@ def _time_weighted_return_summary(
             "drawdown_trough_date": None,
             "drawdown_recovery_date": None,
             "drawdown_recovered": None,
+            "drawdown_episodes": [],
             "priced_scheme_count": 0,
             "start_date": None,
             "end_date": None,
@@ -431,10 +446,12 @@ def _time_weighted_return_summary(
     volatility = annualized_volatility(returns) if len(returns) >= 2 else None
 
     dd = None
+    episodes: list[dict] = []
     if len(returns) >= 1:
         synthetic_nav = synthetic_nav_from_returns(returns)
         if len(synthetic_nav) >= 2:
             dd = max_drawdown(synthetic_nav)
+            episodes = drawdown_episodes(synthetic_nav)
 
     return {
         "cumulative_twr_pct": round(cumulative_twr * 100, 2) if cumulative_twr is not None else None,
@@ -447,7 +464,112 @@ def _time_weighted_return_summary(
             dd["recovery_date"].date() if dd is not None and dd["recovery_date"] is not None else None
         ),
         "drawdown_recovered": dd["recovered"] if dd is not None else None,
+        "drawdown_episodes": [
+            {
+                "max_drawdown_pct": round(e["max_drawdown_pct"] * 100, 2),
+                "peak_date": e["peak_date"].date(),
+                "trough_date": e["trough_date"].date(),
+                "recovered": e["recovered"],
+                "recovery_date": e["recovery_date"].date() if e["recovery_date"] is not None else None,
+                "recovery_duration_days": e["recovery_duration_days"],
+            }
+            for e in episodes
+        ],
         "priced_scheme_count": len(value_series_by_scheme),
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+
+
+def _portfolio_benchmark_summary(
+    db: Session,
+    valued_scheme_objects: dict[int, tuple[Scheme, pd.Series]],
+    per_scheme: list[dict],
+    twr_summary: dict,
+) -> dict:
+    """Benchmarks the portfolio's OWN blended return (not any single
+    constituent fund's) against a value-weighted blend of each matched
+    holding's own benchmark TRI return, over the exact same window the
+    portfolio's time-weighted return was reconstructed over
+    (`twr_summary["start_date"]`/`["end_date"]`), so the two figures are
+    directly comparable. Reuses the exact per-fund benchmark machinery
+    category_analytics_service.py's _benchmark_figures already uses
+    (get_effective_benchmark_id, ensure_benchmark_history,
+    get_benchmark_series) -- never a second implementation of "find this
+    scheme's benchmark."
+
+    A holding with no mapped benchmark, or whose benchmark has no price
+    data covering this window, is excluded from the blend; its weight is
+    reflected in a lower `benchmark_coverage_pct` rather than being
+    silently assumed to match the portfolio or folded in as a zero
+    return."""
+    start_date, end_date = twr_summary["start_date"], twr_summary["end_date"]
+    empty = {
+        "available": False,
+        "reason": None,
+        "portfolio_return_pct": None,
+        "benchmark_blended_return_pct": None,
+        "excess_return_pct": None,
+        "benchmark_coverage_pct": None,
+        "benchmark_names": [],
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+    if start_date is None or end_date is None or not valued_scheme_objects:
+        return {**empty, "reason": "no_priced_schemes"}
+
+    weight_by_fund_id = {
+        entry["fund_id"]: entry["weight_pct"] for entry in per_scheme if entry["weight_pct"] is not None
+    }
+
+    weighted_return_sum = 0.0
+    covered_weight_pct = 0.0
+    benchmark_names: set[str] = set()
+
+    for scheme_id, (scheme, nav_series) in valued_scheme_objects.items():
+        weight_pct = weight_by_fund_id.get(scheme_id)
+        if not weight_pct:
+            continue
+
+        benchmark_id = fund_repository.get_effective_benchmark_id(db, scheme)
+        if benchmark_id is None:
+            continue
+        benchmark = db.get(Benchmark, benchmark_id)
+        if benchmark is None:
+            continue
+
+        if not nav_series.empty:
+            ensure_benchmark_history(
+                db, benchmark, nav_series.index.min().date(), min(nav_series.index.max().date(), date.today())
+            )
+        benchmark_series = fund_repository.get_benchmark_series(db, benchmark_id)
+        if benchmark_series.empty:
+            continue
+
+        benchmark_return = simple_return_for_window(benchmark_series, start_date, end_date)
+        if benchmark_return is None:
+            continue
+
+        weighted_return_sum += benchmark_return * weight_pct
+        covered_weight_pct += weight_pct
+        benchmark_names.add(benchmark.name)
+
+    if covered_weight_pct <= 0:
+        return {**empty, "reason": "no_fund_benchmark_data"}
+
+    blended_return_pct = round((weighted_return_sum / covered_weight_pct) * 100, 2)
+    portfolio_return_pct = twr_summary["cumulative_twr_pct"]
+
+    return {
+        "available": True,
+        "reason": None,
+        "portfolio_return_pct": portfolio_return_pct,
+        "benchmark_blended_return_pct": blended_return_pct,
+        "excess_return_pct": (
+            round(portfolio_return_pct - blended_return_pct, 2) if portfolio_return_pct is not None else None
+        ),
+        "benchmark_coverage_pct": round(covered_weight_pct, 2),
+        "benchmark_names": sorted(benchmark_names),
         "start_date": start_date,
         "end_date": end_date,
     }
@@ -775,7 +897,7 @@ def _look_through_analysis_summary(
         per_fund_sector_weights=per_fund_sector_weights,
         per_fund_mktcap_weights=per_fund_mktcap_weights,
         per_fund_returns=per_fund_returns,
-        risk_free_rate_annual=get_settings().risk_free_rate,
+        risk_free_rate_annual=get_current_risk_free_rate(db),
     )
 
 

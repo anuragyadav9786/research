@@ -107,6 +107,15 @@ export interface CASHoldingPeriodSummary {
   realized_consumption_count: number;
 }
 
+export interface CASDrawdownEpisode {
+  max_drawdown_pct: number;
+  peak_date: string;
+  trough_date: string;
+  recovered: boolean;
+  recovery_date: string | null;
+  recovery_duration_days: number | null;
+}
+
 export interface CASTimeWeightedReturn {
   cumulative_twr_pct: number | null;
   annualized_twr_pct: number | null;
@@ -116,7 +125,47 @@ export interface CASTimeWeightedReturn {
   drawdown_trough_date: string | null;
   drawdown_recovery_date: string | null;
   drawdown_recovered: boolean | null;
+  drawdown_episodes: CASDrawdownEpisode[];
   priced_scheme_count: number;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+export interface CASCapitalGainLot {
+  purchase_date: string;
+  units: number;
+  current_value: number;
+  unrealized_gain: number;
+  holding_period_days: number;
+  classification: "LTCG" | "STCG" | null;
+  applicable_rate_pct: number | null;
+  tax_if_realized_today: number | null;
+  tax_basis: string;
+}
+
+export type CASCapitalGainsBucketKey = "STCG" | "LTCG" | "slab_rate_dependent" | "indeterminate";
+
+export interface CASCapitalGainsBucket {
+  lot_count: number;
+  unrealized_gain: number;
+  tax_if_realized_today: number;
+}
+
+export interface CASCapitalGainsSummary {
+  by_bucket: Record<CASCapitalGainsBucketKey, CASCapitalGainsBucket>;
+  total_tax_if_realized_today: number;
+  equity_ltcg_exemption_note: string | null;
+  lots: CASCapitalGainLot[];
+}
+
+export interface CASBenchmarkComparison {
+  available: boolean;
+  reason: string | null;
+  portfolio_return_pct: number | null;
+  benchmark_blended_return_pct: number | null;
+  excess_return_pct: number | null;
+  benchmark_coverage_pct: number | null;
+  benchmark_names: string[];
   start_date: string | null;
   end_date: string | null;
 }
@@ -187,7 +236,9 @@ export interface CASOverviewResponse {
   unmatched_schemes: CASUnmatchedScheme[];
   structure: CASPortfolioStructure | null;
   holding_period: CASHoldingPeriodSummary;
+  capital_gains: CASCapitalGainsSummary;
   time_weighted_return: CASTimeWeightedReturn;
+  benchmark_comparison: CASBenchmarkComparison;
   transaction_activity: CASTransactionActivity[];
   investment_timing: CASInvestmentTiming;
   investor_behavior: CASInvestorBehavior;

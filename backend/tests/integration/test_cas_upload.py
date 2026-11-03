@@ -17,8 +17,8 @@ from datetime import date
 
 from app.core.database import SessionLocal
 from app.main import app
-from app.models.reference import AMC, FundFamily, Scheme, SchemeVariant, Security, Sector
-from app.models.timeseries import DataSource, NavHistory, PortfolioHolding, PortfolioSnapshot
+from app.models.reference import AMC, Benchmark, FundFamily, Scheme, SchemeVariant, Security, Sector
+from app.models.timeseries import BenchmarkHistory, DataSource, NavHistory, PortfolioHolding, PortfolioSnapshot
 
 client = TestClient(app)
 
@@ -596,6 +596,73 @@ def test_time_weighted_return_matches_hand_computed_sub_period_returns(twr_test_
     assert twr["annualized_twr_pct"] is None
 
 
+@pytest.fixture
+def twr_test_scheme_with_benchmark(db, twr_test_scheme):
+    # Same NAV/purchase shape as twr_test_scheme, plus a benchmark whose
+    # price history fully covers the same 4 dates -- so ensure_benchmark_history
+    # sees zero missing gaps and never attempts a real network call.
+    bm = Benchmark(name="TEST FIXTURE TWR BENCHMARK", provider=None)
+    db.add(bm)
+    db.flush()
+
+    source = db.query(DataSource).filter(DataSource.source_type == "manual").first()
+    for bm_date, value in [
+        (date(2024, 6, 10), 1000.0),
+        (date(2024, 6, 11), 1050.0),
+        (date(2024, 6, 12), 1050.0),
+        (date(2024, 6, 13), 1029.0),  # 1029/1000 - 1 = +2.9% over the window
+    ]:
+        db.add(BenchmarkHistory(benchmark_id=bm.id, date=bm_date, value=value, source_id=source.id))
+
+    twr_test_scheme.benchmark_id = bm.id
+    db.commit()
+
+    yield twr_test_scheme
+
+    db.query(BenchmarkHistory).filter(BenchmarkHistory.benchmark_id == bm.id).delete()
+    twr_test_scheme.benchmark_id = None
+    db.commit()
+    db.delete(bm)
+    db.commit()
+
+
+def test_benchmark_comparison_blends_matched_holdings_benchmark_return(twr_test_scheme_with_benchmark):
+    pdf_bytes = _pdf_with_lines(TWR_CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    overview = response.json()["overview"]
+
+    comparison = overview["benchmark_comparison"]
+    assert comparison["available"] is True
+    assert comparison["reason"] is None
+    assert comparison["start_date"] == "2024-06-10"
+    assert comparison["end_date"] == "2024-06-13"
+    assert comparison["portfolio_return_pct"] == pytest.approx(overview["time_weighted_return"]["cumulative_twr_pct"])
+    assert comparison["benchmark_blended_return_pct"] == pytest.approx(2.9, abs=0.01)
+    assert comparison["excess_return_pct"] == pytest.approx(
+        comparison["portfolio_return_pct"] - comparison["benchmark_blended_return_pct"], abs=0.01
+    )
+    assert comparison["benchmark_coverage_pct"] == pytest.approx(100.0)
+    assert comparison["benchmark_names"] == ["TEST FIXTURE TWR BENCHMARK"]
+
+
+def test_benchmark_comparison_reports_no_fund_benchmark_data_when_scheme_has_no_benchmark(twr_test_scheme):
+    pdf_bytes = _pdf_with_lines(TWR_CAS_LINES)
+    response = client.post(
+        "/api/portfolio/cas/parse",
+        files={"file": ("cas.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    comparison = response.json()["overview"]["benchmark_comparison"]
+
+    assert comparison["available"] is False
+    assert comparison["reason"] == "no_fund_benchmark_data"
+    assert comparison["benchmark_blended_return_pct"] is None
+
+
 def test_time_weighted_return_is_all_null_when_no_matched_scheme_has_nav_history():
     pdf_bytes = _pdf_with_lines(CAS_LINES)
     response = client.post(
@@ -618,6 +685,7 @@ def test_time_weighted_return_is_all_null_when_no_matched_scheme_has_nav_history
         "drawdown_trough_date": None,
         "drawdown_recovery_date": None,
         "drawdown_recovered": None,
+        "drawdown_episodes": [],
         "priced_scheme_count": 0,
         "start_date": None,
         "end_date": None,

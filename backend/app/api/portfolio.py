@@ -14,13 +14,13 @@ from sqlalchemy.orm import Session
 
 from analytics.concentration import group_weights
 from analytics.returns import returns_series
-from app.core.config import get_settings
 from app.core.database import get_db
 from app.repositories import fund_repository, portfolio_repository
 from app.schemas.cas import CASComparisonResponse, CASParseResponse
 from app.schemas.portfolio_analysis import PortfolioAnalyseRequest, PortfolioAnalysisResponse
 from app.services import cas_comparison_service, cas_service, portfolio_analysis_service
 from data_pipeline.normalization.cas_pdf import CASPasswordError, CASUnreadableError, extract_cas_text
+from data_pipeline.orchestration.lazy_risk_free_rate import get_current_risk_free_rate
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -72,7 +72,7 @@ def analyse_portfolio(request: PortfolioAnalyseRequest, db: Session = Depends(ge
             if not nav.empty:
                 per_fund_returns[fund_id] = returns_series(nav)
 
-    risk_free_rate = get_settings().risk_free_rate
+    risk_free_rate = get_current_risk_free_rate(db)
     return portfolio_analysis_service.compute_portfolio_analysis(
         fund_names=fund_names,
         fund_weights_pct=fund_weights_pct,

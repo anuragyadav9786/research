@@ -40,6 +40,7 @@ from app.models.reference import SchemeVariant
 from app.models.timeseries import AnalyticsRun, FundMetric
 from app.repositories import fund_repository
 from app.services import fund_analytics_service
+from data_pipeline.orchestration.lazy_risk_free_rate import get_current_risk_free_rate
 
 _INSERT_BATCH_SIZE = 5000
 
@@ -100,7 +101,7 @@ def _rows_for_variant(
 
 def run_precompute(db: Session) -> PrecomputeResult:
     analytics_version = get_settings().analytics_version
-    risk_free_rate = get_settings().risk_free_rate
+    risk_free_rate = get_current_risk_free_rate(db)
     calc_date = date.today()
 
     run = AnalyticsRun(analytics_version=analytics_version, status="running")

@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from analytics.returns import cagr, cagr_for_window, returns_series, simple_return
+from analytics.returns import cagr, cagr_for_window, returns_series, simple_return, simple_return_for_window
 
 
 def test_simple_return():
@@ -43,3 +43,14 @@ def test_returns_series_empty_input():
 def test_cagr_for_window_none_when_insufficient_data():
     nav = pd.Series([100.0], index=pd.date_range("2024-01-01", periods=1))
     assert cagr_for_window(nav, "2024-01-01", "2025-01-01") is None
+
+
+def test_simple_return_for_window_hand_computed():
+    nav = pd.Series([100.0, 110.0, 121.0], index=pd.date_range("2024-01-01", periods=3))
+    result = simple_return_for_window(nav, "2024-01-01", "2024-01-03")
+    assert result == pytest.approx(0.21)
+
+
+def test_simple_return_for_window_none_when_insufficient_data():
+    nav = pd.Series([100.0], index=pd.date_range("2024-01-01", periods=1))
+    assert simple_return_for_window(nav, "2024-01-01", "2025-01-01") is None

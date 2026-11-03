@@ -8,7 +8,7 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from app.schemas.market_regime import METHODOLOGY_NOTE as MARKET_REGIME_METHODOLOGY_NOTE
-from app.schemas.portfolio_analysis import PortfolioAnalysisResponse
+from app.schemas.portfolio_analysis import DrawdownEpisode, PortfolioAnalysisResponse
 
 CAS_DISCLAIMER = (
     "Holdings and values are read directly from your uploaded statement as of the date it "
@@ -214,6 +214,73 @@ class CASHoldingPeriodSummary(BaseModel):
     realized_consumption_count: int = Field(..., description="Number of FIFO lot consumptions realized_avg/median are over")
 
 
+class CASCapitalGainLot(BaseModel):
+    purchase_date: date
+    units: float
+    current_value: float
+    unrealized_gain: float
+    holding_period_days: int
+    classification: str | None = Field(None, description="'LTCG' | 'STCG' | null if not determinable without guessing")
+    applicable_rate_pct: float | None = None
+    tax_if_realized_today: float | None = Field(
+        None, description="null whenever the rate depends on the investor's income-tax slab, or the scheme's tax "
+        "orientation can't be determined from its category alone — never fabricated"
+    )
+    tax_basis: str = Field(..., description="Plain-English explanation of the classification, or of why there isn't one")
+
+
+class CASCapitalGainsBucket(BaseModel):
+    lot_count: int
+    unrealized_gain: float
+    tax_if_realized_today: float = Field(..., description="0 if this bucket has no lots with a computable amount")
+
+
+class CASCapitalGainsSummary(BaseModel):
+    """Portfolio Analysis (capital-gains extension): what LTCG/STCG tax
+    would apply TODAY to every still-held FIFO lot, under India's
+    mutual-fund capital-gains rules — see analytics/capital_gains.py's
+    module docstring for the exact rates, their source, and the
+    regulatory basis for equity-vs-debt tax classification. Covers only
+    still-open lots in matched, priced schemes; never a recommendation to
+    realize or hold any gain or loss."""
+
+    by_bucket: dict[str, CASCapitalGainsBucket] = Field(
+        ..., description="Keyed by 'STCG' | 'LTCG' | 'slab_rate_dependent' | 'indeterminate'"
+    )
+    total_tax_if_realized_today: float = Field(
+        ..., description="Sum of the STCG + LTCG buckets only -- slab-dependent and indeterminate lots are excluded, "
+        "never estimated"
+    )
+    equity_ltcg_exemption_note: str | None = Field(
+        None, description="Present only when at least one lot is equity LTCG; explains the Rs. 1.25 lakh/year "
+        "aggregate exemption this total is shown before"
+    )
+    lots: list[CASCapitalGainLot]
+
+
+class CASBenchmarkComparison(BaseModel):
+    """Compares the portfolio's own blended return (time_weighted_return
+    above) against a value-weighted blend of each matched holding's own
+    benchmark TRI return, over the identical window -- see
+    app/services/cas_portfolio_service.py's _portfolio_benchmark_summary
+    for the exact methodology. A holding with no mapped benchmark, or
+    whose benchmark has no price data for this window, is excluded from
+    the blend rather than assumed to track the portfolio -- see
+    `benchmark_coverage_pct`."""
+
+    available: bool
+    reason: str | None = Field(None, description="'no_priced_schemes' | 'no_fund_benchmark_data' when unavailable")
+    portfolio_return_pct: float | None = Field(None, description="The portfolio's own cumulative TWR over this window")
+    benchmark_blended_return_pct: float | None = None
+    excess_return_pct: float | None = Field(None, description="portfolio_return_pct minus benchmark_blended_return_pct")
+    benchmark_coverage_pct: float | None = Field(
+        None, description="% of current portfolio value whose holding had a usable benchmark return for this window"
+    )
+    benchmark_names: list[str] = Field(default_factory=list, description="Distinct benchmarks included in the blend")
+    start_date: date | None = None
+    end_date: date | None = None
+
+
 class CASInvestorBehavior(BaseModel):
     """Portfolio Analysis §14: purely factual investor-behavior metrics —
     how long the recorded activity spans, and what fraction of invested
@@ -278,6 +345,11 @@ class CASTimeWeightedReturn(BaseModel):
         None, description="Null if not yet recovered as of the last reconstructed date, or no drawdown to recover from"
     )
     drawdown_recovered: bool | None = None
+    drawdown_episodes: list[DrawdownEpisode] = Field(
+        default_factory=list,
+        description="Every distinct peak-to-trough episode (>=1% magnitude), most severe first -- the single "
+        "worst one always matches the max_drawdown_pct/drawdown_peak_date/drawdown_trough_date fields above",
+    )
     priced_scheme_count: int = Field(..., description="How many matched schemes this reconstruction actually covers")
     start_date: date | None = Field(None, description="First date in the reconstructed value series")
     end_date: date | None = None
@@ -341,7 +413,9 @@ class CASOverviewResponse(BaseModel):
         None, description="Null if no matched holding has a usable current value yet"
     )
     holding_period: CASHoldingPeriodSummary
+    capital_gains: CASCapitalGainsSummary
     time_weighted_return: CASTimeWeightedReturn
+    benchmark_comparison: CASBenchmarkComparison
     transaction_activity: list[CASTransactionActivity] = Field(
         ..., description="Breakdown of transaction count and total amount by type, across every matched scheme"
     )

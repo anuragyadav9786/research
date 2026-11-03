@@ -66,6 +66,15 @@ class PortfolioRisk(BaseModel):
     observations_used: int
 
 
+class DrawdownEpisode(BaseModel):
+    max_drawdown_pct: float
+    peak_date: date
+    trough_date: date
+    recovered: bool
+    recovery_date: date | None
+    recovery_duration_days: int | None
+
+
 class PortfolioDrawdown(BaseModel):
     available: bool
     reason: str | None
@@ -75,6 +84,11 @@ class PortfolioDrawdown(BaseModel):
     recovered: bool | None
     recovery_date: date | None
     recovery_duration_days: int | None
+    episodes: list[DrawdownEpisode] = Field(
+        default_factory=list,
+        description="Every distinct peak-to-trough episode (>=1% magnitude), most severe first -- the single "
+        "worst one always matches the max_drawdown_pct/peak_date/trough_date fields above",
+    )
 
 
 class PortfolioAnalysisResponse(BaseModel):
