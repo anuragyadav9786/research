@@ -94,6 +94,33 @@ def rolling_window_end_date(nav: pd.Series, start_date, window_years: float) -> 
     return nav.index[end_pos]
 
 
+def nearest_rolling_start_on_or_before(roll: pd.Series, target_date) -> pd.Timestamp | None:
+    """The latest start date in a rolling-return series (as produced by
+    `rolling_returns`) that is on or before `target_date` — the same
+    asof ("nearest available date on/before") matching `rolling_returns`
+    and `rolling_window_end_date` already use internally to cope with
+    weekends/holidays, reused here so a caller choosing calendar-anchored
+    sample dates (e.g. "today, and every `window` back from it") rather
+    than fund-local positional ones gets the same graceful degradation for
+    free: a fund whose NAV is a few days stale, or has a real gap, simply
+    asof-matches to whatever real start date it actually has.
+
+    Returns None if `roll` is empty or `target_date` is older than `roll`'s
+    earliest available start date — there's nothing to match that far
+    back, and callers should treat that as "stop walking further back,"
+    not an error.
+    """
+    if roll.empty:
+        return None
+    target_date = pd.Timestamp(target_date)
+    if target_date < roll.index[0]:
+        return None
+    pos = roll.index.searchsorted(target_date, side="right") - 1
+    if pos < 0:
+        return None
+    return roll.index[pos]
+
+
 def rolling_return_distribution(rolling: pd.Series) -> dict:
     """Summary statistics for a rolling-return series.
 
