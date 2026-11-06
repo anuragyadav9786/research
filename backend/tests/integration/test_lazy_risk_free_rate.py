@@ -23,11 +23,16 @@ def db():
     # can have already cached a fresh, today-dated snapshot in this real,
     # shared, non-transactional database -- clear it before AND after so
     # each test here starts from a genuinely clean "no snapshot" state.
+    # The in-process cache is reset for the same reason: it's module-level
+    # state that would otherwise leak a result from one test (or from the
+    # autouse fixture) into the next test running in this same process.
     session.query(RiskFreeRateSnapshot).delete()
     session.commit()
+    lazy_rate_module._reset_in_process_cache_for_tests()
     yield session
     session.query(RiskFreeRateSnapshot).delete()
     session.commit()
+    lazy_rate_module._reset_in_process_cache_for_tests()
     session.close()
 
 
@@ -103,6 +108,30 @@ def test_failed_refetch_with_no_cache_at_all_falls_back_to_settings_default(db, 
 
     rate = get_current_risk_free_rate(db)
     assert rate == pytest.approx(get_settings().risk_free_rate)
+
+
+def test_two_calls_within_the_ttl_window_only_fetch_once(db, monkeypatch):
+    # The real bug this covers: a single fund-page view calls
+    # get_current_risk_free_rate from two independent endpoints
+    # (/category-benchmark and /intelligence). With a stale DB cache and
+    # no in-process cache, each one independently re-fetched from
+    # fbil.org.in -- two live outbound calls, sequentially, for a rate
+    # that can't have changed between them. A call-counting stub (not a
+    # plain lambda) proves the second call never reaches the fetch at all.
+    call_count = 0
+
+    def _counting_fetch():
+        nonlocal call_count
+        call_count += 1
+        return date.today(), 5.87
+
+    monkeypatch.setattr(lazy_rate_module, "fetch_latest_3m_tbill_rate_pct", _counting_fetch)
+
+    first = get_current_risk_free_rate(db)
+    second = get_current_risk_free_rate(db)
+
+    assert call_count == 1
+    assert first == second == pytest.approx(0.0587)
 
 
 def _seed_source(db):
