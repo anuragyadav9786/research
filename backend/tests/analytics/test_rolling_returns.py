@@ -3,6 +3,7 @@ import pytest
 
 from analytics.rolling_returns import (
     benchmark_consistency,
+    nearest_rolling_start_on_or_before,
     rolling_return_distribution,
     rolling_returns,
     rolling_window_end_date,
@@ -115,3 +116,42 @@ def test_rolling_window_end_date_returns_none_past_available_history():
     dates = pd.date_range("2020-01-01", periods=10, freq="D")
     nav = pd.Series([100.0] * 10, index=dates)
     assert rolling_window_end_date(nav, dates[-1], window_years=1.0) is None
+
+
+def test_nearest_rolling_start_on_or_before_matches_a_target_that_falls_between_two_starts():
+    dates = pd.date_range("2020-01-01", periods=800, freq="D")
+    nav = pd.Series([100.0 * 1.0003**i for i in range(800)], index=dates)
+    # step_days=5 spaces consecutive start dates 5 days apart, so a +2-day
+    # target below lands strictly between two of them, not on or past the
+    # next one.
+    rolling = rolling_returns(nav, window_years=0.25, step_days=5)
+
+    tenth_start = rolling.index[10]
+    # A target a few days after an actual start date (but before the next
+    # one) must asof-match back to that same actual start date -- the
+    # same "nearest available date on/before" principle rolling_returns
+    # itself uses internally for weekends/holidays.
+    target = tenth_start + pd.Timedelta(days=2)
+    assert nearest_rolling_start_on_or_before(rolling, target) == tenth_start
+
+
+def test_nearest_rolling_start_on_or_before_exact_match_returns_itself():
+    dates = pd.date_range("2020-01-01", periods=800, freq="D")
+    nav = pd.Series([100.0 * 1.0003**i for i in range(800)], index=dates)
+    rolling = rolling_returns(nav, window_years=0.25)
+
+    exact = rolling.index[5]
+    assert nearest_rolling_start_on_or_before(rolling, exact) == exact
+
+
+def test_nearest_rolling_start_on_or_before_none_when_target_predates_earliest_start():
+    dates = pd.date_range("2020-01-01", periods=800, freq="D")
+    nav = pd.Series([100.0 * 1.0003**i for i in range(800)], index=dates)
+    rolling = rolling_returns(nav, window_years=0.25)
+
+    before_earliest = rolling.index[0] - pd.Timedelta(days=1)
+    assert nearest_rolling_start_on_or_before(rolling, before_earliest) is None
+
+
+def test_nearest_rolling_start_on_or_before_none_for_empty_series():
+    assert nearest_rolling_start_on_or_before(pd.Series(dtype=float), pd.Timestamp("2020-01-01")) is None
