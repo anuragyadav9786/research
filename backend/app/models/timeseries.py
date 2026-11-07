@@ -196,7 +196,10 @@ class PortfolioHolding(Base):
         # net payable (a liability), reported as a negative % to AUM and a
         # negative market value -- confirmed real (ABSL, Sept 2026, 51 of 82
         # schemes) -- so this can't be clamped to 0+ like every other row.
-        CheckConstraint("weight_pct >= -100 AND weight_pct <= 100", name="ck_weight_pct_range"),
+        # The upper bound is widened past 100 for the same reason: per-row
+        # rounding in the disclosure can push a single dominant holding
+        # slightly over 100% of AUM (confirmed real: 100.202%).
+        CheckConstraint("weight_pct >= -100 AND weight_pct <= 105", name="ck_weight_pct_range"),
     )
 
 
