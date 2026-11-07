@@ -176,18 +176,40 @@ class Security(Base):
     __tablename__ = "securities"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    isin: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
+    # Nullable: a real AMC monthly portfolio-disclosure file always carries
+    # a handful of rows with no ISIN at all — TREPS/reverse-repo, margin
+    # for derivative positions, net receivable/payable — which are real
+    # money (confirmed in a real ABSL disclosure: ~2-5% of AUM) but aren't
+    # a security in the normal sense. Postgres' unique index already
+    # allows any number of NULLs, so this stays a safe join key for every
+    # real security while still being able to represent these.
+    isin: Mapped[str | None] = mapped_column(String(20), unique=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     sector_id: Mapped[int | None] = mapped_column(ForeignKey("sectors.id"))
     # Null for non-equity instruments (bonds, etc.) where market-cap
     # classification doesn't apply, or where we simply don't have the
     # classification yet — never guessed to fill the field.
     market_cap_category: Mapped[str | None] = mapped_column(String(20))
+    # The broad category a real AMC disclosure file itself states (its own
+    # section headers) — necessary, not just descriptive: the disclosure's
+    # "Industry^/Rating" column means an AMFI-style equity sector for an
+    # equity row but a credit rating (e.g. "CRISIL AAA") for a debt row,
+    # and without this field there's no way to tell which one a given
+    # PortfolioHolding.credit_rating/Security.sector_id value actually is
+    # -- confirmed against a real ABSL monthly disclosure file, covering
+    # every category header it actually uses across all 104 scheme sheets.
+    instrument_type: Mapped[str | None] = mapped_column(String(30))
 
     __table_args__ = (
         CheckConstraint(
             "market_cap_category in ('large_cap', 'mid_cap', 'small_cap', 'other')",
             name="ck_security_market_cap_category",
+        ),
+        CheckConstraint(
+            "instrument_type in ('equity', 'debt', 'government_security', 'securitised_debt', "
+            "'money_market', 'mutual_fund_unit', 'reit_invit', 'foreign_security', "
+            "'cash_equivalent', 'other')",
+            name="ck_security_instrument_type",
         ),
     )
 
