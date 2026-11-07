@@ -192,7 +192,11 @@ class PortfolioHolding(Base):
     ytc_pct: Mapped[float | None] = mapped_column(Numeric(6, 3))
 
     __table_args__ = (
-        CheckConstraint("weight_pct >= 0 AND weight_pct <= 100", name="ck_weight_pct_range"),
+        # A real disclosure's "Net Receivable / Payable" line is sometimes a
+        # net payable (a liability), reported as a negative % to AUM and a
+        # negative market value -- confirmed real (ABSL, Sept 2026, 51 of 82
+        # schemes) -- so this can't be clamped to 0+ like every other row.
+        CheckConstraint("weight_pct >= -100 AND weight_pct <= 100", name="ck_weight_pct_range"),
     )
 
 
