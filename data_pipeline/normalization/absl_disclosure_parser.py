@@ -51,11 +51,20 @@ silently guessed into a type.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
 import xlrd
+
+from data_pipeline.normalization.disclosure_types import DisclosureHolding, DisclosureScheme, IndexEntry
+
+__all__ = [
+    "DisclosureHolding",
+    "DisclosureScheme",
+    "IndexEntry",
+    "parse_disclosure_workbook",
+    "parse_index_sheet",
+]
 
 INDEX_SHEET_NAME = "Index"
 
@@ -102,40 +111,6 @@ _RATING_LIKE_INSTRUMENT_TYPES = {"debt", "securitised_debt", "government_securit
 _AS_OF_DATE_RE = re.compile(r"Portfolio Statement as on\s+([A-Za-z]+\s+\d{1,2},\s*\d{4})")
 _HEADER_ROW_SEARCH_LIMIT = 15
 _INTRO_SEARCH_LIMIT = 10
-
-
-@dataclass
-class DisclosureHolding:
-    instrument_name: str
-    isin: str | None
-    sector: str | None
-    credit_rating: str | None
-    quantity: float | None
-    market_value_rupees: float
-    weight_pct: float
-    ytm_pct: float | None
-    ytc_pct: float | None
-    instrument_type: str
-
-
-@dataclass
-class DisclosureScheme:
-    short_code: str
-    scheme_name: str
-    as_of_date: date
-    holdings: list[DisclosureHolding] = field(default_factory=list)
-    # Real rows this couldn't confidently parse/classify -- reported, not
-    # silently dropped, same discipline cas_parser.py's own unmatched
-    # list follows. Each entry is a short human-readable reason tied to
-    # the row's own instrument-name text.
-    skipped_rows: list[str] = field(default_factory=list)
-
-
-@dataclass
-class IndexEntry:
-    scheme_code: str
-    short_code: str
-    scheme_name: str
 
 
 def parse_disclosure_workbook(file_bytes: bytes) -> list[DisclosureScheme]:
