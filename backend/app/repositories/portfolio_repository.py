@@ -17,9 +17,13 @@ from app.models.timeseries import DataSource, PortfolioHolding, PortfolioSnapsho
 
 @dataclass
 class HoldingRow:
+    security_id: int
     security_name: str
     sector_name: str | None
     market_cap_category: str | None
+    instrument_type: str | None
+    credit_rating: str | None
+    ytm_pct: float | None
     weight_pct: float
 
 
@@ -54,9 +58,13 @@ def get_holdings(db: Session, snapshot_id: int) -> list[HoldingRow]:
 
     return [
         HoldingRow(
+            security_id=security.id,
             security_name=security.name,
             sector_name=sectors_by_id.get(security.sector_id),
             market_cap_category=security.market_cap_category,
+            instrument_type=security.instrument_type,
+            credit_rating=holding.credit_rating,
+            ytm_pct=float(holding.ytm_pct) if holding.ytm_pct is not None else None,
             weight_pct=float(holding.weight_pct),
         )
         for holding, security in rows

@@ -22,6 +22,13 @@ covers every caller. tests/integration/test_lazy_risk_free_rate.py and
 tests/unit/test_fbil_client.py exercise the real fetch-and-cache logic
 directly and re-monkeypatch this same name per test, overriding this
 default for their own duration.
+
+Also resets `get_current_risk_free_rate`'s short in-process cache before
+and after every test — that cache is deliberately module-level (it
+exists to collapse multiple calls within one real page load into one),
+so without this it would otherwise survive across tests in the same
+pytest process, serving a cached value from an earlier test instead of
+consulting this fixture's own monkeypatch.
 """
 from __future__ import annotations
 
@@ -46,3 +53,6 @@ def _pin_risk_free_rate(monkeypatch):
     monkeypatch.setattr(
         lazy_risk_free_rate_module, "fetch_latest_3m_tbill_rate_pct", lambda: (datetime.date.today(), 7.0)
     )
+    lazy_risk_free_rate_module._reset_in_process_cache_for_tests()
+    yield
+    lazy_risk_free_rate_module._reset_in_process_cache_for_tests()

@@ -24,6 +24,21 @@ def _sorted_allocation(totals: dict[str, float]) -> list[dict]:
     ]
 
 
+def _weighted_average_ytm(holdings: list[HoldingRow]) -> float | None:
+    """Portfolio-level YTM, weighted by each holding's weight_pct — only
+    meaningful over debt/money-market holdings, which are the only ones
+    a real disclosure ever states a YTM for (equity rows carry `None`).
+    `None` when no holding in this portfolio has a YTM at all, rather
+    than a misleading 0."""
+    rated = [h for h in holdings if h.ytm_pct is not None]
+    if not rated:
+        return None
+    total_weight = sum(h.weight_pct for h in rated)
+    if total_weight == 0:
+        return None
+    return sum(h.ytm_pct * h.weight_pct for h in rated) / total_weight
+
+
 def compute_portfolio_dna(holdings: list[HoldingRow]) -> dict:
     if not holdings:
         return {
@@ -40,6 +55,10 @@ def compute_portfolio_dna(holdings: list[HoldingRow]) -> dict:
             "hhi_label": None,
             "sector_allocation": [],
             "market_cap_allocation": [],
+            "instrument_type_allocation": [],
+            "credit_quality_allocation": [],
+            "credit_quality_coverage_pct": None,
+            "average_ytm_pct": None,
         }
 
     weights = [h.weight_pct for h in holdings]
@@ -49,8 +68,15 @@ def compute_portfolio_dna(holdings: list[HoldingRow]) -> dict:
     market_cap_totals = group_weights(
         [(h.market_cap_category or UNCLASSIFIED_LABEL, h.weight_pct) for h in holdings]
     )
+    instrument_type_totals = group_weights(
+        [(h.instrument_type or UNCLASSIFIED_LABEL, h.weight_pct) for h in holdings]
+    )
+    rated_holdings = [h for h in holdings if h.credit_rating is not None]
+    credit_quality_totals = group_weights([(h.credit_rating, h.weight_pct) for h in rated_holdings])
+    credit_quality_coverage_pct = round(sum(h.weight_pct for h in rated_holdings), 4) if rated_holdings else None
 
     top_holdings = sorted(holdings, key=lambda h: h.weight_pct, reverse=True)[:TOP_HOLDINGS_DISPLAY_COUNT]
+    average_ytm = _weighted_average_ytm(holdings)
 
     return {
         "available": True,
@@ -60,9 +86,13 @@ def compute_portfolio_dna(holdings: list[HoldingRow]) -> dict:
         "top_holdings": [
             {
                 "rank": i,
+                "security_id": h.security_id,
                 "security_name": h.security_name,
                 "sector": h.sector_name,
                 "market_cap_category": h.market_cap_category,
+                "instrument_type": h.instrument_type,
+                "credit_rating": h.credit_rating,
+                "ytm_pct": h.ytm_pct,
                 "weight_pct": h.weight_pct,
             }
             for i, h in enumerate(top_holdings, start=1)
@@ -73,4 +103,8 @@ def compute_portfolio_dna(holdings: list[HoldingRow]) -> dict:
         "hhi_label": hhi_label(hhi),
         "sector_allocation": _sorted_allocation(sector_totals),
         "market_cap_allocation": _sorted_allocation(market_cap_totals),
+        "instrument_type_allocation": _sorted_allocation(instrument_type_totals),
+        "credit_quality_allocation": _sorted_allocation(credit_quality_totals),
+        "credit_quality_coverage_pct": credit_quality_coverage_pct,
+        "average_ytm_pct": round(average_ytm, 3) if average_ytm is not None else None,
     }

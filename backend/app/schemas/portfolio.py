@@ -15,9 +15,13 @@ from app.schemas.funds import DISCLAIMER
 
 class HoldingItem(BaseModel):
     rank: int
+    security_id: int
     security_name: str
     sector: str | None
     market_cap_category: str | None
+    instrument_type: str | None
+    credit_rating: str | None
+    ytm_pct: float | None
     weight_pct: float
 
 
@@ -40,4 +44,8 @@ class PortfolioResponse(BaseModel):
     hhi_label: str | None
     sector_allocation: list[AllocationSlice]
     market_cap_allocation: list[AllocationSlice]
+    instrument_type_allocation: list[AllocationSlice]
+    credit_quality_allocation: list[AllocationSlice]
+    credit_quality_coverage_pct: float | None
+    average_ytm_pct: float | None
     disclaimer: str = DISCLAIMER

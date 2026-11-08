@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from analytics.concentration import group_weights
 from analytics.returns import returns_series
@@ -89,7 +90,19 @@ async def _parse_cas_upload(file: UploadFile, password: str | None, db: Session,
     one uploaded CAS PDF into a full CASParseResponse-shaped dict. `label`
     ("statement" / "previous statement" / "current statement") only
     changes error text, so a two-file request can tell the caller which
-    of the two files was the problem."""
+    of the two files was the problem.
+
+    `extract_cas_text`/`build_cas_parse_response` are plain, synchronous
+    functions — the latter can make real blocking outbound HTTP calls
+    (per-holding benchmark backfill, the risk-free-rate fetch). Calling
+    either directly from this `async def` would run that blocking work
+    on the single event loop, freezing every other concurrent request
+    this Uvicorn worker is serving for however long those calls take
+    (confirmed possible: a statement with several distinct stale
+    benchmarks can take well over a minute). `run_in_threadpool` is the
+    same mechanism FastAPI itself uses to auto-offload a sync route
+    handler, applied explicitly here since this one is `async def` (it
+    has to be, for `await file.read()`)."""
     if file.content_type not in ("application/pdf", "application/octet-stream"):
         raise HTTPException(status_code=422, detail=f"Upload a PDF file for the {label}.")
 
@@ -98,13 +111,13 @@ async def _parse_cas_upload(file: UploadFile, password: str | None, db: Session,
         raise HTTPException(status_code=413, detail=f"The {label} is too large — maximum 5 MB.")
 
     try:
-        text = extract_cas_text(pdf_bytes, password)
+        text = await run_in_threadpool(extract_cas_text, pdf_bytes, password)
     except CASPasswordError as exc:
         raise HTTPException(status_code=422, detail=f"{label.capitalize()}: {exc}") from exc
     except CASUnreadableError as exc:
         raise HTTPException(status_code=422, detail=f"{label.capitalize()}: {exc}") from exc
 
-    result = cas_service.build_cas_parse_response(db, text)
+    result = await run_in_threadpool(cas_service.build_cas_parse_response, db, text)
     if not result["matched_holdings"] and not result["unmatched_holdings"]:
         raise HTTPException(
             status_code=422,

@@ -8,10 +8,22 @@ stale, and a silent, never-raising fallback whenever the fetch fails --
 the research engine must never break, or show a different Sharpe/Sortino
 on every request, just because FBIL (data_pipeline/sources/riskfree/
 fbil_client.py) is briefly unreachable.
+
+On top of that DB-level cache, a short in-process cache
+(`_IN_PROCESS_CACHE_TTL_SECONDS`) collapses the handful of independent
+calls a single page load makes into one: a real fund-page view calls
+this from two separate endpoints (/{fund_id}/category-benchmark and
+/{fund_id}/intelligence), and without this, a stale DB cache meant both
+calls independently re-fetched from fbil.org.in -- two live outbound
+HTTP calls, sequentially, for a rate that cannot have changed between
+them milliseconds apart. The DB-level `_FRESHNESS_WINDOW_DAYS` stays the
+real source of truth; this is purely about not repeating the same
+decision twice in the same breath.
 """
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date, timedelta
 
 from sqlalchemy import select
@@ -33,6 +45,16 @@ _FRESHNESS_WINDOW_DAYS = 5
 DATA_SOURCE_NAME = "FBIL T-Bill Benchmark (3 Months)"
 DATA_SOURCE_URL = "https://www.fbil.org.in"
 
+_IN_PROCESS_CACHE_TTL_SECONDS = 60
+_in_process_cache: tuple[float, float] | None = None  # (rate, cached_at_monotonic)
+
+
+def _reset_in_process_cache_for_tests() -> None:
+    """Test-only: clears the in-process cache so one test's result can't
+    leak into the next test running in the same pytest process."""
+    global _in_process_cache
+    _in_process_cache = None
+
 
 def _latest_snapshot(db: Session) -> RiskFreeRateSnapshot | None:
     return db.execute(
@@ -48,6 +70,17 @@ def get_current_risk_free_rate(db: Session) -> float:
     live fetch also fails, falls back to Settings.risk_free_rate's own
     configured default, exactly like ensure_nav_history's "never block
     the page, just use what's already there" contract."""
+    global _in_process_cache
+    now = time.monotonic()
+    if _in_process_cache is not None and now - _in_process_cache[1] < _IN_PROCESS_CACHE_TTL_SECONDS:
+        return _in_process_cache[0]
+
+    rate = _resolve_rate(db)
+    _in_process_cache = (rate, now)
+    return rate
+
+
+def _resolve_rate(db: Session) -> float:
     cached = _latest_snapshot(db)
     if cached is not None and cached.as_of_date >= date.today() - timedelta(days=_FRESHNESS_WINDOW_DAYS):
         return float(cached.rate_pct) / 100.0

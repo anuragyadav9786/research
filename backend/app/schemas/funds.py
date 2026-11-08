@@ -32,6 +32,7 @@ class FundSummary(BaseModel):
     id: int
     scheme_name: str
     category: str
+    amc_id: int
     amc_name: str
     fund_family_name: str
     benchmark_name: str | None

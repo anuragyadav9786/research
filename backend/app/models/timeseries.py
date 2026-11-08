@@ -162,6 +162,12 @@ class PortfolioSnapshot(Base):
 
 
 class PortfolioHolding(Base):
+    """market_value is always the real rupee amount, never the AMC
+    disclosure's own reporting unit (e.g. a real ABSL file reports market
+    value in Lakhs -- a value read from one must be multiplied by 100,000
+    before being written here, so a reader never has to guess which unit
+    a given row is in)."""
+
     __tablename__ = "portfolio_holdings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -169,9 +175,31 @@ class PortfolioHolding(Base):
     security_id: Mapped[int] = mapped_column(ForeignKey("securities.id"), nullable=False)
     weight_pct: Mapped[float] = mapped_column(Numeric(6, 3), nullable=False)
     market_value: Mapped[float | None] = mapped_column(Numeric(18, 2))
+    # Units/shares (equity) or face-value units (debt) actually held --
+    # not consumed by any analytics today, captured for fidelity since a
+    # real AMC disclosure file always states it.
+    quantity: Mapped[float | None] = mapped_column(Numeric(20, 4))
+    # A debt holding's credit rating as of THIS disclosure (e.g. "CRISIL
+    # AAA") -- lives here, not on Security, because the same bond's
+    # rating can change between snapshots; never meaningful for an equity
+    # holding. Null, never fabricated, when the source row has none.
+    credit_rating: Mapped[str | None] = mapped_column(String(20))
+    # Yield to maturity / yield to call, debt-only -- also point-in-time
+    # (derived from the bond's market price on the disclosure date), so
+    # these belong on the holding, not the security. YTC is usually null
+    # even for debt -- only populated for callable bonds.
+    ytm_pct: Mapped[float | None] = mapped_column(Numeric(6, 3))
+    ytc_pct: Mapped[float | None] = mapped_column(Numeric(6, 3))
 
     __table_args__ = (
-        CheckConstraint("weight_pct >= 0 AND weight_pct <= 100", name="ck_weight_pct_range"),
+        # A real disclosure's "Net Receivable / Payable" line is sometimes a
+        # net payable (a liability), reported as a negative % to AUM and a
+        # negative market value -- confirmed real (ABSL, Sept 2026, 51 of 82
+        # schemes) -- so this can't be clamped to 0+ like every other row.
+        # The upper bound is widened past 100 for the same reason: per-row
+        # rounding in the disclosure can push a single dominant holding
+        # slightly over 100% of AUM (confirmed real: 100.202%).
+        CheckConstraint("weight_pct >= -100 AND weight_pct <= 105", name="ck_weight_pct_range"),
     )
 
 
