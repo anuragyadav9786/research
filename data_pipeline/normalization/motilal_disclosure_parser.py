@@ -329,4 +329,12 @@ def _parse_weight_pct(raw: Any) -> float | None:
 
 
 def _parse_ytm(raw: Any) -> float | None:
-    return float(raw) if isinstance(raw, (int, float)) else None
+    # Confirmed from the real file: unlike the "% to Net Assets" column
+    # (already a 0-100 number, never multiplied), the YTM column's cells
+    # are Excel percentage-formatted -- openpyxl (even with data_only)
+    # returns the underlying fraction (0.0575 for a cell displaying
+    # "5.75%"), not the displayed percentage. Verified directly against
+    # YO06's real rows: col G (% to Net Assets) = 9.18, col H (YTM) =
+    # 0.0575 for the same holding -- two different scales in the same
+    # row, so this is a real file quirk, not a guess.
+    return float(raw) * 100 if isinstance(raw, (int, float)) else None

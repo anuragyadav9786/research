@@ -78,10 +78,13 @@ def test_equity_holding_gets_sector_not_rating_and_weight_is_not_multiplied():
 
 
 def test_debt_holding_gets_rating_not_sector_plus_ytm_and_no_ytc():
+    # YTM's raw cell is Excel percentage-formatted -- confirmed real:
+    # a cell displaying "5.75%" comes back from openpyxl as 0.0575, not
+    # 5.75 (unlike the weight-pct column, already a true 0-100 number).
     row = _blank()
     row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7] = (
         1, "National Bank For Agriculture and Rural Development 2027 ** #", "INE261F16AQ3",
-        "CRISIL A1+", 2500000, 2421.75, 4.54, 7.845,
+        "CRISIL A1+", 2500000, 2421.75, 4.54, 0.07845,
     )
     rows = _rows(("(A)", "Money Market Instruments"), ("(b)", "Certificate of Deposit"), tuple(row))
     scheme = _parse_scheme_sheet_rows("TESTCODE", rows)
