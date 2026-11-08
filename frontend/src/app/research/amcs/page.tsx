@@ -5,6 +5,12 @@ import { listAmcs } from "@/lib/api";
 
 export const metadata = { title: "Browse by AMC — ThinkFin" };
 
+// No params/searchParams to make this dynamic automatically (unlike
+// /research or /research/[fundId]) -- without this, Next.js tries to
+// statically prerender it at build time and the fetch to the backend
+// fails wherever the backend isn't reachable at build time (e.g. CI).
+export const dynamic = "force-dynamic";
+
 export default async function AmcsPage() {
   const { items: amcs } = await listAmcs();
 
