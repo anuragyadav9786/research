@@ -21,6 +21,7 @@ export interface FundSummary {
   id: number;
   scheme_name: string;
   category: string;
+  amc_id: number;
   amc_name: string;
   fund_family_name: string;
   benchmark_name: string | null;

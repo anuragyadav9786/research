@@ -89,6 +89,7 @@ def _fund_summary(scheme: Scheme) -> FundSummary:
         id=scheme.id,
         scheme_name=scheme.name,
         category=scheme.category,
+        amc_id=scheme.fund_family.amc.id,
         amc_name=scheme.fund_family.amc.name,
         fund_family_name=scheme.fund_family.name,
         benchmark_name=scheme.benchmark.name if scheme.benchmark else None,

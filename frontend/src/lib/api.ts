@@ -1,3 +1,5 @@
+import type { AmcDetailResponse, AmcListResponse } from "@/types/amc";
+import type { SecurityHoldersResponse, SecuritySearchResponse } from "@/types/security";
 import type {
   CategoryBenchmarkResponse,
   DiscoverFundsResponse,
@@ -191,6 +193,22 @@ export function getFundNavHistory(fundId: number, params: VariantParams = {}): P
 
 export function analysePortfolio(holdings: PortfolioHoldingInput[]): Promise<PortfolioAnalysisResponse> {
   return apiPost<PortfolioAnalysisResponse>("/api/portfolio/analyse", { holdings });
+}
+
+export function listAmcs(): Promise<AmcListResponse> {
+  return apiGet<AmcListResponse>("/api/amcs");
+}
+
+export function getAmc(amcId: number): Promise<AmcDetailResponse> {
+  return apiGet<AmcDetailResponse>(`/api/amcs/${amcId}`);
+}
+
+export function searchSecurities(q: string): Promise<SecuritySearchResponse> {
+  return apiGet<SecuritySearchResponse>("/api/securities/search", { q });
+}
+
+export function getSecurityHolders(securityId: number): Promise<SecurityHoldersResponse> {
+  return apiGet<SecurityHoldersResponse>(`/api/securities/${securityId}/holders`);
 }
 
 export async function parseCasStatement(file: File, password?: string): Promise<CASParseResponse> {

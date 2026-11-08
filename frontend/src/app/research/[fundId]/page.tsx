@@ -691,6 +691,17 @@ export default async function FundDetailPage({
                         : "text-emerald-400"
                   }
                 />
+                {portfolio.average_ytm_pct !== null && (
+                  <StatCard
+                    label="Avg YTM"
+                    value={`${formatNumber(portfolio.average_ytm_pct, 2)}%`}
+                    hint={
+                      portfolio.credit_quality_coverage_pct !== null
+                        ? `Over ${formatNumber(portfolio.credit_quality_coverage_pct, 1)}% rated holdings`
+                        : undefined
+                    }
+                  />
+                )}
               </div>
 
               <div className="grid sm:grid-cols-2 gap-4">
@@ -702,6 +713,22 @@ export default async function FundDetailPage({
                   <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">Market-Cap Allocation</h3>
                   <AllocationBar slices={portfolio.market_cap_allocation} />
                 </div>
+                <div className="rounded-lg border border-slate-800 p-4">
+                  <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">Instrument-Type Allocation</h3>
+                  <AllocationBar slices={portfolio.instrument_type_allocation} />
+                </div>
+                {portfolio.credit_quality_allocation.length > 0 && (
+                  <div className="rounded-lg border border-slate-800 p-4">
+                    <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-3">Credit-Quality Allocation</h3>
+                    <AllocationBar slices={portfolio.credit_quality_allocation} />
+                    {portfolio.credit_quality_coverage_pct !== null && (
+                      <p className="text-xs text-slate-500 mt-2">
+                        Covers {formatNumber(portfolio.credit_quality_coverage_pct, 1)}% of the portfolio (rated debt/
+                        money-market holdings only — equity holdings have no credit rating).
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
